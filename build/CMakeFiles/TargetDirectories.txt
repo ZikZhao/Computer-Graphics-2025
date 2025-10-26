@@ -1,3 +1,0 @@
-/mnt/c/Users/Zik/OneDrive - 6666zik/University of Bristol/Year 3/COMS30020 Computer Graphics/RedNoise/build/CMakeFiles/RedNoise.dir
-/mnt/c/Users/Zik/OneDrive - 6666zik/University of Bristol/Year 3/COMS30020 Computer Graphics/RedNoise/build/CMakeFiles/edit_cache.dir
-/mnt/c/Users/Zik/OneDrive - 6666zik/University of Bristol/Year 3/COMS30020 Computer Graphics/RedNoise/build/CMakeFiles/rebuild_cache.dir

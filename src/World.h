@@ -5,6 +5,7 @@
 #include <map>
 #include <stdexcept>
 #include <memory>
+#include <chrono>
 #include "DrawingWindow.h"
 #include "ModelTriangle.h"
 #include "Colour.h"
@@ -34,15 +35,18 @@ public:
 
 class Camera {
 public:
+    static constexpr std::int64_t OrbitInterval = 1000000000 / 60; // 60 FPS
+public:
     glm::vec3 position_ = { 0.0f, 0.0f, 4.0f };
     glm::vec3 forward_ = { 0.0f, 0.0f, -1.0f };
     glm::vec3 up_ = { 0.0f, 1.0f, 0.0f };
     glm::vec3 right_ = glm::normalize(glm::cross(forward_, up_));
+    std::int64_t last_orbit_time_ = std::chrono::system_clock::now().time_since_epoch().count();
     double fov = 45.0;
-    double near_plane = 0.1;
-    double far_plane = 100.0;
     Camera() = default;
     Camera(const glm::vec3& position, const glm::vec3& forward, const glm::vec3& up);
+    void transform(glm::mat3x3 transformation);
+    void orbiting();
 };
 
 class Face {

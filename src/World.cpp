@@ -39,19 +39,20 @@ void FillTriangle(DrawingWindow& window, ZBuffer& z_buffer, glm::vec3 v0, glm::v
     if (v0.y > v2.y) std::swap(v0, v2);
     if (v1.y > v2.y) std::swap(v1, v2);
 
-    size_t from_y = std::max<std::size_t>(static_cast<std::size_t>(std::round(v0.y)), 0);
-    size_t mid_y = std::min(static_cast<std::size_t>(std::round(v1.y)), window.height - 1);
-    size_t to_y = std::min(static_cast<std::size_t>(std::round(v2.y)), window.height - 1);
+    float from_y = std::max<float>(v0.y, 0);
+    float mid_y = std::min<float>(v1.y, window.height - 1);
+    float to_y = std::min<float>(v2.y, window.height - 1);
 
-    bool one_before_two = v1.x <= v2.x;
-    float inv_slope_left = one_before_two ? (v1.x - v0.x) / (v1.y - v0.y) : (v2.x - v0.x) / (v2.y - v0.y);
-    float inv_slope_right = one_before_two ? (v2.x - v0.x) / (v2.y - v0.y) : (v1.x - v0.x) / (v1.y - v0.y);
-    float curr_x_left = v0.x + inv_slope_left * (from_y - static_cast<std::size_t>(std::round(v0.y)));
-    float curr_x_right = v0.x + inv_slope_right * (from_y - static_cast<std::size_t>(std::round(v0.y)));
+    float inv_slope_v0v1 = (v1.y - v0.y) == 0 ? 0 : (v1.x - v0.x) / (v1.y - v0.y);
+    float inv_slope_v0v2 = (v2.y - v0.y) == 0 ? 0 : (v2.x - v0.x) / (v2.y - v0.y);
+    float inv_slope_v1v2 = (v2.y - v1.y) == 0 ? 0 : (v2.x - v1.x) / (v2.y - v1.y);
 
-    for (std::size_t y = from_y; y < mid_y; y++) {
-        std::size_t start_x = std::max<std::size_t>(static_cast<std::size_t>(std::round(curr_x_left)), 0);
-        std::size_t end_x = std::min(static_cast<std::size_t>(std::round(curr_x_right)), window.width - 1);
+    for (float y = from_y; y < mid_y; y++) {
+        float x01 = inv_slope_v0v1 * (y - v0.y) + v0.x;
+        float x02 = inv_slope_v0v2 * (y - v0.y) + v0.x;
+
+        std::size_t start_x = std::max<std::size_t>(static_cast<std::size_t>(std::round(std::min(x01, x02))), 0);
+        std::size_t end_x = std::min(static_cast<std::size_t>(std::round(std::max(x01, x02))), window.width - 1);
         for (std::size_t x = start_x; x <= end_x; x++) {
             glm::vec3 bary = convertToBarycentricCoordinates(
                 { v0.x, v0.y }, { v1.x, v1.y }, { v2.x, v2.y }, { static_cast<float>(x), static_cast<float>(y) });
@@ -60,22 +61,14 @@ void FillTriangle(DrawingWindow& window, ZBuffer& z_buffer, glm::vec3 v0, glm::v
                 window.setPixelColour(x, y, colour);
             }
         }
-        curr_x_left += inv_slope_left;
-        curr_x_right += inv_slope_right;
     }
 
-    if (one_before_two) {
-        inv_slope_left = (v2.x - v1.x) / (v2.y - v1.y);
-        curr_x_left = v1.x + inv_slope_left * (mid_y - static_cast<std::size_t>(std::round(v1.y)));
-    }
-    else {
-        inv_slope_right = (v2.x - v1.x) / (v2.y - v1.y);
-        curr_x_right = v1.x + inv_slope_right * (mid_y - static_cast<std::size_t>(std::round(v1.y)));
-    }
+    for (float y = mid_y; y < to_y; y++) {
+        float x12 = inv_slope_v1v2 * (y - v1.y) + v1.x;
+        float x02 = inv_slope_v0v2 * (y - v0.y) + v0.x;
 
-    for (std::size_t y = mid_y; y < to_y; y++) {
-        std::size_t start_x = std::max<std::size_t>(static_cast<std::size_t>(std::round(curr_x_left)), 0);
-        std::size_t end_x = std::min(static_cast<std::size_t>(std::round(curr_x_right)), window.width - 1);
+        std::size_t start_x = std::max<std::size_t>(static_cast<std::size_t>(std::round(std::min(x12, x02))), 0);
+        std::size_t end_x = std::min(static_cast<std::size_t>(std::round(std::max(x12, x02))), window.width - 1);
         for (std::size_t x = start_x; x <= end_x; x++) {
             glm::vec3 bary = convertToBarycentricCoordinates(
                 { v0.x, v0.y }, { v1.x, v1.y }, { v2.x, v2.y }, { static_cast<float>(x), static_cast<float>(y) });
@@ -84,8 +77,6 @@ void FillTriangle(DrawingWindow& window, ZBuffer& z_buffer, glm::vec3 v0, glm::v
                 window.setPixelColour(x, y, colour);
             }
         }
-        curr_x_left += inv_slope_left;
-        curr_x_right += inv_slope_right;
     }
 }
 
@@ -110,18 +101,27 @@ Camera::Camera(const glm::vec3& position, const glm::vec3& forward, const glm::v
     : position_(position), forward_(forward), up_(up) {
     right_ = glm::normalize(glm::cross(forward_, up_));
 }
+void Camera::orbiting() {
+    auto now = std::chrono::system_clock::now().time_since_epoch().count();
+    if (now - last_orbit_time_ > OrbitInterval) {
+        constexpr static float angle_increment = glm::radians(0.5f);
+        float cos_angle = std::cos(angle_increment);
+        float sin_angle = std::sin(angle_increment);
+        glm::vec3 k_cross_pos = glm::cross(up_, position_);
+        float k_dot_pos = glm::dot(up_, position_);
+        position_ = position_ * cos_angle + 
+                   k_cross_pos * sin_angle + 
+                   up_ * k_dot_pos * (1.0f - cos_angle);
+        glm::vec3 target = glm::vec3(0.0f, 0.0f, 0.0f);
+        forward_ = glm::normalize(target - position_);
+        right_ = glm::normalize(glm::cross(forward_, up_));
+        last_orbit_time_ = now;
+    }
+}
 
 void Face::draw(DrawingWindow& window, const Camera& camera, ZBuffer& z_buffer) const {
     auto ndc = to_ndc(window, camera);
     auto screen = to_screen(window, ndc);
-
-    // Back-face culling
-    glm::vec3 edge1 = glm::vec3(screen[1].x - screen[0].x, screen[1].y - screen[0].y, 0);
-    glm::vec3 edge2 = glm::vec3(screen[2].x - screen[0].x, screen[2].y - screen[0].y, 0);
-    glm::vec3 normal = glm::cross(edge1, edge2);
-    if (normal.z >= 0) {
-        return;
-    }
     
     std::uint32_t colour_value = (255 << 24) + (colour_.red << 16) + (colour_.green << 8) + colour_.blue;
     FillTriangle(window, z_buffer, screen[0], screen[1], screen[2], colour_value);
@@ -145,7 +145,7 @@ std::array<glm::vec3, 3> Face::to_ndc(const DrawingWindow& window, const Camera&
     double tan_half_fov = std::tan(fov_rad / 2.0);
     
     for (size_t i = 0; i < 3; i++) {
-        if (transformed[i].z > 0) {
+        if (transformed[i].z > 0.001) {
             // Standard perspective projection to NDC
             projected[i].x = transformed[i].x / (transformed[i].z * tan_half_fov * (static_cast<double>(window.width) / window.height));
             projected[i].y = transformed[i].y / (transformed[i].z * tan_half_fov);
@@ -154,7 +154,7 @@ std::array<glm::vec3, 3> Face::to_ndc(const DrawingWindow& window, const Camera&
             // Handle vertices behind camera
             projected[i].x = 0.0;
             projected[i].y = 0.0;
-            projected[i].z = 0.0;
+            projected[i].z = 0.01;
         }
     }
     return projected;
@@ -190,7 +190,6 @@ void World::LoadFromFile(const std::string& filename) {
     }
     std::string line;
     while (std::getline(file, line)) {
-        std::cout << line << std::endl;
         std::istringstream iss(line);
         std::string type;
         iss >> type;
@@ -229,6 +228,7 @@ void World::LoadFromFile(const std::string& filename) {
     }
 }
 void World::draw(DrawingWindow& window) {
+    camera_.orbiting();
     z_buffer_.reset(window.width, window.height);
     for (const auto& object : objects_) {
         object.draw(window, camera_, z_buffer_);
