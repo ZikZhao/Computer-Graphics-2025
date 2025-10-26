@@ -88,7 +88,10 @@ ZBuffer& ZBuffer::reset(size_t width, size_t height) {
     buffer_.assign(width * height, std::numeric_limits<float>::infinity());
     return *this;
 }
-bool ZBuffer::replace_if_closer(size_t x, size_t y, float z_ndc) {
+bool ZBuffer::replace_if_closer(std::int64_t x, std::int64_t y, float z_ndc) {
+    if (x < 0 || x >= static_cast<std::int64_t>(width_) || y < 0 || y >= static_cast<std::int64_t>(height_)) {
+        return false;
+    }
     float& depth = buffer_[y * width_ + x];
     if (z_ndc > 0 && z_ndc < depth) {
         depth = z_ndc;
@@ -97,10 +100,6 @@ bool ZBuffer::replace_if_closer(size_t x, size_t y, float z_ndc) {
     return false;
 }
 
-Camera::Camera(const glm::vec3& position, const glm::vec3& forward, const glm::vec3& up)
-    : position_(position), forward_(forward), up_(up) {
-    right_ = glm::normalize(glm::cross(forward_, up_));
-}
 void Camera::orbiting() {
     auto now = std::chrono::system_clock::now().time_since_epoch().count();
     if (now - last_orbit_time_ > OrbitInterval) {
@@ -112,10 +111,79 @@ void Camera::orbiting() {
         position_ = position_ * cos_angle + 
                    k_cross_pos * sin_angle + 
                    up_ * k_dot_pos * (1.0f - cos_angle);
-        glm::vec3 target = glm::vec3(0.0f, 0.0f, 0.0f);
-        forward_ = glm::normalize(target - position_);
+        forward_ = glm::normalize(orbit_target_ - position_);
         right_ = glm::normalize(glm::cross(forward_, up_));
         last_orbit_time_ = now;
+    }
+}
+void Camera::set_orbit(glm::vec3 target) {
+    orbit_target_ = target;
+    last_orbit_time_ = std::chrono::system_clock::now().time_since_epoch().count();
+}
+void Camera::remove_orbit() {
+    last_orbit_time_ = std::numeric_limits<std::int64_t>::max();
+}
+void Camera::rotate(float angle_x, float angle_y) {
+    // float cos_x = std::cos(angle_x);
+    // float sin_x = std::sin(angle_x);
+    // float cos_y = std::cos(angle_y);
+    // float sin_y = std::sin(angle_y);
+    // glm::vec3 new_forward = forward_ * cos_x + right_ * sin_x;
+    // glm::vec3 k_cross = glm::cross(up_, new_forward);
+    // float k_dot = glm::dot(up_, new_forward);
+    // new_forward = new_forward * cos_y + k_cross * sin_y + up_ * k_dot * (1.0f - cos_y);
+    // forward_ = glm::normalize(new_forward);
+    // right_ = glm::normalize(glm::cross(forward_, up_));
+    forward_ = glm::normalize(
+        forward_ * std::cos(angle_x) + right_ * std::sin(angle_x));
+    right_ = glm::normalize(glm::cross(forward_, up_));
+    forward_ = glm::normalize(
+        forward_ * std::cos(-angle_y) + up_ * std::sin(-angle_y));
+    up_ = glm::normalize(glm::cross(right_, forward_));
+    std::cout << "Camera rotated. New forward vector: (" 
+              << forward_.x << ", " << forward_.y << ", " << forward_.z << ")\n";
+}
+void Camera::handle_event(const SDL_Event& event) {
+    if (event.type == SDL_KEYDOWN) {
+        constexpr float move_step = 0.1f;
+        switch (event.key.keysym.sym) {
+        case SDLK_w:
+            position_ += up_ * move_step;
+            break;
+        case SDLK_s:
+            position_ -= up_ * move_step;
+            break;
+        case SDLK_a:
+            position_ -= right_ * move_step;
+            break;
+        case SDLK_d:
+            position_ += right_ * move_step;
+            break;
+        case SDLK_q:
+            position_ += forward_ * move_step;
+            break;
+        case SDLK_e:
+            position_ -= forward_ * move_step;
+            break;
+        case SDLK_UP:
+            rotate(0.0f, -glm::radians(1.0f));
+            break;
+        case SDLK_DOWN:
+            rotate(0.0f, glm::radians(1.0f));
+            break;
+        case SDLK_LEFT:
+            rotate(-glm::radians(1.0f), 0.0f);
+            break;
+        case SDLK_RIGHT:
+            rotate(glm::radians(1.0f), 0.0f);
+            break;
+        case SDLK_o:
+            if (last_orbit_time_ == std::numeric_limits<std::int64_t>::max()) {
+                last_orbit_time_ = std::chrono::system_clock::now().time_since_epoch().count();
+            } else {
+                last_orbit_time_ = std::numeric_limits<std::int64_t>::max();
+            }
+        }
     }
 }
 
@@ -236,10 +304,7 @@ void World::draw(DrawingWindow& window) {
 }
 void World::handle_event(const SDL_Event& event, DrawingWindow& window) {
     if (event.type == SDL_KEYDOWN) {
-        if (event.key.keysym.sym == SDLK_LEFT) std::cout << "LEFT" << std::endl;
-        else if (event.key.keysym.sym == SDLK_RIGHT) std::cout << "RIGHT" << std::endl;
-        else if (event.key.keysym.sym == SDLK_UP) std::cout << "UP" << std::endl;
-        else if (event.key.keysym.sym == SDLK_DOWN) std::cout << "DOWN" << std::endl;
+        camera_.handle_event(event);
     } else if (event.type == SDL_MOUSEBUTTONDOWN) {
         window.savePPM("output.ppm");
         window.saveBMP("output.bmp");

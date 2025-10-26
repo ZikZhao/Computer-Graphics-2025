@@ -30,7 +30,7 @@ public:
     ZBuffer() = default;
     ZBuffer(size_t width, size_t height);
     ZBuffer& reset(size_t width, size_t height);
-    bool replace_if_closer(size_t x, size_t y, float z_ndc);
+    bool replace_if_closer(std::int64_t x, std::int64_t y, float z_ndc);
 };
 
 class Camera {
@@ -41,12 +41,15 @@ public:
     glm::vec3 forward_ = { 0.0f, 0.0f, -1.0f };
     glm::vec3 up_ = { 0.0f, 1.0f, 0.0f };
     glm::vec3 right_ = glm::normalize(glm::cross(forward_, up_));
+    glm::vec3 orbit_target_ = { 0.0f, 0.0f, 0.0f };
     std::int64_t last_orbit_time_ = std::chrono::system_clock::now().time_since_epoch().count();
     double fov = 45.0;
     Camera() = default;
-    Camera(const glm::vec3& position, const glm::vec3& forward, const glm::vec3& up);
-    void transform(glm::mat3x3 transformation);
     void orbiting();
+    void set_orbit(glm::vec3 target);
+    void remove_orbit();
+    void rotate(float angle_x, float angle_y);
+    void handle_event(const SDL_Event& event);
 };
 
 class Face {

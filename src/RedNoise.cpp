@@ -13,8 +13,6 @@
 #define WIDTH 1920
 #define HEIGHT 1080
 
-constexpr double ratio = static_cast<double>(WIDTH) / static_cast<double>(HEIGHT);
-
 int main(int argc, char *argv[]) {
 	DrawingWindow window = DrawingWindow(WIDTH, HEIGHT, false);
     World world;
