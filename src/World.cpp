@@ -124,24 +124,12 @@ void Camera::remove_orbit() {
     last_orbit_time_ = std::numeric_limits<std::int64_t>::max();
 }
 void Camera::rotate(float angle_x, float angle_y) {
-    // float cos_x = std::cos(angle_x);
-    // float sin_x = std::sin(angle_x);
-    // float cos_y = std::cos(angle_y);
-    // float sin_y = std::sin(angle_y);
-    // glm::vec3 new_forward = forward_ * cos_x + right_ * sin_x;
-    // glm::vec3 k_cross = glm::cross(up_, new_forward);
-    // float k_dot = glm::dot(up_, new_forward);
-    // new_forward = new_forward * cos_y + k_cross * sin_y + up_ * k_dot * (1.0f - cos_y);
-    // forward_ = glm::normalize(new_forward);
-    // right_ = glm::normalize(glm::cross(forward_, up_));
     forward_ = glm::normalize(
         forward_ * std::cos(angle_x) + right_ * std::sin(angle_x));
     right_ = glm::normalize(glm::cross(forward_, up_));
     forward_ = glm::normalize(
         forward_ * std::cos(-angle_y) + up_ * std::sin(-angle_y));
     up_ = glm::normalize(glm::cross(right_, forward_));
-    std::cout << "Camera rotated. New forward vector: (" 
-              << forward_.x << ", " << forward_.y << ", " << forward_.z << ")\n";
 }
 void Camera::handle_event(const SDL_Event& event) {
     if (event.type == SDL_KEYDOWN) {
