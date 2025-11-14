@@ -10,37 +10,30 @@
 #include "DrawingWindow.h"
 #include "Utils.h"
 
-class ZBuffer;
+using FloatType = decltype(std::declval<glm::vec3>().x);
+
+struct ScreenNdcCoord {
+    FloatType x;
+    FloatType y;
+    FloatType z_ndc;
+};
 
 template<typename T>
 constexpr auto Clamp(T value, T min, T max) {
     return (value < min) ? min : (value > max) ? max : value;
 }
 
-float ComputeZndc(std::array<float, 3> bary, std::array<float, 3> vertices_z_view);
+float ComputeZndc(std::array<FloatType, 3> bary, std::array<FloatType, 3> vertices_z_view);
 
-float ComputeZndc(float progress, std::array<float, 2> vertices_z_view);
-
-void StrokeLine(DrawingWindow& window, ZBuffer& z_buffer, glm::vec3 from, glm::vec3 to, std::uint32_t colour);
-
-void FillTriangle(DrawingWindow& window, ZBuffer& z_buffer, glm::vec3 v0, glm::vec3 v1, glm::vec3 v2, std::uint32_t colour);
+float ComputeZndc(float progress, std::array<FloatType, 2> vertices_z_view);
 
 struct Colour {
     std::uint8_t red;
     std::uint8_t green;
     std::uint8_t blue;
-};
-
-class ZBuffer {
-private:
-    std::vector<float> buffer_;
-    std::size_t width_ = 0;
-    std::size_t height_ = 0;
-public:
-    ZBuffer() = default;
-    ZBuffer(std::size_t width, std::size_t height);
-    ZBuffer& reset(std::size_t width, std::size_t height);
-    bool replace_if_closer(std::int64_t x, std::int64_t y, float z_ndc);
+    constexpr operator std::uint32_t () const {
+        return (255 << 24) + (red << 16) + (green << 8) + blue;
+    }
 };
 
 class Camera {
@@ -48,13 +41,16 @@ public:
     static constexpr std::int64_t OrbitInterval = 1'000'000'000 / 60; // 60 FPS
 public:
     glm::vec3 position_ = { 0.0f, 0.0f, 4.0f };
-    glm::vec3 forward_ = { 0.0f, 0.0f, -1.0f };
-    glm::vec3 up_ = { 0.0f, 1.0f, 0.0f };
-    glm::vec3 right_ = glm::normalize(glm::cross(forward_, up_));
+    glm::mat3 orientation_ = glm::mat3(
+        glm::vec3(1.0f, 0.0f, 0.0f),  // right
+        glm::vec3(0.0f, 1.0f, 0.0f),  // up
+        glm::vec3(0.0f, 0.0f, -1.0f)  // forward
+    );
     glm::vec3 orbit_target_ = { 0.0f, 0.0f, 0.0f };
     std::int64_t last_orbit_time_ = std::chrono::system_clock::now().time_since_epoch().count();
     double fov = 45.0;
     Camera() = default;
+    glm::vec3 world_to_ndc(const glm::vec3& vertex, double aspect_ratio) const noexcept;
     void orbiting();
     void set_orbit(glm::vec3 target);
     void stop_orbit();
@@ -62,18 +58,13 @@ public:
     void handle_event(const SDL_Event& event);
 };
 
-class Face {
-public:
-    std::array<glm::vec3, 3> vertices_;
-    const Colour colour_;
-    Face(glm::vec3 v1, glm::vec3 v2, glm::vec3 v3, Colour c) : vertices_{{ v1, v2, v3 }}, colour_(c) {}
-    Face(const std::array<glm::vec3, 3>& verts, Colour c) : vertices_(verts), colour_(c) {}
-    std::array<glm::vec3, 3> to_ndc(const DrawingWindow& window, const Camera& camera) const;
-    std::array<glm::vec3, 3> to_screen(const DrawingWindow& window, const std::array<glm::vec3, 3>& ndc) const;
-    void draw(DrawingWindow& window, const Camera& camera, ZBuffer& z_buffer) const;
+struct Face {
+    std::array<glm::vec3, 3> vertices;
+    Colour colour;
 };
 
 class Object {
+    friend class World;
 private:
     std::string name_;
     Colour colour_;
@@ -82,7 +73,29 @@ public:
     Object(const std::string& name);
     void set_colour(const Colour& colour);
     void add_face(const glm::vec3& v1, const glm::vec3& v2, const glm::vec3& v3);
-    void draw(DrawingWindow& window, const Camera& camera, ZBuffer& z_buffer) const;
+};
+
+class Renderer {
+public:
+    enum Mode {
+        Wireframe,
+        Rasterized,
+        Raytraced,
+    };
+private:
+    DrawingWindow& window_;
+    Mode mode_ = Rasterized;
+    std::vector<float> z_buffer_;
+public:
+    Renderer(DrawingWindow& window) noexcept;
+    void clear() noexcept;
+    ScreenNdcCoord ndc_to_screen(const glm::vec3& ndc) const noexcept;
+    void render(const Camera& camera, const Face& face) noexcept;
+    void handle_event(const SDL_Event& event) noexcept;
+private:
+    void wireframe_render(const Camera& camera, const Face& face) noexcept;
+    void rasterized_render(const Camera& camera, const Face& face) noexcept;
+    void raytraced_render(const Camera& camera, const Face& face) noexcept;
 };
 
 class World {
@@ -91,11 +104,11 @@ private:
     std::vector<glm::vec3> vertices_;
     std::vector<Object> objects_;
     Camera camera_;
-    ZBuffer z_buffer_;
 public:
+    World() noexcept = default;
     void load_file(std::string filename);
-    void draw(DrawingWindow& window);
-    void handle_event(const SDL_Event& event, DrawingWindow& window);
+    void draw(Renderer& renderer) const noexcept;
+    void handle_event(const SDL_Event& event) noexcept;
 private:
     void load_materials(std::string filename);
 };

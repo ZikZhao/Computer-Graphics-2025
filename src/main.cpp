@@ -11,16 +11,25 @@
 #define HEIGHT 1080
 
 int main(int argc, char *argv[]) {
+    assert(argc >= 2 && "Please provide a .obj file as a command line argument.");
+
 	DrawingWindow window = DrawingWindow(WIDTH, HEIGHT, false);
     World world;
-    world.load_file("../model/cornell-box.obj");
+    world.load_file(argv[1]);
+    Renderer renderer(window);
+
 	SDL_Event event;
 	while (true) {
-		// We MUST poll for events - otherwise the window will freeze !
-		if (window.pollForInputEvents(event)) world.handle_event(event, window);
+		while (window.pollForInputEvents(event)) {
+            if (event.type == SDL_QUIT || (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE)) {
+                window.exitCleanly();
+                return 0;
+            }
+            world.handle_event(event);
+            renderer.handle_event(event);
+        }
         window.clearPixels();
-        world.draw(window);
-		// Need to draw the frame at the end, or nothing actually gets shown on the screen !
+        world.draw(renderer);
 		window.renderFrame();
 	}
 }

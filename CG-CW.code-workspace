@@ -1,0 +1,171 @@
+{
+    "folders": [
+        {
+            "path": "."
+        }
+    ],
+    "settings": {
+        "files.associations": {
+            "*.hpp": "cpp",
+            "*.cpp": "cpp",
+            "array": "cpp",
+            "atomic": "cpp",
+            "bit": "cpp",
+            "cctype": "cpp",
+            "charconv": "cpp",
+            "chrono": "cpp",
+            "clocale": "cpp",
+            "cmath": "cpp",
+            "codecvt": "cpp",
+            "compare": "cpp",
+            "concepts": "cpp",
+            "cstdarg": "cpp",
+            "cstddef": "cpp",
+            "cstdint": "cpp",
+            "cstdio": "cpp",
+            "cstdlib": "cpp",
+            "cstring": "cpp",
+            "ctime": "cpp",
+            "cwchar": "cpp",
+            "cwctype": "cpp",
+            "deque": "cpp",
+            "map": "cpp",
+            "string": "cpp",
+            "unordered_map": "cpp",
+            "vector": "cpp",
+            "exception": "cpp",
+            "algorithm": "cpp",
+            "functional": "cpp",
+            "iterator": "cpp",
+            "memory": "cpp",
+            "memory_resource": "cpp",
+            "numeric": "cpp",
+            "optional": "cpp",
+            "random": "cpp",
+            "ratio": "cpp",
+            "string_view": "cpp",
+            "system_error": "cpp",
+            "tuple": "cpp",
+            "type_traits": "cpp",
+            "utility": "cpp",
+            "format": "cpp",
+            "fstream": "cpp",
+            "initializer_list": "cpp",
+            "iomanip": "cpp",
+            "iosfwd": "cpp",
+            "iostream": "cpp",
+            "istream": "cpp",
+            "limits": "cpp",
+            "new": "cpp",
+            "numbers": "cpp",
+            "ostream": "cpp",
+            "span": "cpp",
+            "sstream": "cpp",
+            "stdexcept": "cpp",
+            "streambuf": "cpp",
+            "cinttypes": "cpp",
+            "typeinfo": "cpp",
+            "variant": "cpp",
+            "text_encoding": "cpp"
+        }
+    },
+    "launch": {
+        "version": "0.2.0",
+        "configurations": [
+            {
+                "name": "Debug CG-CW",
+                "type": "cppdbg",
+                "request": "launch",
+                "program": "${workspaceFolder}/build/CG-CW",
+                "args": [],
+                "stopAtEntry": false,
+                "cwd": "${workspaceFolder}/build",
+                "environment": [],
+                "externalConsole": false,
+                "MIMode": "gdb",
+                "setupCommands": [
+                    {
+                        "description": "Enable pretty-printing for gdb",
+                        "text": "-enable-pretty-printing",
+                        "ignoreFailures": true
+                    },
+                    {
+                        "description": "Set Disassembly Flavor to Intel",
+                        "text": "-gdb-set disassembly-flavor intel",
+                        "ignoreFailures": true
+                    }
+                ],
+                "preLaunchTask": "Build Debug",
+                "miDebuggerPath": "/usr/bin/gdb"
+            }
+        ]
+    },
+    "tasks": {
+        "version": "2.0.0",
+        "tasks": [
+            {
+                "label": "Build Debug",
+                "type": "shell",
+                "command": "cmake",
+                "args": [
+                    "--build",
+                    "build",
+                    "--target",
+                    "CG-CW",
+                    "--config",
+                    "Debug",
+                    "-j",
+                    "$(nproc)"
+                ],
+                "group": {
+                    "kind": "build",
+                    "isDefault": true
+                },
+                "problemMatcher": ["$gcc"],
+                "detail": "Build project in Debug mode"
+            },
+            {
+                "label": "Build Release",
+                "type": "shell",
+                "command": "cmake",
+                "args": [
+                    "--build",
+                    "build",
+                    "--target",
+                    "CG-CW",
+                    "--config",
+                    "Release",
+                    "-j",
+                    "$(nproc)"
+                ],
+                "group": "build",
+                "problemMatcher": ["$gcc"],
+                "detail": "Build project in Release mode"
+            },
+            {
+                "label": "Configure Debug",
+                "type": "shell",
+                "command": "cmake",
+                "args": [
+                    "-Bbuild",
+                    "-H.",
+                    "-DCMAKE_BUILD_TYPE=Debug"
+                ],
+                "problemMatcher": [],
+                "detail": "Generate Debug build configuration"
+            },
+            {
+                "label": "Configure Release",
+                "type": "shell",
+                "command": "cmake",
+                "args": [
+                    "-Bbuild",
+                    "-H.",
+                    "-DCMAKE_BUILD_TYPE=Release"
+                ],
+                "problemMatcher": [],
+                "detail": "Generate Release build configuration"
+            }
+        ]
+    }
+}
