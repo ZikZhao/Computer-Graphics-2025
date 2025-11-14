@@ -8,7 +8,7 @@
 #include "ModelTriangle.h"
 #include "Colour.h"
 #include "Utils.h"
-#include "World.h"
+#include "world.hpp"
 
 #define WIDTH 1920
 #define HEIGHT 1080

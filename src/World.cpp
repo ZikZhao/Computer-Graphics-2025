@@ -1,4 +1,4 @@
-#include "World.h"
+#include "world.hpp"
 
 float ComputeZndc(glm::vec3 bary, glm::vec3 vertices_z_view) {
     float inv_z = bary.x / vertices_z_view.x + bary.y / vertices_z_view.y + bary.z / vertices_z_view.z;
