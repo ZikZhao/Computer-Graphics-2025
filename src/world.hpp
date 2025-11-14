@@ -6,36 +6,46 @@
 #include <stdexcept>
 #include <memory>
 #include <chrono>
+#include <array>
 #include "DrawingWindow.h"
-#include "ModelTriangle.h"
-#include "Colour.h"
 #include "Utils.h"
 
 class ZBuffer;
 
-float ComputeZndc(glm::vec3 bary, glm::vec3 vertices_z_view);
+template<typename T>
+constexpr auto Clamp(T value, T min, T max) {
+    return (value < min) ? min : (value > max) ? max : value;
+}
 
-float ComputeZndc(float progress, glm::vec2 vertices_z_view);
+float ComputeZndc(std::array<float, 3> bary, std::array<float, 3> vertices_z_view);
+
+float ComputeZndc(float progress, std::array<float, 2> vertices_z_view);
 
 void StrokeLine(DrawingWindow& window, ZBuffer& z_buffer, glm::vec3 from, glm::vec3 to, std::uint32_t colour);
 
 void FillTriangle(DrawingWindow& window, ZBuffer& z_buffer, glm::vec3 v0, glm::vec3 v1, glm::vec3 v2, std::uint32_t colour);
 
+struct Colour {
+    std::uint8_t red;
+    std::uint8_t green;
+    std::uint8_t blue;
+};
+
 class ZBuffer {
 private:
     std::vector<float> buffer_;
-    size_t width_ = 0;
-    size_t height_ = 0;
+    std::size_t width_ = 0;
+    std::size_t height_ = 0;
 public:
     ZBuffer() = default;
-    ZBuffer(size_t width, size_t height);
-    ZBuffer& reset(size_t width, size_t height);
+    ZBuffer(std::size_t width, std::size_t height);
+    ZBuffer& reset(std::size_t width, std::size_t height);
     bool replace_if_closer(std::int64_t x, std::int64_t y, float z_ndc);
 };
 
 class Camera {
 public:
-    static constexpr std::int64_t OrbitInterval = 1000000000 / 60; // 60 FPS
+    static constexpr std::int64_t OrbitInterval = 1'000'000'000 / 60; // 60 FPS
 public:
     glm::vec3 position_ = { 0.0f, 0.0f, 4.0f };
     glm::vec3 forward_ = { 0.0f, 0.0f, -1.0f };
@@ -47,7 +57,7 @@ public:
     Camera() = default;
     void orbiting();
     void set_orbit(glm::vec3 target);
-    void remove_orbit();
+    void stop_orbit();
     void rotate(float angle_x, float angle_y);
     void handle_event(const SDL_Event& event);
 };
@@ -77,12 +87,15 @@ public:
 
 class World {
 private:
+    std::map<std::string, Colour> materials_;
     std::vector<glm::vec3> vertices_;
     std::vector<Object> objects_;
     Camera camera_;
     ZBuffer z_buffer_;
 public:
-    void LoadFromFile(const std::string& filename);
+    void load_file(std::string filename);
     void draw(DrawingWindow& window);
     void handle_event(const SDL_Event& event, DrawingWindow& window);
+private:
+    void load_materials(std::string filename);
 };

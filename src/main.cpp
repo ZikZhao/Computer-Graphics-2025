@@ -5,9 +5,6 @@
 #include <stdexcept>
 #include <memory>
 #include "DrawingWindow.h"
-#include "ModelTriangle.h"
-#include "Colour.h"
-#include "Utils.h"
 #include "world.hpp"
 
 #define WIDTH 1920
@@ -16,7 +13,7 @@
 int main(int argc, char *argv[]) {
 	DrawingWindow window = DrawingWindow(WIDTH, HEIGHT, false);
     World world;
-    world.LoadFromFile("../model/cornell-box.obj");
+    world.load_file("../model/cornell-box.obj");
 	SDL_Event event;
 	while (true) {
 		// We MUST poll for events - otherwise the window will freeze !

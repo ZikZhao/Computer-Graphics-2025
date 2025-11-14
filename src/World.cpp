@@ -1,13 +1,15 @@
 #include "world.hpp"
 
-float ComputeZndc(glm::vec3 bary, glm::vec3 vertices_z_view) {
-    float inv_z = bary.x / vertices_z_view.x + bary.y / vertices_z_view.y + bary.z / vertices_z_view.z;
+float ComputeZndc(std::array<float, 3> bary, std::array<float, 3> vertices_z_view) {
+    float inv_z = bary[0] / vertices_z_view[0] +
+                  bary[1] / vertices_z_view[1] +
+                  bary[2] / vertices_z_view[2];
     return 1.0f / inv_z;
 }
 
-float ComputeZndc(float progress, glm::vec2 vertices_z_view) {
-    float inv_z = (1.0f - progress) / vertices_z_view.x + progress / vertices_z_view.y;
-    return 1.0f / inv_z - 0.01;
+float ComputeZndc(float progress, std::array<float, 2> vertices_z_view) {
+    float inv_z = (1.0f - progress) / vertices_z_view[0] + progress / vertices_z_view[1];
+    return 1.0f / inv_z;
 }
 
 void StrokeLine(DrawingWindow& window, ZBuffer& z_buffer, glm::vec3 from, glm::vec3 to, std::uint32_t colour) {
@@ -17,7 +19,7 @@ void StrokeLine(DrawingWindow& window, ZBuffer& z_buffer, glm::vec3 from, glm::v
         for (std::size_t x = from_x; x <= to_x; x++) {
             std::int64_t y = static_cast<std::int64_t>(std::round(from.y + (to.y - from.y) * (x - from.x) / (to.x - from.x)));
             float progress = (to.x == from.x) ? 0.0f : static_cast<float>(x - from.x) / static_cast<float>(to.x - from.x);
-            if (z_buffer.replace_if_closer(x, y, ComputeZndc(progress, glm::vec2(from.z, to.z)))) {
+            if (z_buffer.replace_if_closer(x, y, ComputeZndc(progress, std::array<float, 2>{from.z, to.z}))) {
                 window.setPixelColour(x, y, colour);
             }
         }
@@ -27,7 +29,7 @@ void StrokeLine(DrawingWindow& window, ZBuffer& z_buffer, glm::vec3 from, glm::v
         for (std::size_t y = from_y; y <= to_y; y++) {
             std::int64_t x = static_cast<std::int64_t>(std::round(from.x + (to.x - from.x) * (y - from.y) / (to.y - from.y)));
             float progress = (to.y == from.y) ? 0.0f : static_cast<float>(y - from.y) / static_cast<float>(to.y - from.y);
-            if (z_buffer.replace_if_closer(x, y, ComputeZndc(progress, glm::vec2(from.z, to.z)))) {
+            if (z_buffer.replace_if_closer(x, y, ComputeZndc(progress, std::array<float, 2>{from.z, to.z}))) {
                 window.setPixelColour(x, y, colour);
             }
         }
@@ -51,12 +53,12 @@ void FillTriangle(DrawingWindow& window, ZBuffer& z_buffer, glm::vec3 v0, glm::v
         float x01 = inv_slope_v0v1 * (y - v0.y) + v0.x;
         float x02 = inv_slope_v0v2 * (y - v0.y) + v0.x;
 
-        std::size_t start_x = std::max<std::size_t>(static_cast<std::size_t>(std::round(std::min(x01, x02))), 0);
-        std::size_t end_x = std::min(static_cast<std::size_t>(std::round(std::max(x01, x02))), window.width - 1);
-        for (std::size_t x = start_x; x <= end_x; x++) {
+        std::size_t start_x = std::max<std::int64_t>(std::round(std::min(x01, x02)), 0);
+        std::size_t end_x = std::min<std::size_t>(std::round(std::max(x01, x02)), window.width);
+        for (std::size_t x = start_x; x < end_x; x++) {
             glm::vec3 bary = convertToBarycentricCoordinates(
                 { v0.x, v0.y }, { v1.x, v1.y }, { v2.x, v2.y }, { static_cast<float>(x), static_cast<float>(y) });
-            float z_ndc = ComputeZndc(glm::vec3(bary.z, bary.x, bary.y), { v0.z, v1.z, v2.z });
+            float z_ndc = ComputeZndc(std::array<float, 3>{bary.z, bary.x, bary.y}, std::array<float, 3>{ v0.z, v1.z, v2.z });
             if (z_buffer.replace_if_closer(x, y, z_ndc)) {
                 window.setPixelColour(x, y, colour);
             }
@@ -67,12 +69,12 @@ void FillTriangle(DrawingWindow& window, ZBuffer& z_buffer, glm::vec3 v0, glm::v
         float x12 = inv_slope_v1v2 * (y - v1.y) + v1.x;
         float x02 = inv_slope_v0v2 * (y - v0.y) + v0.x;
 
-        std::size_t start_x = std::max<std::size_t>(static_cast<std::size_t>(std::round(std::min(x12, x02))), 0);
-        std::size_t end_x = std::min(static_cast<std::size_t>(std::round(std::max(x12, x02))), window.width - 1);
-        for (std::size_t x = start_x; x <= end_x; x++) {
+        std::size_t start_x = std::max<std::int64_t>(std::round(std::min(x12, x02)), 0);
+        std::size_t end_x = std::min<std::size_t>(std::round(std::max(x12, x02)), window.width);
+        for (std::size_t x = start_x; x < end_x; x++) {
             glm::vec3 bary = convertToBarycentricCoordinates(
                 { v0.x, v0.y }, { v1.x, v1.y }, { v2.x, v2.y }, { static_cast<float>(x), static_cast<float>(y) });
-            float z_ndc = ComputeZndc(glm::vec3(bary.z, bary.x, bary.y), { v0.z, v1.z, v2.z });
+            float z_ndc = ComputeZndc(std::array<float, 3>{bary.z, bary.x, bary.y}, std::array<float, 3>{ v0.z, v1.z, v2.z });
             if (z_buffer.replace_if_closer(x, y, z_ndc)) {
                 window.setPixelColour(x, y, colour);
             }
@@ -80,9 +82,9 @@ void FillTriangle(DrawingWindow& window, ZBuffer& z_buffer, glm::vec3 v0, glm::v
     }
 }
 
-ZBuffer::ZBuffer(size_t width, size_t height)
+ZBuffer::ZBuffer(std::size_t width, std::size_t height)
     : buffer_(width * height, std::numeric_limits<float>::infinity()), width_(width), height_(height) {}
-ZBuffer& ZBuffer::reset(size_t width, size_t height) {
+ZBuffer& ZBuffer::reset(std::size_t width, std::size_t height) {
     width_ = width;
     height_ = height;
     buffer_.assign(width * height, std::numeric_limits<float>::infinity());
@@ -120,7 +122,7 @@ void Camera::set_orbit(glm::vec3 target) {
     orbit_target_ = target;
     last_orbit_time_ = std::chrono::system_clock::now().time_since_epoch().count();
 }
-void Camera::remove_orbit() {
+void Camera::stop_orbit() {
     last_orbit_time_ = std::numeric_limits<std::int64_t>::max();
 }
 void Camera::rotate(float angle_x, float angle_y) {
@@ -225,7 +227,7 @@ std::array<glm::vec3, 3> Face::to_screen(const DrawingWindow& window, const std:
     return screen;
 }
 
-Object::Object(const std::string& name) : name_(name), colour_(255, 255, 255) {}
+Object::Object(const std::string& name) : name_(name), colour_{255, 255, 255} {}
 void Object::set_colour(const Colour& colour) {
     colour_ = colour;
 }
@@ -238,8 +240,8 @@ void Object::draw(DrawingWindow& window, const Camera& camera, ZBuffer& z_buffer
     }
 }
 
-void World::LoadFromFile(const std::string& filename) {
-    decltype(objects_)::iterator current_obj = objects_.end();
+void World::load_file(std::string filename) {
+    auto current_obj = objects_.end();
     std::ifstream file(filename);
     if (!file.is_open()) {
         throw std::runtime_error("Could not open file: " + filename);
@@ -249,7 +251,12 @@ void World::LoadFromFile(const std::string& filename) {
         std::istringstream iss(line);
         std::string type;
         iss >> type;
-        if (type == "o") {
+        if (type == "mtllib") {
+            std::string relative_path;
+            iss >> relative_path;
+            std::string material_filename = filename.substr(0, filename.find_last_of("/\\") + 1) + relative_path;
+            load_materials(std::move(material_filename));
+        } else if (type == "o") {
             std::string name;
             iss >> name;
             objects_.emplace_back(name);
@@ -258,18 +265,10 @@ void World::LoadFromFile(const std::string& filename) {
             assert(current_obj != objects_.end());
             std::string colour_name;
             iss >> colour_name;
-            Colour colour;
-            if (colour_name == "Red") colour = Colour(255, 0, 0);
-            else if (colour_name == "Green") colour = Colour(0, 255, 0);
-            else if (colour_name == "Blue") colour = Colour(0, 0, 255);
-            else if (colour_name == "Yellow") colour = Colour(255, 255, 0);
-            else if (colour_name == "Magenta") colour = Colour(255, 0, 255);
-            else if (colour_name == "Cyan") colour = Colour(0, 255, 255);
-            else if (colour_name == "Grey") colour = Colour(128, 128, 128);
-            else colour = Colour(255, 255, 255);
+            assert(materials_.find(colour_name) != materials_.end());
+            Colour colour = materials_[colour_name];
             current_obj->set_colour(colour);
-        }
-        else if (type == "v") {
+        } else if (type == "v") {
             assert(current_obj != objects_.end());
             float x, y, z;
             iss >> x >> y >> z;
@@ -296,5 +295,33 @@ void World::handle_event(const SDL_Event& event, DrawingWindow& window) {
     } else if (event.type == SDL_MOUSEBUTTONDOWN) {
         window.savePPM("output.ppm");
         window.saveBMP("output.bmp");
+    }
+}
+void World::load_materials(std::string filename) {
+    auto current_material = materials_.end();
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        throw std::runtime_error("Could not open material file: " + filename);
+    }
+    std::string line;
+    while (std::getline(file, line)) {
+        std::istringstream iss(line);
+        std::string type;
+        iss >> type;
+        if (type == "newmtl") {
+            std::string name;
+            iss >> name;
+            assert(materials_.find(name) == materials_.end());
+            current_material = materials_.emplace(name, Colour{255, 255, 255}).first;
+        } else if (type == "Kd") {
+            assert(current_material != materials_.end());
+            float r, g, b;
+            iss >> r >> g >> b;
+            current_material->second = Colour{
+                static_cast<std::uint8_t>(Clamp(r * 255.0f, 0.0f, 255.0f)),
+                static_cast<std::uint8_t>(Clamp(g * 255.0f, 0.0f, 255.0f)),
+                static_cast<std::uint8_t>(Clamp(b * 255.0f, 0.0f, 255.0f))
+            };
+        }
     }
 }
