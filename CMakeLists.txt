@@ -26,14 +26,14 @@ include_directories(${SDL2_INCLUDE_DIRS} ${GLM_INCLUDE_DIRS})
 include_directories(libs/sdw)
 
 add_executable(CG-CW
-        libs/sdw/CanvasPoint.cpp
-        libs/sdw/CanvasTriangle.cpp
-        libs/sdw/Colour.cpp
+        # libs/sdw/CanvasPoint.cpp
+        # libs/sdw/CanvasTriangle.cpp
+        # libs/sdw/Colour.cpp
         libs/sdw/DrawingWindow.cpp
-        libs/sdw/ModelTriangle.cpp
-        libs/sdw/RayTriangleIntersection.cpp
-        libs/sdw/TextureMap.cpp
-        libs/sdw/TexturePoint.cpp
+        # libs/sdw/ModelTriangle.cpp
+        # libs/sdw/RayTriangleIntersection.cpp
+        # libs/sdw/TextureMap.cpp
+        # libs/sdw/TexturePoint.cpp
         libs/sdw/Utils.cpp
         src/main.cpp
         src/world.cpp)

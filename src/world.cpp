@@ -77,6 +77,9 @@ void Camera::handle_event(const SDL_Event& event) {
         case SDLK_RIGHT:
             rotate(glm::radians(1.0f), 0.0f);
             return;
+        // case SDLK_t:
+        //     set_orbit(glm::vec3(0.0f, 0.0f, 0.0f));
+        //     return;
         case SDLK_o:
             if (last_orbit_time_ == std::numeric_limits<std::int64_t>::max()) {
                 last_orbit_time_ = std::chrono::system_clock::now().time_since_epoch().count();
@@ -88,20 +91,38 @@ void Camera::handle_event(const SDL_Event& event) {
         position_ += orientation_ * movement;
     }
 }
-glm::vec3 Camera::world_to_ndc(const glm::vec3& vertex, double aspect_ratio) const noexcept {
+glm::vec4 Camera::world_to_clip(const glm::vec3& vertex, double aspect_ratio) const noexcept {
+    // View transformation
     glm::vec3 view_vector = vertex - position_;
     glm::mat3 view_rotation = glm::transpose(orientation_);
     glm::vec3 view_space = view_rotation * view_vector;
-    if (view_space.z < NearPlane || view_space.z > FarPlane) {
-        return glm::vec3(0.0f, 0.0f, -1.0f);
-    }
+    
+    // In our coordinate system, positive view_space.z means in front of camera
+    float w = view_space.z;  // Distance from camera
+    
+    // Perspective projection (similar to original world_to_ndc but keep w separate)
     double fov_rad = glm::radians(FOV);
     double tan_half_fov = std::tan(fov_rad / 2.0);
-    return glm::vec3(
-        view_space.x / (view_space.z * tan_half_fov * aspect_ratio),
-        view_space.y / (view_space.z * tan_half_fov),
-        (FarPlane * (view_space.z - NearPlane)) / (view_space.z * (FarPlane - NearPlane))
+    
+    // Compute NDC x, y (but multiply by w to keep in clip space)
+    float x_ndc = view_space.x / (view_space.z * tan_half_fov * aspect_ratio);
+    float y_ndc = view_space.y / (view_space.z * tan_half_fov);
+    float z_ndc = (FarPlane * (view_space.z - NearPlane)) / ((view_space.z) * (FarPlane - NearPlane));
+    
+    // Return clip space: multiply NDC by w
+    return glm::vec4(
+        x_ndc * w,
+        y_ndc * w,
+        z_ndc * w,
+        w
     );
+}
+glm::vec3 Camera::clip_to_ndc(const glm::vec4& clip) const noexcept {
+    // Perspective division
+    if (std::abs(clip.w) < 1e-6f) {
+        return glm::vec3(0.0f, 0.0f, -1.0f);
+    }
+    return glm::vec3(clip) / clip.w;
 }
 
 Object::Object(const std::string& name) : name_(name), colour_{255, 255, 255} {}
@@ -125,6 +146,207 @@ ScreenNdcCoord Renderer::ndc_to_screen(const glm::vec3& ndc) const noexcept {
     };
 }
 
+bool Renderer::inside_plane(const glm::vec4& v, ClipPlane plane) noexcept {
+    // In clip space, frustum planes are: -w <= x,y,z <= w
+    // But since w can be negative (w = -z_view), we need to handle signs correctly
+    switch (plane) {
+        case ClipPlane::Left:   return v.x >= -std::abs(v.w);
+        case ClipPlane::Right:  return v.x <= std::abs(v.w);
+        case ClipPlane::Bottom: return v.y >= -std::abs(v.w);
+        case ClipPlane::Top:    return v.y <= std::abs(v.w);
+        case ClipPlane::Near:   return v.z >= -std::abs(v.w);
+        case ClipPlane::Far:    return v.z <= std::abs(v.w);
+    }
+    return false;
+}
+float Renderer::compute_intersection_t(const glm::vec4& v0, const glm::vec4& v1, ClipPlane plane) noexcept {
+    float d0, d1;
+    switch (plane) {
+        case ClipPlane::Left:
+            d0 = v0.x + std::abs(v0.w);
+            d1 = v1.x + std::abs(v1.w);
+            break;
+        case ClipPlane::Right:
+            d0 = std::abs(v0.w) - v0.x;
+            d1 = std::abs(v1.w) - v1.x;
+            break;
+        case ClipPlane::Bottom:
+            d0 = v0.y + std::abs(v0.w);
+            d1 = v1.y + std::abs(v1.w);
+            break;
+        case ClipPlane::Top:
+            d0 = std::abs(v0.w) - v0.y;
+            d1 = std::abs(v1.w) - v1.y;
+            break;
+        case ClipPlane::Near:
+            d0 = v0.z + std::abs(v0.w);
+            d1 = v1.z + std::abs(v1.w);
+            break;
+        case ClipPlane::Far:
+            d0 = std::abs(v0.w) - v0.z;
+            d1 = std::abs(v1.w) - v1.z;
+            break;
+        default:
+            return 0.0f;
+    }
+    
+    if (std::abs(d1 - d0) < 1e-6f) {
+        return 0.0f;
+    }
+    return d0 / (d0 - d1);
+}
+ClipVertex Renderer::intersect_plane(const ClipVertex& v0, const ClipVertex& v1, ClipPlane plane) noexcept {
+    float t = compute_intersection_t(v0.position_clip, v1.position_clip, plane);
+    return ClipVertex::lerp(v0, v1, t);
+}
+
+InplaceVector<ClipVertex, 9> Renderer::clip_against_plane(
+    const InplaceVector<ClipVertex, 9>& input,
+    ClipPlane plane) noexcept {
+
+    InplaceVector<ClipVertex, 9> output;
+    
+    if (input.size() == 0) return output;
+    
+    for (size_t i = 0; i < input.size(); i++) {
+        const ClipVertex& current = input[i];
+        const ClipVertex& next = input[(i + 1) % input.size()];
+        
+        bool current_inside = inside_plane(current.position_clip, plane);
+        bool next_inside = inside_plane(next.position_clip, plane);
+        
+        if (current_inside && next_inside) {
+            // Edge completely inside -> keep next vertex
+            output.push_back(next);
+        } 
+        else if (current_inside && !next_inside) {
+            // Exiting -> add intersection point
+            output.push_back(intersect_plane(current, next, plane));
+        } 
+        else if (!current_inside && next_inside) {
+            // Entering -> add intersection and next vertex
+            output.push_back(intersect_plane(current, next, plane));
+            output.push_back(next);
+        }
+        // Both outside -> skip
+    }
+    
+    return output;
+}
+InplaceVector<ClipVertex, 9> Renderer::clip_triangle(
+    const Camera& camera,
+    const Face& face) noexcept {
+
+    // Transform to clip space
+    InplaceVector<ClipVertex, 9> polygon = {
+        ClipVertex{camera.world_to_clip(face.vertices[0], aspect_ratio_), face.colour},
+        ClipVertex{camera.world_to_clip(face.vertices[1], aspect_ratio_), face.colour},
+        ClipVertex{camera.world_to_clip(face.vertices[2], aspect_ratio_), face.colour}
+    };
+    
+    // Clip against all 6 frustum planes
+    polygon = clip_against_plane(polygon, ClipPlane::Left);
+    if (polygon.size() < 3) return {};
+    
+    polygon = clip_against_plane(polygon, ClipPlane::Right);
+    if (polygon.size() < 3) return {};
+    
+    polygon = clip_against_plane(polygon, ClipPlane::Bottom);
+    if (polygon.size() < 3) return {};
+    
+    polygon = clip_against_plane(polygon, ClipPlane::Top);
+    if (polygon.size() < 3) return {};
+    
+    polygon = clip_against_plane(polygon, ClipPlane::Near);
+    if (polygon.size() < 3) return {};
+    
+    polygon = clip_against_plane(polygon, ClipPlane::Far);
+    
+    return polygon;
+}
+void Renderer::rasterize_polygon(
+    const InplaceVector<ClipVertex, 9>& polygon,
+    const Camera& camera) noexcept {
+
+    if (polygon.size() < 3) return;
+    
+    // Convert all vertices to screen space
+    InplaceVector<ScreenNdcCoord, 9> screen_verts;
+    for (size_t i = 0; i < polygon.size(); i++) {
+        glm::vec3 ndc = camera.clip_to_ndc(polygon[i].position_clip);
+        screen_verts.push_back(ndc_to_screen(ndc));
+    }
+    
+    // Triangle fan: (0, i, i+1) for i = 1..n-2
+    for (size_t i = 1; i + 1 < polygon.size(); i++) {
+        std::array<ScreenNdcCoord, 3> tri_screen = {
+            screen_verts[0],
+            screen_verts[i],
+            screen_verts[i + 1]
+        };
+        
+        std::uint32_t colour = polygon[0].colour;
+        
+        // Rasterize triangle using existing code
+        ScreenNdcCoord v0 = tri_screen[0];
+        ScreenNdcCoord v1 = tri_screen[1];
+        ScreenNdcCoord v2 = tri_screen[2];
+        
+        if (v0.y > v1.y) std::swap(v0, v1);
+        if (v0.y > v2.y) std::swap(v0, v2);
+        if (v1.y > v2.y) std::swap(v1, v2);
+
+        float from_y = std::max<float>(v0.y, 0);
+        float mid_y = std::min<float>(v1.y, window_.height - 1);
+        float to_y = std::min<float>(v2.y, window_.height - 1);
+
+        float inv_slope_v0v1 = (v1.y - v0.y) == 0 ? 0 : (v1.x - v0.x) / (v1.y - v0.y);
+        float inv_slope_v0v2 = (v2.y - v0.y) == 0 ? 0 : (v2.x - v0.x) / (v2.y - v0.y);
+        float inv_slope_v1v2 = (v2.y - v1.y) == 0 ? 0 : (v2.x - v1.x) / (v2.y - v1.y);
+
+        for (float y = from_y; y < mid_y; y++) {
+            float x01 = inv_slope_v0v1 * (y - v0.y) + v0.x;
+            float x02 = inv_slope_v0v2 * (y - v0.y) + v0.x;
+
+            std::size_t start_x = std::max<std::int64_t>(std::round(std::min(x01, x02)) - 1, 0);
+            std::size_t end_x = std::min<std::size_t>(std::round(std::max(x01, x02)), window_.width - 1);
+            for (std::size_t x = start_x; x <= end_x; x++) {
+                glm::vec3 bary = convertToBarycentricCoordinates(
+                    { v0.x, v0.y }, { v1.x, v1.y }, { v2.x, v2.y }, { static_cast<float>(x), static_cast<float>(y) });
+                float z_ndc = ComputeZndc(std::array<float, 3>{bary.z, bary.x, bary.y}, std::array<float, 3>{ v0.z_ndc, v1.z_ndc, v2.z_ndc });
+                std::int64_t yi = static_cast<std::int64_t>(y);
+                if (x < window_.width && yi >= 0 && yi < static_cast<std::int64_t>(window_.height)) {
+                    float& depth = z_buffer_[yi * window_.width + x];
+                    if (z_ndc >= 0.0f && z_ndc <= 1.0f && z_ndc < depth) {
+                        depth = z_ndc;
+                        window_.setPixelColour(x, yi, colour);
+                    }
+                }
+            }
+        }
+
+        for (float y = mid_y; y < to_y; y++) {
+            float x12 = inv_slope_v1v2 * (y - v1.y) + v1.x;
+            float x02 = inv_slope_v0v2 * (y - v0.y) + v0.x;
+
+            std::size_t start_x = std::max<std::int64_t>(std::round(std::min(x12, x02)) - 1, 0);
+            std::size_t end_x = std::min<std::size_t>(std::round(std::max(x12, x02)), window_.width - 1);
+            for (std::size_t x = start_x; x <= end_x; x++) {
+                glm::vec3 bary = convertToBarycentricCoordinates(
+                    { v0.x, v0.y }, { v1.x, v1.y }, { v2.x, v2.y }, { static_cast<float>(x), static_cast<float>(y) });
+                float z_ndc = ComputeZndc(std::array<float, 3>{bary.z, bary.x, bary.y}, std::array<float, 3>{ v0.z_ndc, v1.z_ndc, v2.z_ndc });
+                std::int64_t yi = static_cast<std::int64_t>(y);
+                if (x < window_.width && yi >= 0 && yi < static_cast<std::int64_t>(window_.height)) {
+                    float& depth = z_buffer_[yi * window_.width + x];
+                    if (z_ndc >= 0.0f && z_ndc <= 1.0f && z_ndc < depth) {
+                        depth = z_ndc;
+                        window_.setPixelColour(x, yi, colour);
+                    }
+                }
+            }
+        }
+    }
+}
 void Renderer::render(const Camera& camera, const Face& face) noexcept {
     aspect_ratio_ = static_cast<double>(window_.width) / window_.height;
     switch (mode_) {
@@ -155,15 +377,23 @@ void Renderer::handle_event(const SDL_Event& event) noexcept {
     }
 }
 void Renderer::wireframe_render(const Camera& camera, const Face& face) noexcept {
-    std::array<ScreenNdcCoord, 3> screen;
-    for (size_t i = 0; i < 3; i++) {
-        glm::vec3 ndc = camera.world_to_ndc(face.vertices[i], aspect_ratio_);
-        screen[i] = ndc_to_screen(ndc);
+    // Use clipping pipeline
+    auto clipped = clip_triangle(camera, face);
+    if (clipped.size() < 3) return;
+    
+    // Convert to screen space
+    InplaceVector<ScreenNdcCoord, 9> screen_verts;
+    for (size_t i = 0; i < clipped.size(); i++) {
+        glm::vec3 ndc = camera.clip_to_ndc(clipped[i].position_clip);
+        screen_verts.push_back(ndc_to_screen(ndc));
     }
     
-    for (size_t i = 0; i < 3; i++) {
-        ScreenNdcCoord from = screen[i];
-        ScreenNdcCoord to = screen[(i + 1) % 3];
+    std::uint32_t colour = clipped[0].colour;
+    
+    // Draw edges of the polygon
+    for (size_t i = 0; i < screen_verts.size(); i++) {
+        ScreenNdcCoord from = screen_verts[i];
+        ScreenNdcCoord to = screen_verts[(i + 1) % screen_verts.size()];
         
         if (std::abs(to.x - from.x) >= std::abs(to.y - from.y)) {
             std::size_t from_x = std::max<std::size_t>(static_cast<std::size_t>(std::min(from.x, to.x)), 0);
@@ -178,7 +408,7 @@ void Renderer::wireframe_render(const Camera& camera, const Face& face) noexcept
                 float& depth = z_buffer_[y * window_.width + x];
                 if (z_ndc >= 0.0f && z_ndc <= 1.0f && z_ndc < depth) {
                     depth = z_ndc;
-                    window_.setPixelColour(x, y, face.colour);
+                    window_.setPixelColour(x, y, colour);
                 }
             }
         } else {
@@ -194,81 +424,17 @@ void Renderer::wireframe_render(const Camera& camera, const Face& face) noexcept
                 float& depth = z_buffer_[y * window_.width + x];
                 if (z_ndc >= 0.0f && z_ndc <= 1.0f && z_ndc < depth) {
                     depth = z_ndc;
-                    window_.setPixelColour(x, y, face.colour);
+                    window_.setPixelColour(x, y, colour);
                 }
             }
         }
     }
 }
-
 void Renderer::rasterized_render(const Camera& camera, const Face& face) noexcept {
-    std::array<ScreenNdcCoord, 3> screen;
-    for (size_t i = 0; i < 3; i++) {
-        glm::vec3 ndc = camera.world_to_ndc(face.vertices[i], aspect_ratio_);
-        screen[i] = ndc_to_screen(ndc);
-    }
-    
-    std::uint32_t colour = face.colour;
-    
-    ScreenNdcCoord v0 = screen[0];
-    ScreenNdcCoord v1 = screen[1];
-    ScreenNdcCoord v2 = screen[2];
-    
-    if (v0.y > v1.y) std::swap(v0, v1);
-    if (v0.y > v2.y) std::swap(v0, v2);
-    if (v1.y > v2.y) std::swap(v1, v2);
-
-    float from_y = std::max<float>(v0.y, 0);
-    float mid_y = std::min<float>(v1.y, window_.height - 1);
-    float to_y = std::min<float>(v2.y, window_.height - 1);
-
-    float inv_slope_v0v1 = (v1.y - v0.y) == 0 ? 0 : (v1.x - v0.x) / (v1.y - v0.y);
-    float inv_slope_v0v2 = (v2.y - v0.y) == 0 ? 0 : (v2.x - v0.x) / (v2.y - v0.y);
-    float inv_slope_v1v2 = (v2.y - v1.y) == 0 ? 0 : (v2.x - v1.x) / (v2.y - v1.y);
-
-    for (float y = from_y; y < mid_y; y++) {
-        float x01 = inv_slope_v0v1 * (y - v0.y) + v0.x;
-        float x02 = inv_slope_v0v2 * (y - v0.y) + v0.x;
-
-        std::size_t start_x = std::max<std::int64_t>(std::round(std::min(x01, x02)) - 1, 0);
-        std::size_t end_x = std::min<std::size_t>(std::round(std::max(x01, x02)), window_.width - 1);
-        for (std::size_t x = start_x; x <= end_x; x++) {
-            glm::vec3 bary = convertToBarycentricCoordinates(
-                { v0.x, v0.y }, { v1.x, v1.y }, { v2.x, v2.y }, { static_cast<float>(x), static_cast<float>(y) });
-            float z_ndc = ComputeZndc(std::array<float, 3>{bary.z, bary.x, bary.y}, std::array<float, 3>{ v0.z_ndc, v1.z_ndc, v2.z_ndc });
-            std::int64_t yi = static_cast<std::int64_t>(y);
-            if (x < window_.width && yi >= 0 && yi < static_cast<std::int64_t>(window_.height)) {
-                float& depth = z_buffer_[yi * window_.width + x];
-                if (z_ndc >= 0.0f && z_ndc <= 1.0f && z_ndc < depth) {
-                    depth = z_ndc;
-                    window_.setPixelColour(x, yi, colour);
-                }
-            }
-        }
-    }
-
-    for (float y = mid_y; y < to_y; y++) {
-        float x12 = inv_slope_v1v2 * (y - v1.y) + v1.x;
-        float x02 = inv_slope_v0v2 * (y - v0.y) + v0.x;
-
-        std::size_t start_x = std::max<std::int64_t>(std::round(std::min(x12, x02)) - 1, 0);
-        std::size_t end_x = std::min<std::size_t>(std::round(std::max(x12, x02)), window_.width - 1);
-        for (std::size_t x = start_x; x <= end_x; x++) {
-            glm::vec3 bary = convertToBarycentricCoordinates(
-                { v0.x, v0.y }, { v1.x, v1.y }, { v2.x, v2.y }, { static_cast<float>(x), static_cast<float>(y) });
-            float z_ndc = ComputeZndc(std::array<float, 3>{bary.z, bary.x, bary.y}, std::array<float, 3>{ v0.z_ndc, v1.z_ndc, v2.z_ndc });
-            std::int64_t yi = static_cast<std::int64_t>(y);
-            if (x < window_.width && yi >= 0 && yi < static_cast<std::int64_t>(window_.height)) {
-                float& depth = z_buffer_[yi * window_.width + x];
-                if (z_ndc >= 0.0f && z_ndc <= 1.0f && z_ndc < depth) {
-                    depth = z_ndc;
-                    window_.setPixelColour(x, yi, colour);
-                }
-            }
-        }
-    }
+    // Use clipping pipeline and polygon rasterization
+    auto clipped = clip_triangle(camera, face);
+    rasterize_polygon(clipped, camera);
 }
-
 void Renderer::raytraced_render(const Camera& camera, const Face& face) noexcept {
     // Raytracing not implemented yet
 }
@@ -326,6 +492,9 @@ void World::draw(Renderer& renderer) const noexcept {
 }
 void World::handle_event(const SDL_Event& event) noexcept {
     camera_.handle_event(event);
+}
+void World::orbiting() noexcept {
+    camera_.orbiting();
 }
 void World::load_materials(std::string filename) {
     auto current_material = materials_.end();

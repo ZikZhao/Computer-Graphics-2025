@@ -36,7 +36,7 @@ private:
     std::size_t size_ = 0;
 public:
     constexpr InplaceVector() noexcept = default;
-    constexpr InplaceVector(std::initializer_list<T> init) : size_(init.size()) noexcept {
+    constexpr InplaceVector(std::initializer_list<T> init) noexcept : size_(init.size()) {
         assert(size_ <= N);
         std::copy(init.begin(), init.end(), std::begin(data_));
     }
@@ -49,10 +49,14 @@ public:
     constexpr const T& operator[](std::size_t index) const noexcept { return data_[index]; }
 };
 
-struct ScreenNdcCoord {
-    FloatType x;
-    FloatType y;
-    FloatType z_ndc;
+// Clipping planes for frustum
+enum class ClipPlane {
+    Left,   // x >= -w
+    Right,  // x <= w
+    Bottom, // y >= -w
+    Top,    // y <= w
+    Near,   // z >= 0
+    Far     // z <= w
 };
 
 struct Colour {
@@ -62,6 +66,30 @@ struct Colour {
     constexpr operator std::uint32_t () const {
         return (255 << 24) + (red << 16) + (green << 8) + blue;
     }
+};
+
+// Vertex in clip space with attributes
+struct ClipVertex {
+    glm::vec4 position_clip;  // Homogeneous clip space coordinates
+    Colour colour;
+    
+    // Linear interpolation of all attributes
+    static ClipVertex lerp(const ClipVertex& a, const ClipVertex& b, float t) noexcept {
+        return ClipVertex{
+            a.position_clip * (1.0f - t) + b.position_clip * t,
+            Colour{
+                static_cast<std::uint8_t>(a.colour.red * (1.0f - t) + b.colour.red * t),
+                static_cast<std::uint8_t>(a.colour.green * (1.0f - t) + b.colour.green * t),
+                static_cast<std::uint8_t>(a.colour.blue * (1.0f - t) + b.colour.blue * t)
+            }
+        };
+    }
+};
+
+struct ScreenNdcCoord {
+    FloatType x;
+    FloatType y;
+    FloatType z_ndc;
 };
 
 class Camera {
@@ -80,7 +108,8 @@ public:
     glm::vec3 orbit_target_ = { 0.0f, 0.0f, 0.0f };
     std::int64_t last_orbit_time_ = std::chrono::system_clock::now().time_since_epoch().count();
     Camera() = default;
-    glm::vec3 world_to_ndc(const glm::vec3& vertex, double aspect_ratio) const noexcept;
+    glm::vec4 world_to_clip(const glm::vec3& vertex, double aspect_ratio) const noexcept;
+    glm::vec3 clip_to_ndc(const glm::vec4& clip) const noexcept;
     void orbiting();
     void set_orbit(glm::vec3 target);
     void stop_orbit();
@@ -127,6 +156,14 @@ private:
     void wireframe_render(const Camera& camera, const Face& face) noexcept;
     void rasterized_render(const Camera& camera, const Face& face) noexcept;
     void raytraced_render(const Camera& camera, const Face& face) noexcept;
+    
+    // Clipping utilities
+    static bool inside_plane(const glm::vec4& v, ClipPlane plane) noexcept;
+    static float compute_intersection_t(const glm::vec4& v0, const glm::vec4& v1, ClipPlane plane) noexcept;
+    static ClipVertex intersect_plane(const ClipVertex& v0, const ClipVertex& v1, ClipPlane plane) noexcept;
+    static InplaceVector<ClipVertex, 9> clip_against_plane(const InplaceVector<ClipVertex, 9>& input, ClipPlane plane) noexcept;
+    InplaceVector<ClipVertex, 9> clip_triangle(const Camera& camera, const Face& face) noexcept;
+    void rasterize_polygon(const InplaceVector<ClipVertex, 9>& polygon, const Camera& camera) noexcept;
 };
 
 class World {
@@ -140,6 +177,7 @@ public:
     void load_file(std::string filename);
     void draw(Renderer& renderer) const noexcept;
     void handle_event(const SDL_Event& event) noexcept;
+    void orbiting() noexcept;
 private:
     void load_materials(std::string filename);
 };
