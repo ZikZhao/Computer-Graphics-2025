@@ -12,20 +12,48 @@
 
 using FloatType = decltype(std::declval<glm::vec3>().x);
 
-struct ScreenNdcCoord {
-    FloatType x;
-    FloatType y;
-    FloatType z_ndc;
-};
-
 template<typename T>
 constexpr auto Clamp(T value, T min, T max) {
     return (value < min) ? min : (value > max) ? max : value;
 }
 
-float ComputeZndc(std::array<FloatType, 3> bary, std::array<FloatType, 3> vertices_z_view);
+constexpr float ComputeZndc(const std::array<float, 3> bary, const std::array<float, 3> vertices_z_ndc) {
+    float inv_z = bary[0] / vertices_z_ndc[0] +
+                  bary[1] / vertices_z_ndc[1] +
+                  bary[2] / vertices_z_ndc[2];
+    return 1.0f / inv_z;
+}
 
-float ComputeZndc(float progress, std::array<FloatType, 2> vertices_z_view);
+constexpr float ComputeZndc(float progress, const std::array<float, 2> vertices_z_ndc) {
+    float inv_z = (1.0f - progress) / vertices_z_ndc[0] + progress / vertices_z_ndc[1];
+    return 1.0f / inv_z;
+}
+
+template<typename T, std::size_t N>
+class InplaceVector {
+private:
+    T data_[N];
+    std::size_t size_ = 0;
+public:
+    constexpr InplaceVector() noexcept = default;
+    constexpr InplaceVector(std::initializer_list<T> init) : size_(init.size()) noexcept {
+        assert(size_ <= N);
+        std::copy(init.begin(), init.end(), std::begin(data_));
+    }
+    constexpr void push_back(const T& value) noexcept {
+        assert(size_ < N);
+        data_[size_++] = value;
+    }
+    constexpr std::size_t size() const noexcept { return size_; }
+    constexpr T& operator[](std::size_t index) noexcept { return data_[index]; }
+    constexpr const T& operator[](std::size_t index) const noexcept { return data_[index]; }
+};
+
+struct ScreenNdcCoord {
+    FloatType x;
+    FloatType y;
+    FloatType z_ndc;
+};
 
 struct Colour {
     std::uint8_t red;
@@ -40,7 +68,7 @@ class Camera {
 public:
     static constexpr std::int64_t OrbitInterval = 1'000'000'000 / 60; // 60 FPS
     static constexpr double FOV = 45.0;
-    static constexpr double NearPlane = 0.1;
+    static constexpr double NearPlane = 0.001;
     static constexpr double FarPlane = 100.0;
 public:
     glm::vec3 position_ = { 0.0f, 0.0f, 4.0f };

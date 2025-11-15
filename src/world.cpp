@@ -1,17 +1,5 @@
 #include "world.hpp"
 
-float ComputeZndc(std::array<float, 3> bary, std::array<float, 3> vertices_z_ndc) {
-    float inv_z = bary[0] / vertices_z_ndc[0] +
-                  bary[1] / vertices_z_ndc[1] +
-                  bary[2] / vertices_z_ndc[2];
-    return 1.0f / inv_z;
-}
-
-float ComputeZndc(float progress, std::array<float, 2> vertices_z_ndc) {
-    float inv_z = (1.0f - progress) / vertices_z_ndc[0] + progress / vertices_z_ndc[1];
-    return 1.0f / inv_z;
-}
-
 void Camera::orbiting() {
     auto now = std::chrono::system_clock::now().time_since_epoch().count();
     if (now - last_orbit_time_ > OrbitInterval) {
@@ -101,30 +89,18 @@ void Camera::handle_event(const SDL_Event& event) {
     }
 }
 glm::vec3 Camera::world_to_ndc(const glm::vec3& vertex, double aspect_ratio) const noexcept {
-    // World to view space
     glm::vec3 view_vector = vertex - position_;
     glm::mat3 view_rotation = glm::transpose(orientation_);
     glm::vec3 view_space = view_rotation * view_vector;
-    
-    // Check if vertex is in front of camera and within near/far planes
     if (view_space.z < NearPlane || view_space.z > FarPlane) {
-        // Vertex is clipped
-        return glm::vec3(0.0f, 0.0f, -1.0f);  // Use negative z to indicate clipped
+        return glm::vec3(0.0f, 0.0f, -1.0f);
     }
-    
-    // Perspective projection to NDC
     double fov_rad = glm::radians(FOV);
     double tan_half_fov = std::tan(fov_rad / 2.0);
-    
-    // Normalize z to [0, 1] range using perspective-correct depth
-    // z_ndc = (far * (z - near)) / (z * (far - near))
-    // This ensures: z=near -> z_ndc=0, z=far -> z_ndc=1, and preserves perspective-correct interpolation
-    double z_ndc = (FarPlane * (view_space.z - NearPlane)) / (view_space.z * (FarPlane - NearPlane));
-    
     return glm::vec3(
         view_space.x / (view_space.z * tan_half_fov * aspect_ratio),
         view_space.y / (view_space.z * tan_half_fov),
-        z_ndc
+        (FarPlane * (view_space.z - NearPlane)) / (view_space.z * (FarPlane - NearPlane))
     );
 }
 

@@ -25,6 +25,10 @@ int main(int argc, char *argv[]) {
                 window.exitCleanly();
                 return 0;
             }
+            else if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_SPACE) {
+                window.savePPM("screenshot.ppm");
+                window.saveBMP("screenshot.bmp");
+            }
             world.handle_event(event);
             renderer.handle_event(event);
         }
