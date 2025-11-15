@@ -1,14 +1,18 @@
 #include "world.hpp"
 
+void Camera::start_orbiting(glm::vec3 target) {
+    orbit_target_ = target;
+    last_orbit_time_ = std::chrono::system_clock::now().time_since_epoch().count();
+}
 void Camera::orbiting() {
     auto now = std::chrono::system_clock::now().time_since_epoch().count();
     if (now - last_orbit_time_ > OrbitInterval) {
-        constexpr static float angle_increment = glm::radians(0.5f);
-        float cos_angle = std::cos(angle_increment);
-        float sin_angle = std::sin(angle_increment);
+        constexpr static FloatType angle_increment = glm::radians(0.5f);
+        FloatType cos_angle = std::cos(angle_increment);
+        FloatType sin_angle = std::sin(angle_increment);
         glm::vec3& up = orientation_[1];
         glm::vec3 k_cross_pos = glm::cross(up, position_);
-        float k_dot_pos = glm::dot(up, position_);
+        FloatType k_dot_pos = glm::dot(up, position_);
         position_ = position_ * cos_angle + 
                    k_cross_pos * sin_angle + 
                    up * k_dot_pos * (1.0f - cos_angle);
@@ -17,14 +21,10 @@ void Camera::orbiting() {
         last_orbit_time_ = now;
     }
 }
-void Camera::set_orbit(glm::vec3 target) {
-    orbit_target_ = target;
-    last_orbit_time_ = std::chrono::system_clock::now().time_since_epoch().count();
-}
-void Camera::stop_orbit() {
+void Camera::stop_orbiting() {
     last_orbit_time_ = std::numeric_limits<std::int64_t>::max();
 }
-void Camera::rotate(float angle_x, float angle_y) {
+void Camera::rotate(FloatType angle_x, FloatType angle_y) {
     if (angle_x != 0.0f) {
         glm::mat3 rotation_y = glm::mat3(
             std::cos(angle_x), 0.0f, std::sin(angle_x),
@@ -44,7 +44,7 @@ void Camera::rotate(float angle_x, float angle_y) {
 }
 void Camera::handle_event(const SDL_Event& event) {
     if (event.type == SDL_KEYDOWN) {
-        constexpr float move_step = 0.1f;
+        constexpr FloatType move_step = 0.1f;
         glm::vec3 movement(0.0f);
         switch (event.key.keysym.sym) {
         case SDLK_w:
@@ -78,7 +78,7 @@ void Camera::handle_event(const SDL_Event& event) {
             rotate(glm::radians(1.0f), 0.0f);
             return;
         // case SDLK_t:
-        //     set_orbit(glm::vec3(0.0f, 0.0f, 0.0f));
+        //     start_orbiting(glm::vec3(0.0f, 0.0f, 0.0f));
         //     return;
         case SDLK_o:
             if (last_orbit_time_ == std::numeric_limits<std::int64_t>::max()) {
@@ -98,16 +98,16 @@ glm::vec4 Camera::world_to_clip(const glm::vec3& vertex, double aspect_ratio) co
     glm::vec3 view_space = view_rotation * view_vector;
     
     // In our coordinate system, positive view_space.z means in front of camera
-    float w = view_space.z;  // Distance from camera
+    FloatType w = view_space.z;  // Distance from camera
     
     // Perspective projection (similar to original world_to_ndc but keep w separate)
     double fov_rad = glm::radians(FOV);
     double tan_half_fov = std::tan(fov_rad / 2.0);
     
     // Compute NDC x, y (but multiply by w to keep in clip space)
-    float x_ndc = view_space.x / (view_space.z * tan_half_fov * aspect_ratio);
-    float y_ndc = view_space.y / (view_space.z * tan_half_fov);
-    float z_ndc = (FarPlane * (view_space.z - NearPlane)) / ((view_space.z) * (FarPlane - NearPlane));
+    FloatType x_ndc = view_space.x / (view_space.z * tan_half_fov * aspect_ratio);
+    FloatType y_ndc = view_space.y / (view_space.z * tan_half_fov);
+    FloatType z_ndc = (FarPlane * (view_space.z - NearPlane)) / ((view_space.z) * (FarPlane - NearPlane));
     
     // Return clip space: multiply NDC by w
     return glm::vec4(
@@ -134,9 +134,9 @@ void Object::add_face(const glm::vec3& v1, const glm::vec3& v2, const glm::vec3&
 }
 
 Renderer::Renderer(DrawingWindow& window) noexcept
-    : window_(window), z_buffer_(window.width * window.height, std::numeric_limits<float>::infinity()) {}
+    : window_(window), z_buffer_(window.width * window.height, std::numeric_limits<FloatType>::infinity()) {}
 void Renderer::clear() noexcept {
-    z_buffer_.assign(window_.width * window_.height, std::numeric_limits<float>::infinity());
+    z_buffer_.assign(window_.width * window_.height, std::numeric_limits<FloatType>::infinity());
 }
 ScreenNdcCoord Renderer::ndc_to_screen(const glm::vec3& ndc) const noexcept {
     return ScreenNdcCoord{
@@ -159,8 +159,8 @@ bool Renderer::inside_plane(const glm::vec4& v, ClipPlane plane) noexcept {
     }
     return false;
 }
-float Renderer::compute_intersection_t(const glm::vec4& v0, const glm::vec4& v1, ClipPlane plane) noexcept {
-    float d0, d1;
+FloatType Renderer::compute_intersection_t(const glm::vec4& v0, const glm::vec4& v1, ClipPlane plane) noexcept {
+    FloatType d0, d1;
     switch (plane) {
         case ClipPlane::Left:
             d0 = v0.x + std::abs(v0.w);
@@ -196,10 +196,17 @@ float Renderer::compute_intersection_t(const glm::vec4& v0, const glm::vec4& v1,
     return d0 / (d0 - d1);
 }
 ClipVertex Renderer::intersect_plane(const ClipVertex& v0, const ClipVertex& v1, ClipPlane plane) noexcept {
-    float t = compute_intersection_t(v0.position_clip, v1.position_clip, plane);
-    return ClipVertex::lerp(v0, v1, t);
+    FloatType t = compute_intersection_t(v0.position_clip, v1.position_clip, plane);
+    // Linear interpolation of vertex attributes at intersection point
+    return ClipVertex{
+        v0.position_clip * (1.0f - t) + v1.position_clip * t,
+        Colour{
+            static_cast<std::uint8_t>(v0.colour.red * (1.0f - t) + v1.colour.red * t),
+            static_cast<std::uint8_t>(v0.colour.green * (1.0f - t) + v1.colour.green * t),
+            static_cast<std::uint8_t>(v0.colour.blue * (1.0f - t) + v1.colour.blue * t)
+        }
+    };
 }
-
 InplaceVector<ClipVertex, 9> Renderer::clip_against_plane(
     const InplaceVector<ClipVertex, 9>& input,
     ClipPlane plane) noexcept {
@@ -296,27 +303,27 @@ void Renderer::rasterize_polygon(
         if (v0.y > v2.y) std::swap(v0, v2);
         if (v1.y > v2.y) std::swap(v1, v2);
 
-        float from_y = std::max<float>(v0.y, 0);
-        float mid_y = std::min<float>(v1.y, window_.height - 1);
-        float to_y = std::min<float>(v2.y, window_.height - 1);
+        FloatType from_y = std::max<FloatType>(v0.y, 0);
+        FloatType mid_y = std::min<FloatType>(v1.y, window_.height - 1);
+        FloatType to_y = std::min<FloatType>(v2.y, window_.height - 1);
 
-        float inv_slope_v0v1 = (v1.y - v0.y) == 0 ? 0 : (v1.x - v0.x) / (v1.y - v0.y);
-        float inv_slope_v0v2 = (v2.y - v0.y) == 0 ? 0 : (v2.x - v0.x) / (v2.y - v0.y);
-        float inv_slope_v1v2 = (v2.y - v1.y) == 0 ? 0 : (v2.x - v1.x) / (v2.y - v1.y);
+        FloatType inv_slope_v0v1 = (v1.y - v0.y) == 0 ? 0 : (v1.x - v0.x) / (v1.y - v0.y);
+        FloatType inv_slope_v0v2 = (v2.y - v0.y) == 0 ? 0 : (v2.x - v0.x) / (v2.y - v0.y);
+        FloatType inv_slope_v1v2 = (v2.y - v1.y) == 0 ? 0 : (v2.x - v1.x) / (v2.y - v1.y);
 
-        for (float y = from_y; y < mid_y; y++) {
-            float x01 = inv_slope_v0v1 * (y - v0.y) + v0.x;
-            float x02 = inv_slope_v0v2 * (y - v0.y) + v0.x;
+        for (FloatType y = from_y; y < mid_y; y++) {
+            FloatType x01 = inv_slope_v0v1 * (y - v0.y) + v0.x;
+            FloatType x02 = inv_slope_v0v2 * (y - v0.y) + v0.x;
 
             std::size_t start_x = std::max<std::int64_t>(std::round(std::min(x01, x02)) - 1, 0);
             std::size_t end_x = std::min<std::size_t>(std::round(std::max(x01, x02)), window_.width - 1);
             for (std::size_t x = start_x; x <= end_x; x++) {
                 glm::vec3 bary = convertToBarycentricCoordinates(
-                    { v0.x, v0.y }, { v1.x, v1.y }, { v2.x, v2.y }, { static_cast<float>(x), static_cast<float>(y) });
-                float z_ndc = ComputeZndc(std::array<float, 3>{bary.z, bary.x, bary.y}, std::array<float, 3>{ v0.z_ndc, v1.z_ndc, v2.z_ndc });
+                    { v0.x, v0.y }, { v1.x, v1.y }, { v2.x, v2.y }, { static_cast<FloatType>(x), static_cast<FloatType>(y) });
+                FloatType z_ndc = ComputeZndc(std::array<FloatType, 3>{bary.z, bary.x, bary.y}, std::array<FloatType, 3>{ v0.z_ndc, v1.z_ndc, v2.z_ndc });
                 std::int64_t yi = static_cast<std::int64_t>(y);
                 if (x < window_.width && yi >= 0 && yi < static_cast<std::int64_t>(window_.height)) {
-                    float& depth = z_buffer_[yi * window_.width + x];
+                    FloatType& depth = z_buffer_[yi * window_.width + x];
                     if (z_ndc >= 0.0f && z_ndc <= 1.0f && z_ndc < depth) {
                         depth = z_ndc;
                         window_.setPixelColour(x, yi, colour);
@@ -325,19 +332,19 @@ void Renderer::rasterize_polygon(
             }
         }
 
-        for (float y = mid_y; y < to_y; y++) {
-            float x12 = inv_slope_v1v2 * (y - v1.y) + v1.x;
-            float x02 = inv_slope_v0v2 * (y - v0.y) + v0.x;
+        for (FloatType y = mid_y; y < to_y; y++) {
+            FloatType x12 = inv_slope_v1v2 * (y - v1.y) + v1.x;
+            FloatType x02 = inv_slope_v0v2 * (y - v0.y) + v0.x;
 
             std::size_t start_x = std::max<std::int64_t>(std::round(std::min(x12, x02)) - 1, 0);
             std::size_t end_x = std::min<std::size_t>(std::round(std::max(x12, x02)), window_.width - 1);
             for (std::size_t x = start_x; x <= end_x; x++) {
                 glm::vec3 bary = convertToBarycentricCoordinates(
-                    { v0.x, v0.y }, { v1.x, v1.y }, { v2.x, v2.y }, { static_cast<float>(x), static_cast<float>(y) });
-                float z_ndc = ComputeZndc(std::array<float, 3>{bary.z, bary.x, bary.y}, std::array<float, 3>{ v0.z_ndc, v1.z_ndc, v2.z_ndc });
+                    { v0.x, v0.y }, { v1.x, v1.y }, { v2.x, v2.y }, { static_cast<FloatType>(x), static_cast<FloatType>(y) });
+                FloatType z_ndc = ComputeZndc(std::array<FloatType, 3>{bary.z, bary.x, bary.y}, std::array<FloatType, 3>{ v0.z_ndc, v1.z_ndc, v2.z_ndc });
                 std::int64_t yi = static_cast<std::int64_t>(y);
                 if (x < window_.width && yi >= 0 && yi < static_cast<std::int64_t>(window_.height)) {
-                    float& depth = z_buffer_[yi * window_.width + x];
+                    FloatType& depth = z_buffer_[yi * window_.width + x];
                     if (z_ndc >= 0.0f && z_ndc <= 1.0f && z_ndc < depth) {
                         depth = z_ndc;
                         window_.setPixelColour(x, yi, colour);
@@ -403,9 +410,9 @@ void Renderer::wireframe_render(const Camera& camera, const Face& face) noexcept
                 if (x >= window_.width || y < 0 || y >= static_cast<std::int64_t>(window_.height)) {
                     continue;
                 }
-                float progress = (to.x == from.x) ? 0.0f : static_cast<float>(x - from.x) / static_cast<float>(to.x - from.x);
-                float z_ndc = ComputeZndc(progress, std::array<float, 2>{from.z_ndc, to.z_ndc});
-                float& depth = z_buffer_[y * window_.width + x];
+                FloatType progress = (to.x == from.x) ? 0.0f : static_cast<FloatType>(x - from.x) / static_cast<FloatType>(to.x - from.x);
+                FloatType z_ndc = ComputeZndc(progress, std::array<FloatType, 2>{from.z_ndc, to.z_ndc});
+                FloatType& depth = z_buffer_[y * window_.width + x];
                 if (z_ndc >= 0.0f && z_ndc <= 1.0f && z_ndc < depth) {
                     depth = z_ndc;
                     window_.setPixelColour(x, y, colour);
@@ -419,9 +426,9 @@ void Renderer::wireframe_render(const Camera& camera, const Face& face) noexcept
                 if (x < 0 || x >= static_cast<std::int64_t>(window_.width) || y >= window_.height) {
                     continue;
                 }
-                float progress = (to.y == from.y) ? 0.0f : static_cast<float>(y - from.y) / static_cast<float>(to.y - from.y);
-                float z_ndc = ComputeZndc(progress, std::array<float, 2>{from.z_ndc, to.z_ndc});
-                float& depth = z_buffer_[y * window_.width + x];
+                FloatType progress = (to.y == from.y) ? 0.0f : static_cast<FloatType>(y - from.y) / static_cast<FloatType>(to.y - from.y);
+                FloatType z_ndc = ComputeZndc(progress, std::array<FloatType, 2>{from.z_ndc, to.z_ndc});
+                FloatType& depth = z_buffer_[y * window_.width + x];
                 if (z_ndc >= 0.0f && z_ndc <= 1.0f && z_ndc < depth) {
                     depth = z_ndc;
                     window_.setPixelColour(x, y, colour);
@@ -469,7 +476,7 @@ void World::load_file(std::string filename) {
             current_obj->set_colour(colour);
         } else if (type == "v") {
             assert(current_obj != objects_.end());
-            float x, y, z;
+            FloatType x, y, z;
             iss >> x >> y >> z;
             vertices_.emplace_back(x / 3, y / 3, z / 3);
         } else if (type == "f") {
@@ -482,7 +489,6 @@ void World::load_file(std::string filename) {
     }
 }
 void World::draw(Renderer& renderer) const noexcept {
-    // camera_.orbiting();
     renderer.clear();
     for (const auto& object : objects_) {
         for (const auto& face : object.faces_) {
@@ -514,7 +520,7 @@ void World::load_materials(std::string filename) {
             current_material = materials_.emplace(name, Colour{255, 255, 255}).first;
         } else if (type == "Kd") {
             assert(current_material != materials_.end());
-            float r, g, b;
+            FloatType r, g, b;
             iss >> r >> g >> b;
             current_material->second = Colour{
                 static_cast<std::uint8_t>(Clamp(r * 255.0f, 0.0f, 255.0f)),

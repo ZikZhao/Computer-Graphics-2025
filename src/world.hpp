@@ -17,15 +17,15 @@ constexpr auto Clamp(T value, T min, T max) {
     return (value < min) ? min : (value > max) ? max : value;
 }
 
-constexpr float ComputeZndc(const std::array<float, 3> bary, const std::array<float, 3> vertices_z_ndc) {
-    float inv_z = bary[0] / vertices_z_ndc[0] +
+constexpr FloatType ComputeZndc(const std::array<FloatType, 3> bary, const std::array<FloatType, 3> vertices_z_ndc) {
+    FloatType inv_z = bary[0] / vertices_z_ndc[0] +
                   bary[1] / vertices_z_ndc[1] +
                   bary[2] / vertices_z_ndc[2];
     return 1.0f / inv_z;
 }
 
-constexpr float ComputeZndc(float progress, const std::array<float, 2> vertices_z_ndc) {
-    float inv_z = (1.0f - progress) / vertices_z_ndc[0] + progress / vertices_z_ndc[1];
+constexpr FloatType ComputeZndc(FloatType progress, const std::array<FloatType, 2> vertices_z_ndc) {
+    FloatType inv_z = (1.0f - progress) / vertices_z_ndc[0] + progress / vertices_z_ndc[1];
     return 1.0f / inv_z;
 }
 
@@ -72,18 +72,6 @@ struct Colour {
 struct ClipVertex {
     glm::vec4 position_clip;  // Homogeneous clip space coordinates
     Colour colour;
-    
-    // Linear interpolation of all attributes
-    static ClipVertex lerp(const ClipVertex& a, const ClipVertex& b, float t) noexcept {
-        return ClipVertex{
-            a.position_clip * (1.0f - t) + b.position_clip * t,
-            Colour{
-                static_cast<std::uint8_t>(a.colour.red * (1.0f - t) + b.colour.red * t),
-                static_cast<std::uint8_t>(a.colour.green * (1.0f - t) + b.colour.green * t),
-                static_cast<std::uint8_t>(a.colour.blue * (1.0f - t) + b.colour.blue * t)
-            }
-        };
-    }
 };
 
 struct ScreenNdcCoord {
@@ -110,10 +98,10 @@ public:
     Camera() = default;
     glm::vec4 world_to_clip(const glm::vec3& vertex, double aspect_ratio) const noexcept;
     glm::vec3 clip_to_ndc(const glm::vec4& clip) const noexcept;
+    void start_orbiting(glm::vec3 target);
     void orbiting();
-    void set_orbit(glm::vec3 target);
-    void stop_orbit();
-    void rotate(float angle_x, float angle_y);
+    void stop_orbiting();
+    void rotate(FloatType angle_x, FloatType angle_y);
     void handle_event(const SDL_Event& event);
 };
 
@@ -144,7 +132,7 @@ public:
 private:
     DrawingWindow& window_;
     Mode mode_ = Rasterized;
-    std::vector<float> z_buffer_;
+    std::vector<FloatType> z_buffer_;
     double aspect_ratio_ = 1.0;
 public:
     Renderer(DrawingWindow& window) noexcept;
@@ -156,10 +144,9 @@ private:
     void wireframe_render(const Camera& camera, const Face& face) noexcept;
     void rasterized_render(const Camera& camera, const Face& face) noexcept;
     void raytraced_render(const Camera& camera, const Face& face) noexcept;
-    
     // Clipping utilities
     static bool inside_plane(const glm::vec4& v, ClipPlane plane) noexcept;
-    static float compute_intersection_t(const glm::vec4& v0, const glm::vec4& v1, ClipPlane plane) noexcept;
+    static FloatType compute_intersection_t(const glm::vec4& v0, const glm::vec4& v1, ClipPlane plane) noexcept;
     static ClipVertex intersect_plane(const ClipVertex& v0, const ClipVertex& v1, ClipPlane plane) noexcept;
     static InplaceVector<ClipVertex, 9> clip_against_plane(const InplaceVector<ClipVertex, 9>& input, ClipPlane plane) noexcept;
     InplaceVector<ClipVertex, 9> clip_triangle(const Camera& camera, const Face& face) noexcept;
