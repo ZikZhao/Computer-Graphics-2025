@@ -140,15 +140,15 @@ ScreenNdcCoord Renderer::ndc_to_screen(const glm::vec3& ndc, const glm::vec2& uv
     };
 }
 bool Renderer::inside_plane(const glm::vec4& v, ClipPlane plane) noexcept {
-    // In clip space, frustum planes are: -w <= x,y,z <= w
-    // But since w can be negative (w = -z_view), we need to handle signs correctly
+    FloatType abs_w = std::abs(v.w);
+    
     switch (plane) {
-        case ClipPlane::Left:   return v.x >= -std::abs(v.w);
-        case ClipPlane::Right:  return v.x <= std::abs(v.w);
-        case ClipPlane::Bottom: return v.y >= -std::abs(v.w);
-        case ClipPlane::Top:    return v.y <= std::abs(v.w);
-        case ClipPlane::Near:   return v.z >= -std::abs(v.w);
-        case ClipPlane::Far:    return v.z <= std::abs(v.w);
+        case ClipPlane::Left:   return v.x >= -abs_w;
+        case ClipPlane::Right:  return v.x <= abs_w;
+        case ClipPlane::Bottom: return v.y >= -abs_w;
+        case ClipPlane::Top:    return v.y <= abs_w;
+        case ClipPlane::Near:   return v.z >= -abs_w;
+        case ClipPlane::Far:    return v.z <= abs_w;
     }
     return false;
 }
@@ -387,16 +387,17 @@ void Renderer::rasterized_render(const Camera& camera, const Face& face) noexcep
 
         // Rasterize upper triangle (v0 -> v1)
         for (std::int64_t y = from_y; y < mid_y; y++) {
-            FloatType y_float = static_cast<FloatType>(y);
-            FloatType x01 = inv_slope_v0v1 * (y_float - v0.y) + v0.x;
-            FloatType x02 = inv_slope_v0v2 * (y_float - v0.y) + v0.x;
+            FloatType y_center = static_cast<FloatType>(y) + 0.5f;
+            FloatType x01 = inv_slope_v0v1 * (y_center - v0.y) + v0.x;
+            FloatType x02 = inv_slope_v0v2 * (y_center - v0.y) + v0.x;
 
             std::int64_t start_x = std::max<std::int64_t>(static_cast<std::int64_t>(std::floor(std::min(x01, x02))), 0);
             std::int64_t end_x = std::min<std::int64_t>(static_cast<std::int64_t>(std::ceil(std::max(x01, x02))), static_cast<std::int64_t>(window_.width - 1));
             
             for (std::int64_t x = start_x; x <= end_x; x++) {
+                FloatType x_center = static_cast<FloatType>(x) + 0.5f;
                 glm::vec3 bary = convertToBarycentricCoordinates(
-                    { v0.x, v0.y }, { v1.x, v1.y }, { v2.x, v2.y }, { static_cast<FloatType>(x), y_float });
+                    { v0.x, v0.y }, { v1.x, v1.y }, { v2.x, v2.y }, { x_center, y_center });
                 
                 if (bary.x >= 0.0f && bary.y >= 0.0f && bary.z >= 0.0f) {
                     std::uint32_t colour = sample_texture(face, bary, v0, v1, v2);
@@ -413,16 +414,17 @@ void Renderer::rasterized_render(const Camera& camera, const Face& face) noexcep
 
         // Rasterize lower triangle (v1 -> v2)
         for (std::int64_t y = mid_y; y <= to_y; y++) {
-            FloatType y_float = static_cast<FloatType>(y);
-            FloatType x12 = inv_slope_v1v2 * (y_float - v1.y) + v1.x;
-            FloatType x02 = inv_slope_v0v2 * (y_float - v0.y) + v0.x;
+            FloatType y_center = static_cast<FloatType>(y) + 0.5f;
+            FloatType x12 = inv_slope_v1v2 * (y_center - v1.y) + v1.x;
+            FloatType x02 = inv_slope_v0v2 * (y_center - v0.y) + v0.x;
 
             std::int64_t start_x = std::max<std::int64_t>(static_cast<std::int64_t>(std::floor(std::min(x12, x02))), 0);
             std::int64_t end_x = std::min<std::int64_t>(static_cast<std::int64_t>(std::ceil(std::max(x12, x02))), static_cast<std::int64_t>(window_.width - 1));
             
             for (std::int64_t x = start_x; x <= end_x; x++) {
+                FloatType x_center = static_cast<FloatType>(x) + 0.5f;
                 glm::vec3 bary = convertToBarycentricCoordinates(
-                    { v0.x, v0.y }, { v1.x, v1.y }, { v2.x, v2.y }, { static_cast<FloatType>(x), y_float });
+                    { v0.x, v0.y }, { v1.x, v1.y }, { v2.x, v2.y }, { x_center, y_center });
                 
                 if (bary.x >= 0.0f && bary.y >= 0.0f && bary.z >= 0.0f) {
                     std::uint32_t colour = sample_texture(face, bary, v0, v1, v2);
