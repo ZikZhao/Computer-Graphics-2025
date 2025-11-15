@@ -39,6 +39,9 @@ struct Colour {
 class Camera {
 public:
     static constexpr std::int64_t OrbitInterval = 1'000'000'000 / 60; // 60 FPS
+    static constexpr double FOV = 45.0;
+    static constexpr double NearPlane = 0.1;
+    static constexpr double FarPlane = 100.0;
 public:
     glm::vec3 position_ = { 0.0f, 0.0f, 4.0f };
     glm::mat3 orientation_ = glm::mat3(
@@ -48,7 +51,6 @@ public:
     );
     glm::vec3 orbit_target_ = { 0.0f, 0.0f, 0.0f };
     std::int64_t last_orbit_time_ = std::chrono::system_clock::now().time_since_epoch().count();
-    double fov = 45.0;
     Camera() = default;
     glm::vec3 world_to_ndc(const glm::vec3& vertex, double aspect_ratio) const noexcept;
     void orbiting();
@@ -86,6 +88,7 @@ private:
     DrawingWindow& window_;
     Mode mode_ = Rasterized;
     std::vector<float> z_buffer_;
+    double aspect_ratio_ = 1.0;
 public:
     Renderer(DrawingWindow& window) noexcept;
     void clear() noexcept;

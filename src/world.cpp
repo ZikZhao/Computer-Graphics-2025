@@ -106,19 +106,26 @@ glm::vec3 Camera::world_to_ndc(const glm::vec3& vertex, double aspect_ratio) con
     glm::mat3 view_rotation = glm::transpose(orientation_);
     glm::vec3 view_space = view_rotation * view_vector;
     
-    // View to NDC (perspective projection)
-    if (view_space.z > 0.001) {
-        double fov_rad = glm::radians(fov);
-        double tan_half_fov = std::tan(fov_rad / 2.0);
-        return glm::vec3(
-            view_space.x / (view_space.z * tan_half_fov * aspect_ratio),
-            view_space.y / (view_space.z * tan_half_fov),
-            view_space.z
-        );
-    } else {
-        // Handle vertices behind camera
-        return glm::vec3(0.0f, 0.0f, 0.01f);
+    // Check if vertex is in front of camera and within near/far planes
+    if (view_space.z < NearPlane || view_space.z > FarPlane) {
+        // Vertex is clipped
+        return glm::vec3(0.0f, 0.0f, -1.0f);  // Use negative z to indicate clipped
     }
+    
+    // Perspective projection to NDC
+    double fov_rad = glm::radians(FOV);
+    double tan_half_fov = std::tan(fov_rad / 2.0);
+    
+    // Normalize z to [0, 1] range using perspective-correct depth
+    // z_ndc = (far * (z - near)) / (z * (far - near))
+    // This ensures: z=near -> z_ndc=0, z=far -> z_ndc=1, and preserves perspective-correct interpolation
+    double z_ndc = (FarPlane * (view_space.z - NearPlane)) / (view_space.z * (FarPlane - NearPlane));
+    
+    return glm::vec3(
+        view_space.x / (view_space.z * tan_half_fov * aspect_ratio),
+        view_space.y / (view_space.z * tan_half_fov),
+        z_ndc
+    );
 }
 
 Object::Object(const std::string& name) : name_(name), colour_{255, 255, 255} {}
@@ -143,6 +150,7 @@ ScreenNdcCoord Renderer::ndc_to_screen(const glm::vec3& ndc) const noexcept {
 }
 
 void Renderer::render(const Camera& camera, const Face& face) noexcept {
+    aspect_ratio_ = static_cast<double>(window_.width) / window_.height;
     switch (mode_) {
     case Wireframe:
         wireframe_render(camera, face);
@@ -171,10 +179,9 @@ void Renderer::handle_event(const SDL_Event& event) noexcept {
     }
 }
 void Renderer::wireframe_render(const Camera& camera, const Face& face) noexcept {
-    double aspect_ratio = static_cast<double>(window_.width) / window_.height;
     std::array<ScreenNdcCoord, 3> screen;
     for (size_t i = 0; i < 3; i++) {
-        glm::vec3 ndc = camera.world_to_ndc(face.vertices[i], aspect_ratio);
+        glm::vec3 ndc = camera.world_to_ndc(face.vertices[i], aspect_ratio_);
         screen[i] = ndc_to_screen(ndc);
     }
     
@@ -193,7 +200,7 @@ void Renderer::wireframe_render(const Camera& camera, const Face& face) noexcept
                 float progress = (to.x == from.x) ? 0.0f : static_cast<float>(x - from.x) / static_cast<float>(to.x - from.x);
                 float z_ndc = ComputeZndc(progress, std::array<float, 2>{from.z_ndc, to.z_ndc});
                 float& depth = z_buffer_[y * window_.width + x];
-                if (z_ndc > 0 && z_ndc < depth) {
+                if (z_ndc >= 0.0f && z_ndc <= 1.0f && z_ndc < depth) {
                     depth = z_ndc;
                     window_.setPixelColour(x, y, face.colour);
                 }
@@ -209,7 +216,7 @@ void Renderer::wireframe_render(const Camera& camera, const Face& face) noexcept
                 float progress = (to.y == from.y) ? 0.0f : static_cast<float>(y - from.y) / static_cast<float>(to.y - from.y);
                 float z_ndc = ComputeZndc(progress, std::array<float, 2>{from.z_ndc, to.z_ndc});
                 float& depth = z_buffer_[y * window_.width + x];
-                if (z_ndc > 0 && z_ndc < depth) {
+                if (z_ndc >= 0.0f && z_ndc <= 1.0f && z_ndc < depth) {
                     depth = z_ndc;
                     window_.setPixelColour(x, y, face.colour);
                 }
@@ -219,10 +226,9 @@ void Renderer::wireframe_render(const Camera& camera, const Face& face) noexcept
 }
 
 void Renderer::rasterized_render(const Camera& camera, const Face& face) noexcept {
-    double aspect_ratio = static_cast<double>(window_.width) / window_.height;
     std::array<ScreenNdcCoord, 3> screen;
     for (size_t i = 0; i < 3; i++) {
-        glm::vec3 ndc = camera.world_to_ndc(face.vertices[i], aspect_ratio);
+        glm::vec3 ndc = camera.world_to_ndc(face.vertices[i], aspect_ratio_);
         screen[i] = ndc_to_screen(ndc);
     }
     
@@ -257,7 +263,7 @@ void Renderer::rasterized_render(const Camera& camera, const Face& face) noexcep
             std::int64_t yi = static_cast<std::int64_t>(y);
             if (x < window_.width && yi >= 0 && yi < static_cast<std::int64_t>(window_.height)) {
                 float& depth = z_buffer_[yi * window_.width + x];
-                if (z_ndc > 0 && z_ndc < depth) {
+                if (z_ndc >= 0.0f && z_ndc <= 1.0f && z_ndc < depth) {
                     depth = z_ndc;
                     window_.setPixelColour(x, yi, colour);
                 }
@@ -278,7 +284,7 @@ void Renderer::rasterized_render(const Camera& camera, const Face& face) noexcep
             std::int64_t yi = static_cast<std::int64_t>(y);
             if (x < window_.width && yi >= 0 && yi < static_cast<std::int64_t>(window_.height)) {
                 float& depth = z_buffer_[yi * window_.width + x];
-                if (z_ndc > 0 && z_ndc < depth) {
+                if (z_ndc >= 0.0f && z_ndc <= 1.0f && z_ndc < depth) {
                     depth = z_ndc;
                     window_.setPixelColour(x, yi, colour);
                 }
@@ -286,6 +292,7 @@ void Renderer::rasterized_render(const Camera& camera, const Face& face) noexcep
         }
     }
 }
+
 void Renderer::raytraced_render(const Camera& camera, const Face& face) noexcept {
     // Raytracing not implemented yet
 }
