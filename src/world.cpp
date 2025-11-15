@@ -125,27 +125,20 @@ glm::vec3 Camera::clip_to_ndc(const glm::vec4& clip) const noexcept {
     return glm::vec3(clip) / clip.w;
 }
 
-Object::Object(const std::string& name) : name_(name), colour_{255, 255, 255} {}
-void Object::set_colour(const Colour& colour) {
-    colour_ = colour;
-}
-void Object::add_face(const glm::vec3& v1, const glm::vec3& v2, const glm::vec3& v3) {
-    faces_.push_back({{v1, v2, v3}, colour_});
-}
-
 Renderer::Renderer(DrawingWindow& window) noexcept
     : window_(window), z_buffer_(window.width * window.height, 0.0f) {}
 void Renderer::clear() noexcept {
     z_buffer_.assign(window_.width * window_.height, 0.0f);
 }
-ScreenNdcCoord Renderer::ndc_to_screen(const glm::vec3& ndc) const noexcept {
+ScreenNdcCoord Renderer::ndc_to_screen(const glm::vec3& ndc, const glm::vec2& uv, FloatType w) const noexcept {
     return ScreenNdcCoord{
         (ndc.x + 1.0f) * 0.5f * window_.width,
         (1.0f - ndc.y) * 0.5f * window_.height,
-        ndc.z
+        ndc.z,
+        uv,
+        1.0f / w  // Store 1/w for perspective correction
     };
 }
-
 bool Renderer::inside_plane(const glm::vec4& v, ClipPlane plane) noexcept {
     // In clip space, frustum planes are: -w <= x,y,z <= w
     // But since w can be negative (w = -z_view), we need to handle signs correctly
@@ -204,7 +197,8 @@ ClipVertex Renderer::intersect_plane(const ClipVertex& v0, const ClipVertex& v1,
             static_cast<std::uint8_t>(v0.colour.red * (1.0f - t) + v1.colour.red * t),
             static_cast<std::uint8_t>(v0.colour.green * (1.0f - t) + v1.colour.green * t),
             static_cast<std::uint8_t>(v0.colour.blue * (1.0f - t) + v1.colour.blue * t)
-        }
+        },
+        v0.uv * (1.0f - t) + v1.uv * t  // Interpolate UV coordinates
     };
 }
 InplaceVector<ClipVertex, 9> Renderer::clip_against_plane(const InplaceVector<ClipVertex, 9>& input, ClipPlane plane) noexcept {
@@ -241,9 +235,9 @@ InplaceVector<ClipVertex, 9> Renderer::clip_against_plane(const InplaceVector<Cl
 InplaceVector<ClipVertex, 9> Renderer::clip_triangle(const Camera& camera, const Face& face) noexcept {
     // Transform to clip space
     InplaceVector<ClipVertex, 9> polygon = {
-        ClipVertex{camera.world_to_clip(face.vertices[0], aspect_ratio_), face.colour},
-        ClipVertex{camera.world_to_clip(face.vertices[1], aspect_ratio_), face.colour},
-        ClipVertex{camera.world_to_clip(face.vertices[2], aspect_ratio_), face.colour}
+        ClipVertex{camera.world_to_clip(face.vertices[0], aspect_ratio_), face.material.colour, face.texture_coords[0]},
+        ClipVertex{camera.world_to_clip(face.vertices[1], aspect_ratio_), face.material.colour, face.texture_coords[1]},
+        ClipVertex{camera.world_to_clip(face.vertices[2], aspect_ratio_), face.material.colour, face.texture_coords[2]}
     };
     
     // Clip against all 6 frustum planes
@@ -295,6 +289,17 @@ void Renderer::handle_event(const SDL_Event& event) noexcept {
         }
     }
 }
+std::uint32_t Renderer::sample_texture(const Face& face, const glm::vec3& bary,
+                                       const ScreenNdcCoord& v0, const ScreenNdcCoord& v1, const ScreenNdcCoord& v2) noexcept {
+    if (!face.material.texture) return face.material.colour;
+    
+    // Perspective-correct interpolation: interpolate uv/w and 1/w, then divide
+    FloatType inv_w = bary.z * v0.inv_w + bary.x * v1.inv_w + bary.y * v2.inv_w;
+    FloatType u = (bary.z * v0.uv.x * v0.inv_w + bary.x * v1.uv.x * v1.inv_w + bary.y * v2.uv.x * v2.inv_w) / inv_w;
+    FloatType v = (bary.z * v0.uv.y * v0.inv_w + bary.x * v1.uv.y * v1.inv_w + bary.y * v2.uv.y * v2.inv_w) / inv_w;
+    
+    return face.material.texture->sample(u, v);
+}
 void Renderer::wireframe_render(const Camera& camera, const Face& face) noexcept {
     auto clipped = clip_triangle(camera, face);
     if (clipped.size() < 3) return;
@@ -303,7 +308,7 @@ void Renderer::wireframe_render(const Camera& camera, const Face& face) noexcept
     InplaceVector<ScreenNdcCoord, 9> screen_verts;
     for (size_t i = 0; i < clipped.size(); i++) {
         glm::vec3 ndc = camera.clip_to_ndc(clipped[i].position_clip);
-        screen_verts.push_back(ndc_to_screen(ndc));
+        screen_verts.push_back(ndc_to_screen(ndc, clipped[i].uv, clipped[i].position_clip.w));
     }
     
     std::uint32_t colour = clipped[0].colour;
@@ -356,72 +361,77 @@ void Renderer::rasterized_render(const Camera& camera, const Face& face) noexcep
     InplaceVector<ScreenNdcCoord, 9> screen_verts;
     for (size_t i = 0; i < clipped.size(); i++) {
         glm::vec3 ndc = camera.clip_to_ndc(clipped[i].position_clip);
-        screen_verts.push_back(ndc_to_screen(ndc));
+        screen_verts.push_back(ndc_to_screen(ndc, clipped[i].uv, clipped[i].position_clip.w));
     }
     
     // Triangle fan rasterization: (0, i, i+1) for i = 1..n-2
     for (size_t i = 1; i + 1 < clipped.size(); i++) {
-        std::array<ScreenNdcCoord, 3> tri_screen = {
-            screen_verts[0],
-            screen_verts[i],
-            screen_verts[i + 1]
-        };
+        ScreenNdcCoord v0 = screen_verts[0];
+        ScreenNdcCoord v1 = screen_verts[i];
+        ScreenNdcCoord v2 = screen_verts[i + 1];
         
-        std::uint32_t colour = clipped[0].colour;
-        
-        ScreenNdcCoord v0 = tri_screen[0];
-        ScreenNdcCoord v1 = tri_screen[1];
-        ScreenNdcCoord v2 = tri_screen[2];
-        
+        // Sort vertices by y-coordinate: v0.y <= v1.y <= v2.y
         if (v0.y > v1.y) std::swap(v0, v1);
         if (v0.y > v2.y) std::swap(v0, v2);
         if (v1.y > v2.y) std::swap(v1, v2);
 
-        FloatType from_y = std::max<FloatType>(v0.y, 0);
-        FloatType mid_y = std::min<FloatType>(v1.y, window_.height - 1);
-        FloatType to_y = std::min<FloatType>(v2.y, window_.height - 1);
+        // Clamp y range to screen bounds
+        std::int64_t from_y = std::max<std::int64_t>(static_cast<std::int64_t>(std::ceil(v0.y)), 0);
+        std::int64_t mid_y = std::min<std::int64_t>(static_cast<std::int64_t>(std::ceil(v1.y)), static_cast<std::int64_t>(window_.height - 1));
+        std::int64_t to_y = std::min<std::int64_t>(static_cast<std::int64_t>(std::ceil(v2.y)), static_cast<std::int64_t>(window_.height - 1));
 
+        // Calculate inverse slopes for edge interpolation
         FloatType inv_slope_v0v1 = (v1.y - v0.y) == 0 ? 0 : (v1.x - v0.x) / (v1.y - v0.y);
         FloatType inv_slope_v0v2 = (v2.y - v0.y) == 0 ? 0 : (v2.x - v0.x) / (v2.y - v0.y);
         FloatType inv_slope_v1v2 = (v2.y - v1.y) == 0 ? 0 : (v2.x - v1.x) / (v2.y - v1.y);
 
-        for (FloatType y = from_y; y < mid_y; y++) {
-            FloatType x01 = inv_slope_v0v1 * (y - v0.y) + v0.x;
-            FloatType x02 = inv_slope_v0v2 * (y - v0.y) + v0.x;
+        // Rasterize upper triangle (v0 -> v1)
+        for (std::int64_t y = from_y; y < mid_y; y++) {
+            FloatType y_float = static_cast<FloatType>(y);
+            FloatType x01 = inv_slope_v0v1 * (y_float - v0.y) + v0.x;
+            FloatType x02 = inv_slope_v0v2 * (y_float - v0.y) + v0.x;
 
-            std::size_t start_x = std::max<std::int64_t>(std::round(std::min(x01, x02)) - 1, 0);
-            std::size_t end_x = std::min<std::size_t>(std::round(std::max(x01, x02)), window_.width - 1);
-            for (std::size_t x = start_x; x <= end_x; x++) {
+            std::int64_t start_x = std::max<std::int64_t>(static_cast<std::int64_t>(std::floor(std::min(x01, x02))), 0);
+            std::int64_t end_x = std::min<std::int64_t>(static_cast<std::int64_t>(std::ceil(std::max(x01, x02))), static_cast<std::int64_t>(window_.width - 1));
+            
+            for (std::int64_t x = start_x; x <= end_x; x++) {
                 glm::vec3 bary = convertToBarycentricCoordinates(
-                    { v0.x, v0.y }, { v1.x, v1.y }, { v2.x, v2.y }, { static_cast<FloatType>(x), static_cast<FloatType>(y) });
-                FloatType inv_z = ComputeInvZndc(std::array<FloatType, 3>{bary.z, bary.x, bary.y}, std::array<FloatType, 3>{ v0.z_ndc, v1.z_ndc, v2.z_ndc });
-                std::int64_t yi = static_cast<std::int64_t>(y);
-                if (x < window_.width && yi >= 0 && yi < static_cast<std::int64_t>(window_.height)) {
-                    FloatType& depth = z_buffer_[yi * window_.width + x];
+                    { v0.x, v0.y }, { v1.x, v1.y }, { v2.x, v2.y }, { static_cast<FloatType>(x), y_float });
+                
+                if (bary.x >= 0.0f && bary.y >= 0.0f && bary.z >= 0.0f) {
+                    std::uint32_t colour = sample_texture(face, bary, v0, v1, v2);
+                    FloatType inv_z = ComputeInvZndc(std::array<FloatType, 3>{bary.z, bary.x, bary.y}, 
+                                                     std::array<FloatType, 3>{v0.z_ndc, v1.z_ndc, v2.z_ndc});
+                    FloatType& depth = z_buffer_[y * window_.width + x];
                     if (inv_z > depth) {
                         depth = inv_z;
-                        window_.setPixelColour(x, yi, colour);
+                        window_.setPixelColour(x, y, colour);
                     }
                 }
             }
         }
 
-        for (FloatType y = mid_y; y < to_y; y++) {
-            FloatType x12 = inv_slope_v1v2 * (y - v1.y) + v1.x;
-            FloatType x02 = inv_slope_v0v2 * (y - v0.y) + v0.x;
+        // Rasterize lower triangle (v1 -> v2)
+        for (std::int64_t y = mid_y; y <= to_y; y++) {
+            FloatType y_float = static_cast<FloatType>(y);
+            FloatType x12 = inv_slope_v1v2 * (y_float - v1.y) + v1.x;
+            FloatType x02 = inv_slope_v0v2 * (y_float - v0.y) + v0.x;
 
-            std::size_t start_x = std::max<std::int64_t>(std::round(std::min(x12, x02)) - 1, 0);
-            std::size_t end_x = std::min<std::size_t>(std::round(std::max(x12, x02)), window_.width - 1);
-            for (std::size_t x = start_x; x <= end_x; x++) {
+            std::int64_t start_x = std::max<std::int64_t>(static_cast<std::int64_t>(std::floor(std::min(x12, x02))), 0);
+            std::int64_t end_x = std::min<std::int64_t>(static_cast<std::int64_t>(std::ceil(std::max(x12, x02))), static_cast<std::int64_t>(window_.width - 1));
+            
+            for (std::int64_t x = start_x; x <= end_x; x++) {
                 glm::vec3 bary = convertToBarycentricCoordinates(
-                    { v0.x, v0.y }, { v1.x, v1.y }, { v2.x, v2.y }, { static_cast<FloatType>(x), static_cast<FloatType>(y) });
-                FloatType inv_z = ComputeInvZndc(std::array<FloatType, 3>{bary.z, bary.x, bary.y}, std::array<FloatType, 3>{ v0.z_ndc, v1.z_ndc, v2.z_ndc });
-                std::int64_t yi = static_cast<std::int64_t>(y);
-                if (x < window_.width && yi >= 0 && yi < static_cast<std::int64_t>(window_.height)) {
-                    FloatType& depth = z_buffer_[yi * window_.width + x];
+                    { v0.x, v0.y }, { v1.x, v1.y }, { v2.x, v2.y }, { static_cast<FloatType>(x), y_float });
+                
+                if (bary.x >= 0.0f && bary.y >= 0.0f && bary.z >= 0.0f) {
+                    std::uint32_t colour = sample_texture(face, bary, v0, v1, v2);
+                    FloatType inv_z = ComputeInvZndc(std::array<FloatType, 3>{bary.z, bary.x, bary.y}, 
+                                                     std::array<FloatType, 3>{v0.z_ndc, v1.z_ndc, v2.z_ndc});
+                    FloatType& depth = z_buffer_[y * window_.width + x];
                     if (inv_z > depth) {
                         depth = inv_z;
-                        window_.setPixelColour(x, yi, colour);
+                        window_.setPixelColour(x, y, colour);
                     }
                 }
             }
@@ -432,7 +442,7 @@ void Renderer::raytraced_render(const Camera& camera, const Face& face) noexcept
     // Raytracing not implemented yet
 }
 
-void Group::load_file(std::string filename) {
+void Model::load_file(std::string filename) {
     auto current_obj = objects_.end();
     std::ifstream file(filename);
     if (!file.is_open()) {
@@ -458,30 +468,58 @@ void Group::load_file(std::string filename) {
             std::string colour_name;
             iss >> colour_name;
             assert(materials_.find(colour_name) != materials_.end());
-            Colour colour = materials_[colour_name];
-            current_obj->set_colour(colour);
+            current_obj->material = materials_[colour_name];
         } else if (type == "v") {
             assert(current_obj != objects_.end());
             FloatType x, y, z;
             iss >> x >> y >> z;
-            vertices_.emplace_back(x / 3, y / 3, z / 3);
+            vertices_.emplace_back(x, y, z);
+        } else if (type == "vt") {
+            FloatType u, v;
+            iss >> u >> v;
+            texture_coords_.emplace_back(u, v);
         } else if (type == "f") {
             assert(current_obj != objects_.end());
-            int v1, v2, v3;
-            char slash; // to consume the '/' characters
-            iss >> v1 >> slash >> v2 >> slash >> v3 >> slash;
-            current_obj->add_face(vertices_[v1 - 1], vertices_[v2 - 1], vertices_[v3 - 1]);
+            glm::vec3 vertice[3];
+            std::uint8_t tex_indices[3];
+            glm::vec2 tex_coords[3];
+            for (int i = 0; i < 3; i++) {
+                int vertex_index;
+                char slash;
+                iss >> vertex_index >> slash;
+                vertice[i] = vertices_[vertex_index - 1];
+                if (int c = iss.peek(); c >= '0' && c <= '9') {
+                    int tex_idx;
+                    iss >> tex_idx;
+                    tex_indices[i] = tex_idx;
+                    // Store actual UV coordinates if we have them
+                    if (tex_idx > 0 && static_cast<size_t>(tex_idx) <= texture_coords_.size()) {
+                        tex_coords[i] = texture_coords_[tex_idx - 1];
+                    } else {
+                        tex_coords[i] = glm::vec2(0.0f, 0.0f);
+                    }
+                } else {
+                    tex_indices[i] = 0;
+                    tex_coords[i] = glm::vec2(0.0f, 0.0f);
+                }
+            }
+            current_obj->faces.emplace_back(Face{
+                { vertice[0], vertice[1], vertice[2] },
+                { tex_indices[0], tex_indices[1], tex_indices[2] },
+                { tex_coords[0], tex_coords[1], tex_coords[2] },
+                current_obj->material,
+            });
         }
     }
 }
-void Group::draw(Renderer& renderer, const Camera& camera) const noexcept {
+void Model::draw(Renderer& renderer, const Camera& camera) const noexcept {
     for (const auto& object : objects_) {
-        for (const auto& face : object.faces_) {
+        for (const auto& face : object.faces) {
             renderer.render(camera, face);
         }
     }
 }
-void Group::load_materials(std::string filename) {
+void Model::load_materials(std::string filename) {
     auto current_material = materials_.end();
     std::ifstream file(filename);
     if (!file.is_open()) {
@@ -501,18 +539,66 @@ void Group::load_materials(std::string filename) {
             assert(current_material != materials_.end());
             FloatType r, g, b;
             iss >> r >> g >> b;
-            current_material->second = Colour{
+            current_material->second.colour = Colour{
                 static_cast<std::uint8_t>(Clamp(r * 255.0f, 0.0f, 255.0f)),
                 static_cast<std::uint8_t>(Clamp(g * 255.0f, 0.0f, 255.0f)),
                 static_cast<std::uint8_t>(Clamp(b * 255.0f, 0.0f, 255.0f))
             };
+        } else if (type == "map_Kd") {
+            assert(current_material != materials_.end());
+            std::string texture_filename;
+            iss >> texture_filename;
+            texture_filename = (std::filesystem::path(filename).parent_path() / texture_filename).string();
+            current_material->second.texture = std::make_shared<Texture>(load_texture(texture_filename));
         }
     }
+}
+Texture Model::load_texture(std::string filename) {
+    std::ifstream file(filename, std::ifstream::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Could not open texture file: " + filename);
+    }
+    
+    std::string magic_number;
+    std::getline(file, magic_number);
+    if (magic_number != "P6") {
+        throw std::runtime_error("Invalid PPM format (expected P6): " + filename);
+    }
+    
+    std::string line;
+    std::getline(file, line);
+    while (!line.empty() && line[0] == '#') {
+        std::getline(file, line);
+    }
+    
+    std::istringstream size_stream(line);
+    std::size_t width, height;
+    if (!(size_stream >> width >> height)) {
+        throw std::runtime_error("Failed to parse texture dimensions: " + filename);
+    }
+    std::getline(file, line);
+    
+    std::vector<Colour> texture_data;
+    texture_data.resize(width * height);
+    for (std::size_t i = 0; i < width * height; i++) {
+        int red = file.get();
+        int green = file.get();
+        int blue = file.get();
+        if (red == EOF || green == EOF || blue == EOF) {
+            throw std::runtime_error("Unexpected end of file while reading texture: " + filename);
+        }
+        texture_data[i] = Colour{
+            static_cast<std::uint8_t>(red),
+            static_cast<std::uint8_t>(green),
+            static_cast<std::uint8_t>(blue)
+        };
+    }
+    return Texture(width, height, std::move(texture_data));
 }
 
 void World::load_files(const std::vector<std::string>& filenames) {
     for (const auto& filename : filenames) {
-        Group group;
+        Model group;
         group.load_file(filename);
         groups_.emplace_back(std::move(group));
     }
