@@ -15,7 +15,7 @@ int main(int argc, char *argv[]) {
 
 	DrawingWindow window = DrawingWindow(WIDTH, HEIGHT, false);
     World world;
-    world.load_file(argv[1]);
+    world.load_files(std::vector<std::string>(argv + 1, argv + argc));
     Renderer renderer(window);
 
 	SDL_Event event;

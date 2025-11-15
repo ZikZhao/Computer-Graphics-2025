@@ -446,7 +446,7 @@ void Renderer::raytraced_render(const Camera& camera, const Face& face) noexcept
     // Raytracing not implemented yet
 }
 
-void World::load_file(std::string filename) {
+void Group::load_file(std::string filename) {
     auto current_obj = objects_.end();
     std::ifstream file(filename);
     if (!file.is_open()) {
@@ -460,7 +460,7 @@ void World::load_file(std::string filename) {
         if (type == "mtllib") {
             std::string relative_path;
             iss >> relative_path;
-            std::string material_filename = filename.substr(0, filename.find_last_of("/\\") + 1) + relative_path;
+            std::string material_filename = (std::filesystem::path(filename).parent_path() / relative_path).string();
             load_materials(std::move(material_filename));
         } else if (type == "o") {
             std::string name;
@@ -488,21 +488,15 @@ void World::load_file(std::string filename) {
         }
     }
 }
-void World::draw(Renderer& renderer) const noexcept {
+void Group::draw(Renderer& renderer, const Camera& camera) const noexcept {
     renderer.clear();
     for (const auto& object : objects_) {
         for (const auto& face : object.faces_) {
-            renderer.render(camera_, face);
+            renderer.render(camera, face);
         }
     }
 }
-void World::handle_event(const SDL_Event& event) noexcept {
-    camera_.handle_event(event);
-}
-void World::orbiting() noexcept {
-    camera_.orbiting();
-}
-void World::load_materials(std::string filename) {
+void Group::load_materials(std::string filename) {
     auto current_material = materials_.end();
     std::ifstream file(filename);
     if (!file.is_open()) {
@@ -529,4 +523,23 @@ void World::load_materials(std::string filename) {
             };
         }
     }
+}
+
+void World::load_files(const std::vector<std::string>& filenames) {
+    for (const auto& filename : filenames) {
+        Group group;
+        group.load_file(filename);
+        groups_.emplace_back(std::move(group));
+    }
+}
+void World::draw(Renderer& renderer) const noexcept {
+    for (const auto& group : groups_) {
+        group.draw(renderer, camera_);
+    }
+}
+void World::handle_event(const SDL_Event& event) noexcept {
+    camera_.handle_event(event);
+}
+void World::orbiting() noexcept {
+    camera_.orbiting();
 }

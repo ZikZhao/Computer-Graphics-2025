@@ -7,6 +7,7 @@
 #include <memory>
 #include <chrono>
 #include <array>
+#include <filesystem>
 #include "DrawingWindow.h"
 #include "Utils.h"
 
@@ -111,7 +112,7 @@ struct Face {
 };
 
 class Object {
-    friend class World;
+    friend class Group;
 private:
     std::string name_;
     Colour colour_;
@@ -153,18 +154,26 @@ private:
     void rasterize_polygon(const InplaceVector<ClipVertex, 9>& polygon, const Camera& camera) noexcept;
 };
 
-class World {
+class Group {
 private:
     std::map<std::string, Colour> materials_;
     std::vector<glm::vec3> vertices_;
     std::vector<Object> objects_;
+public:
+    Group() noexcept = default;
+    void load_file(std::string filename);
+    void draw(Renderer& renderer, const Camera& camera) const noexcept;
+private:
+    void load_materials(std::string filename);
+};
+
+class World {
+private:
+    std::vector<Group> groups_;
     Camera camera_;
 public:
-    World() noexcept = default;
-    void load_file(std::string filename);
+    void load_files(const std::vector<std::string>& filenames);
     void draw(Renderer& renderer) const noexcept;
     void handle_event(const SDL_Event& event) noexcept;
     void orbiting() noexcept;
-private:
-    void load_materials(std::string filename);
 };
