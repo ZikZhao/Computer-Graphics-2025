@@ -18,16 +18,16 @@ constexpr auto Clamp(T value, T min, T max) {
     return (value < min) ? min : (value > max) ? max : value;
 }
 
-constexpr FloatType ComputeZndc(const std::array<FloatType, 3> bary, const std::array<FloatType, 3> vertices_z_ndc) {
+constexpr FloatType ComputeInvZndc(const std::array<FloatType, 3> bary, const std::array<FloatType, 3> vertices_z_ndc) {
     FloatType inv_z = bary[0] / vertices_z_ndc[0] +
                   bary[1] / vertices_z_ndc[1] +
                   bary[2] / vertices_z_ndc[2];
-    return 1.0f / inv_z;
+    return inv_z;
 }
 
-constexpr FloatType ComputeZndc(FloatType progress, const std::array<FloatType, 2> vertices_z_ndc) {
+constexpr FloatType ComputeInvZndc(FloatType progress, const std::array<FloatType, 2> vertices_z_ndc) {
     FloatType inv_z = (1.0f - progress) / vertices_z_ndc[0] + progress / vertices_z_ndc[1];
-    return 1.0f / inv_z;
+    return inv_z;
 }
 
 template<typename T, std::size_t N>
@@ -151,7 +151,6 @@ private:
     static ClipVertex intersect_plane(const ClipVertex& v0, const ClipVertex& v1, ClipPlane plane) noexcept;
     static InplaceVector<ClipVertex, 9> clip_against_plane(const InplaceVector<ClipVertex, 9>& input, ClipPlane plane) noexcept;
     InplaceVector<ClipVertex, 9> clip_triangle(const Camera& camera, const Face& face) noexcept;
-    void rasterize_polygon(const InplaceVector<ClipVertex, 9>& polygon, const Camera& camera) noexcept;
 };
 
 class Group {
