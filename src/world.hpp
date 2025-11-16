@@ -160,9 +160,12 @@ public:
     void render(World& world) noexcept;
     void handle_event(const SDL_Event& event) noexcept;
 private:
-    void render(const Camera& camera, const Face& face) noexcept;
-    void render_raytraced(const Camera& camera, const std::vector<Face>& all_faces, const glm::vec3& light_pos,
-                          std::size_t light_face_start, std::size_t light_face_end) noexcept;
+    // World-based rendering (used by render() dispatch)
+    void wireframe_render(World& world) noexcept;
+    void rasterized_render(World& world) noexcept;
+    void raytraced_render(World& world) noexcept;
+    
+    // Per-face rendering (used by Model::draw for wireframe/rasterized)
     void wireframe_render(const Camera& camera, const Face& face) noexcept;
     void rasterized_render(const Camera& camera, const Face& face) noexcept;
     // Ray tracing helpers
@@ -183,6 +186,7 @@ private:
 class Model {
 public:
     std::vector<Object> objects_;
+    std::vector<Face> all_faces_;  // Flattened faces for efficient iteration
 private:
     std::map<std::string, Material> materials_;
     std::vector<glm::vec3> vertices_;
@@ -191,9 +195,13 @@ public:
     Model() noexcept = default;
     void load_file(std::string filename);
     void draw(Renderer& renderer, const Camera& camera) const noexcept;
+    
+    // Helper to collect all faces from multiple models (uses static buffer to avoid reallocation)
+    static const std::vector<Face>& collect_all_faces(const std::vector<Model>& models) noexcept;
 private:
     void load_materials(std::string filename);
     Texture load_texture(std::string filename);
+    void flatten_faces() noexcept;  // Build all_faces_ from objects_
 };
 
 class World {

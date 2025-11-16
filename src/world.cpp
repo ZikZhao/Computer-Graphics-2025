@@ -1,4 +1,5 @@
 #include "world.hpp"
+#include <numeric>
 
 glm::vec3 Object::compute_centroid(const Object& object) noexcept {
     glm::vec3 sum(0.0f, 0.0f, 0.0f);
@@ -297,20 +298,7 @@ InplaceVector<ClipVertex, 9> Renderer::clip_triangle(const Camera& camera, const
     
     return polygon;
 }
-void Renderer::render(const Camera& camera, const Face& face) noexcept {
-    aspect_ratio_ = static_cast<double>(window_.width) / window_.height;
-    switch (mode_) {
-    case Wireframe:
-        wireframe_render(camera, face);
-        break;
-    case Rasterized:
-        rasterized_render(camera, face);
-        break;
-    case Raytraced:
-        // Raytraced mode is handled by render(World&)
-        break;
-    }
-}
+
 void Renderer::handle_event(const SDL_Event& event) noexcept {
     if (event.type == SDL_KEYDOWN) {
         switch (event.key.keysym.sym) {
@@ -337,6 +325,107 @@ std::uint32_t Renderer::sample_texture(const Face& face, const glm::vec3& bary,
     
     return face.material.texture->sample(u, v);
 }
+void Renderer::render(World& world) noexcept {
+    clear();
+    aspect_ratio_ = static_cast<double>(window_.width) / window_.height;
+    
+    // Dispatch based on rendering mode
+    switch (mode_) {
+    case Wireframe:
+        wireframe_render(world);
+        break;
+    case Rasterized:
+        rasterized_render(world);
+        break;
+    case Raytraced:
+        raytraced_render(world);
+        break;
+    }
+}
+
+// World-based rendering implementations
+void Renderer::wireframe_render(World& world) noexcept {
+    for (const auto& model : world.models()) {
+        for (const auto& face : model.all_faces_) {
+            wireframe_render(world.camera(), face);
+        }
+    }
+}
+
+void Renderer::rasterized_render(World& world) noexcept {
+    for (const auto& model : world.models()) {
+        for (const auto& face : model.all_faces_) {
+            rasterized_render(world.camera(), face);
+        }
+    }
+}
+
+void Renderer::raytraced_render(World& world) noexcept {
+    const Camera& camera = world.camera();
+    const glm::vec3& light_pos = world.light_position();
+    std::size_t light_face_start = world.light_face_start();
+    std::size_t light_face_end = world.light_face_end();
+    
+    // Use static buffer to collect all faces (avoids reallocation each frame)
+    const std::vector<Face>& all_faces = Model::collect_all_faces(world.models());
+    
+    static bool first_frame = true;
+    int hit_count = 0;
+    int shadow_count = 0;
+    int total_pixels = window_.width * window_.height;
+    
+    // Iterate over all pixels
+    for (int y = 0; y < static_cast<int>(window_.height); y++) {
+        for (int x = 0; x < static_cast<int>(window_.width); x++) {
+            // Generate ray for this pixel
+            auto [ray_origin, ray_dir] = camera.generate_ray(x, y, window_.width, window_.height, aspect_ratio_);
+            
+            // Debug: print center pixel ray
+            if (first_frame && x == static_cast<int>(window_.width / 2) && y == static_cast<int>(window_.height / 2)) {
+                std::cout << "Center ray: origin=(" << ray_origin.x << "," << ray_origin.y << "," << ray_origin.z 
+                          << ") dir=(" << ray_dir.x << "," << ray_dir.y << "," << ray_dir.z << ")" << std::endl;
+            }
+            
+            // Find closest intersection
+            RayTriangleIntersection intersection = find_closest_intersection(ray_origin, ray_dir, all_faces);
+            
+            if (intersection.triangleIndex != static_cast<std::size_t>(-1)) {
+                hit_count++;
+                
+                // Check if point is in shadow
+                bool in_shadow = is_in_shadow(intersection.intersectionPoint, light_pos, all_faces,
+                                              light_face_start, light_face_end);
+                
+                if (in_shadow) {
+                    shadow_count++;
+                }
+                
+                // Apply simple lighting
+                Colour final_colour = intersection.colour;
+                if (in_shadow) {
+                    // Darken shadowed areas
+                    final_colour.red = static_cast<uint8_t>(final_colour.red * 0.3f);
+                    final_colour.green = static_cast<uint8_t>(final_colour.green * 0.3f);
+                    final_colour.blue = static_cast<uint8_t>(final_colour.blue * 0.3f);
+                }
+                
+                window_.setPixelColour(x, y, final_colour);
+            }
+        }
+    }
+    
+    if (first_frame) {
+        std::cout << "First frame stats: " << hit_count << "/" << total_pixels 
+                  << " pixels hit geometry (" << (100.0 * hit_count / total_pixels) << "%)" << std::endl;
+        std::cout << "Shadow pixels: " << shadow_count << "/" << hit_count 
+                  << " (" << (hit_count > 0 ? 100.0 * shadow_count / hit_count : 0.0) << "%)" << std::endl;
+        std::cout << "Light position: (" << light_pos.x << "," << light_pos.y << "," << light_pos.z << ")" << std::endl;
+        std::cout << "Total faces: " << all_faces.size() << std::endl;
+        first_frame = false;
+    }
+}
+
+// Per-face rendering implementations
 void Renderer::wireframe_render(const Camera& camera, const Face& face) noexcept {
     auto clipped = clip_triangle(camera, face);
     if (clipped.size() < 3) return;
@@ -552,62 +641,6 @@ bool Renderer::is_in_shadow(const glm::vec3& point, const glm::vec3& light_pos, 
     
     return false;  // Not in shadow
 }
-void Renderer::render_raytraced(const Camera& camera, const std::vector<Face>& all_faces, const glm::vec3& light_pos,
-                                std::size_t light_face_start, std::size_t light_face_end) noexcept {
-    aspect_ratio_ = static_cast<double>(window_.width) / window_.height;
-    
-    static bool first_frame = true;
-    int hit_count = 0;
-    int shadow_count = 0;
-    int total_pixels = window_.width * window_.height;
-    
-    // Iterate over all pixels
-    for (int y = 0; y < static_cast<int>(window_.height); y++) {
-        for (int x = 0; x < static_cast<int>(window_.width); x++) {
-            // Generate ray for this pixel
-            auto [ray_origin, ray_dir] = camera.generate_ray(x, y, window_.width, window_.height, aspect_ratio_);
-            
-            // Debug: print center pixel ray
-            if (first_frame && x == window_.width / 2 && y == window_.height / 2) {
-                std::cout << "Center ray: origin=(" << ray_origin.x << "," << ray_origin.y << "," << ray_origin.z 
-                          << ") dir=(" << ray_dir.x << "," << ray_dir.y << "," << ray_dir.z << ")" << std::endl;
-            }
-            
-            // Find closest intersection
-            RayTriangleIntersection intersection = find_closest_intersection(ray_origin, ray_dir, all_faces);
-            
-            std::uint32_t pixel_colour;
-            
-            if (intersection.triangleIndex != static_cast<size_t>(-1)) {
-                hit_count++;
-                // Check if point is in shadow
-                if (is_in_shadow(intersection.intersectionPoint, light_pos, all_faces, light_face_start, light_face_end)) {
-                    shadow_count++;
-                    // In shadow - render pure black
-                    pixel_colour = 0xFF000000;
-                } else {
-                    // Not in shadow - use the color from intersection
-                    pixel_colour = intersection.colour;
-                }
-            } else {
-                // No intersection - render black (background)
-                pixel_colour = 0xFF000000;
-            }
-            
-            window_.setPixelColour(x, y, pixel_colour);
-        }
-    }
-    
-    if (first_frame) {
-        std::cout << "First frame stats: " << hit_count << "/" << total_pixels << " pixels hit geometry ("
-                  << (100.0 * hit_count / total_pixels) << "%)" << std::endl;
-        std::cout << "Shadow pixels: " << shadow_count << "/" << hit_count << " ("
-                  << (100.0 * shadow_count / hit_count) << "%)" << std::endl;
-        std::cout << "Light position: (" << light_pos.x << "," << light_pos.y << "," << light_pos.z << ")" << std::endl;
-        std::cout << "Total faces: " << all_faces.size() << std::endl;
-        first_frame = false;
-    }
-}
 
 void Model::load_file(std::string filename) {
     auto current_obj = objects_.end();
@@ -678,14 +711,59 @@ void Model::load_file(std::string filename) {
             });
         }
     }
+    
+    // Flatten faces for efficient iteration
+    flatten_faces();
 }
-void Model::draw(Renderer& renderer, const Camera& camera) const noexcept {
+
+void Model::flatten_faces() noexcept {
+    all_faces_.clear();
+    all_faces_.reserve(std::accumulate(objects_.begin(), objects_.end(), std::size_t(0),
+        [](std::size_t sum, const Object& obj) { return sum + obj.faces.size(); }));
+    
     for (const auto& object : objects_) {
-        for (const auto& face : object.faces) {
-            renderer.render(camera, face);
+        all_faces_.insert(all_faces_.end(), object.faces.begin(), object.faces.end());
+    }
+}
+
+const std::vector<Face>& Model::collect_all_faces(const std::vector<Model>& models) noexcept {
+    // Static buffer to avoid reallocation each frame
+    static std::vector<Face> all_faces;
+    
+    // Calculate total size
+    std::size_t total_faces = 0;
+    for (const auto& model : models) {
+        total_faces += model.all_faces_.size();
+    }
+    
+    // Reserve and collect
+    all_faces.clear();
+    all_faces.reserve(total_faces);
+    for (const auto& model : models) {
+        all_faces.insert(all_faces.end(), model.all_faces_.begin(), model.all_faces_.end());
+    }
+    
+    return all_faces;
+}
+
+void Model::draw(Renderer& renderer, const Camera& camera) const noexcept {
+    // This method is now only used for wireframe/rasterized modes
+    // Raytracing uses World-based rendering
+    for (const auto& face : all_faces_) {
+        switch (renderer.mode_) {
+        case Renderer::Wireframe:
+            renderer.wireframe_render(camera, face);
+            break;
+        case Renderer::Rasterized:
+            renderer.rasterized_render(camera, face);
+            break;
+        case Renderer::Raytraced:
+            // Raytraced mode is handled by Renderer::render(World&)
+            break;
         }
     }
 }
+
 void Model::load_materials(std::string filename) {
     auto current_material = materials_.end();
     std::ifstream file(filename);
@@ -802,32 +880,6 @@ void World::load_files(const std::vector<std::string>& filenames) {
     
     // After loading all models, compute light position
     compute_light_position();
-}
-
-void Renderer::render(World& world) noexcept {
-    clear();
-    
-    // Check if we're in raytraced mode
-    if (mode_ == Raytraced) {
-        // Collect all faces from all models
-        std::vector<Face> all_faces;
-        for (const auto& model : world.models()) {
-            for (const auto& object : model.objects_) {
-                for (const auto& face : object.faces) {
-                    all_faces.push_back(face);
-                }
-            }
-        }
-        
-        // Render using ray tracing
-        render_raytraced(world.camera(), all_faces, world.light_position(), 
-                        world.light_face_start(), world.light_face_end());
-    } else {
-        // Use traditional per-face rendering for wireframe and rasterized modes
-        for (const auto& model : world.models()) {
-            model.draw(*this, world.camera());
-        }
-    }
 }
 
 void World::handle_event(const SDL_Event& event) noexcept {
