@@ -9,30 +9,7 @@
 #include <array>
 #include <filesystem>
 #include "DrawingWindow.h"
-#include "Utils.h"
 #include "utils.hpp"
-
-using FloatType = decltype(std::declval<glm::vec3>().x);
-
-template<typename T, std::size_t N>
-class InplaceVector {
-private:
-    T data_[N];
-    std::size_t size_ = 0;
-public:
-    constexpr InplaceVector() noexcept = default;
-    constexpr InplaceVector(std::initializer_list<T> init) noexcept : size_(init.size()) {
-        assert(size_ <= N);
-        std::copy(init.begin(), init.end(), std::begin(data_));
-    }
-    constexpr void push_back(const T& value) noexcept {
-        assert(size_ < N);
-        data_[size_++] = value;
-    }
-    constexpr std::size_t size() const noexcept { return size_; }
-    constexpr T& operator[](std::size_t index) noexcept { return data_[index]; }
-    constexpr const T& operator[](std::size_t index) const noexcept { return data_[index]; }
-};
 
 // Clipping planes for frustum
 enum class ClipPlane {
@@ -132,16 +109,51 @@ struct Object {
     std::string name;
     Material material;
     std::vector<Face> faces;
-    
-    // Compute centroid of all vertices in this object
-    static glm::vec3 compute_centroid(const Object& object) noexcept;
 };
 
-// Forward declaration
-class World;
+class Model {
+public:
+    std::vector<Object> objects_;
+    std::vector<Face> all_faces_;  // Flattened faces for efficient iteration
+private:
+    std::map<std::string, Material> materials_;
+    std::vector<glm::vec3> vertices_;
+    std::vector<glm::vec2> texture_coords_;  // vt coordinates from OBJ
+public:
+    Model() noexcept = default;
+    void load_file(std::string filename);
+    // Helper to collect all faces from multiple models (uses static buffer to avoid reallocation)
+    static const std::vector<Face>& collect_all_faces(const std::vector<Model>& models) noexcept;
+    // Getter for all_faces_
+    const std::vector<Face>& all_faces() const noexcept { return all_faces_; }
+private:
+    void load_materials(std::string filename);
+    Texture load_texture(std::string filename);
+    void cache_faces() noexcept;  // Build all_faces_ from objects_
+};
+
+class World {
+private:
+    std::vector<Model> models_;
+    Camera camera_;
+    glm::vec3 light_position_ = glm::vec3(0.0f, 0.0f, 0.0f);
+    std::size_t light_face_start_ = 0;
+    std::size_t light_face_end_ = 0;
+    void compute_light_position() noexcept;
+public:
+    void load_files(const std::vector<std::string>& filenames);
+    void handle_event(const SDL_Event& event) noexcept;
+    void orbiting() noexcept;
+    // Accessors for Renderer
+    Camera& camera() noexcept { return camera_; }
+    const Camera& camera() const noexcept { return camera_; }
+    const std::vector<Model>& models() const noexcept { return models_; }
+    const glm::vec3& light_position() const noexcept { return light_position_; }
+    std::size_t light_face_start() const noexcept { return light_face_start_; }
+    std::size_t light_face_end() const noexcept { return light_face_end_; }
+};
 
 class Renderer {
-    friend class Model;  // Allow Model to call private render(Camera, Face) method
 public:
     enum Mode {
         Wireframe,
@@ -164,7 +176,6 @@ private:
     void wireframe_render(World& world) noexcept;
     void rasterized_render(World& world) noexcept;
     void raytraced_render(World& world) noexcept;
-    
     // Per-face rendering (used by Model::draw for wireframe/rasterized)
     void wireframe_render(const Camera& camera, const Face& face) noexcept;
     void rasterized_render(const Camera& camera, const Face& face) noexcept;
@@ -181,47 +192,4 @@ private:
     static ClipVertex intersect_plane(const ClipVertex& v0, const ClipVertex& v1, ClipPlane plane) noexcept;
     static InplaceVector<ClipVertex, 9> clip_against_plane(const InplaceVector<ClipVertex, 9>& input, ClipPlane plane) noexcept;
     InplaceVector<ClipVertex, 9> clip_triangle(const Camera& camera, const Face& face) noexcept;
-};
-
-class Model {
-public:
-    std::vector<Object> objects_;
-    std::vector<Face> all_faces_;  // Flattened faces for efficient iteration
-private:
-    std::map<std::string, Material> materials_;
-    std::vector<glm::vec3> vertices_;
-    std::vector<glm::vec2> texture_coords_;  // vt coordinates from OBJ
-public:
-    Model() noexcept = default;
-    void load_file(std::string filename);
-    void draw(Renderer& renderer, const Camera& camera) const noexcept;
-    
-    // Helper to collect all faces from multiple models (uses static buffer to avoid reallocation)
-    static const std::vector<Face>& collect_all_faces(const std::vector<Model>& models) noexcept;
-private:
-    void load_materials(std::string filename);
-    Texture load_texture(std::string filename);
-    void flatten_faces() noexcept;  // Build all_faces_ from objects_
-};
-
-class World {
-private:
-    std::vector<Model> models_;
-    Camera camera_;
-    glm::vec3 light_position_ = glm::vec3(0.0f, 0.0f, 0.0f);
-    std::size_t light_face_start_ = 0;
-    std::size_t light_face_end_ = 0;
-    void compute_light_position() noexcept;
-public:
-    void load_files(const std::vector<std::string>& filenames);
-    void handle_event(const SDL_Event& event) noexcept;
-    void orbiting() noexcept;
-    
-    // Accessors for Renderer
-    Camera& camera() noexcept { return camera_; }
-    const Camera& camera() const noexcept { return camera_; }
-    const std::vector<Model>& models() const noexcept { return models_; }
-    const glm::vec3& light_position() const noexcept { return light_position_; }
-    std::size_t light_face_start() const noexcept { return light_face_start_; }
-    std::size_t light_face_end() const noexcept { return light_face_end_; }
 };

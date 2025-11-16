@@ -1,24 +1,6 @@
 #include "world.hpp"
 #include <numeric>
 
-glm::vec3 Object::compute_centroid(const Object& object) noexcept {
-    glm::vec3 sum(0.0f, 0.0f, 0.0f);
-    std::size_t vertex_count = 0;
-    
-    for (const auto& face : object.faces) {
-        for (const auto& vertex : face.vertices) {
-            sum += vertex;
-            vertex_count++;
-        }
-    }
-    
-    if (vertex_count == 0) {
-        return glm::vec3(0.0f, 0.0f, 0.0f);
-    }
-    
-    return sum / static_cast<FloatType>(vertex_count);
-}
-
 void Camera::start_orbiting(glm::vec3 target) {
     orbit_target_ = target;
     last_orbit_time_ = std::chrono::system_clock::now().time_since_epoch().count();
@@ -163,6 +145,231 @@ std::pair<glm::vec3, glm::vec3> Camera::generate_ray(int pixel_x, int pixel_y, i
     return {position_, glm::normalize(ray_dir_world)};
 }
 
+void Model::load_file(std::string filename) {
+    auto current_obj = objects_.end();
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        throw std::runtime_error("Could not open file: " + filename);
+    }
+    std::string line;
+    while (std::getline(file, line)) {
+        std::istringstream iss(line);
+        std::string type;
+        iss >> type;
+        if (type == "mtllib") {
+            std::string relative_path;
+            iss >> relative_path;
+            std::string material_filename = (std::filesystem::path(filename).parent_path() / relative_path).string();
+            load_materials(std::move(material_filename));
+        } else if (type == "o") {
+            std::string name;
+            iss >> name;
+            objects_.emplace_back(name);
+            current_obj = std::prev(objects_.end());
+        } else if (type == "usemtl") {
+            assert(current_obj != objects_.end());
+            std::string colour_name;
+            iss >> colour_name;
+            assert(materials_.find(colour_name) != materials_.end());
+            current_obj->material = materials_[colour_name];
+        } else if (type == "v") {
+            assert(current_obj != objects_.end());
+            FloatType x, y, z;
+            iss >> x >> y >> z;
+            vertices_.emplace_back(x, y, z);
+        } else if (type == "vt") {
+            FloatType u, v;
+            iss >> u >> v;
+            texture_coords_.emplace_back(u, v);
+        } else if (type == "f") {
+            assert(current_obj != objects_.end());
+            glm::vec3 vertice[3];
+            std::uint8_t tex_indices[3];
+            glm::vec2 tex_coords[3];
+            for (int i = 0; i < 3; i++) {
+                int vertex_index;
+                char slash;
+                iss >> vertex_index >> slash;
+                vertice[i] = vertices_[vertex_index - 1];
+                if (int c = iss.peek(); c >= '0' && c <= '9') {
+                    int tex_idx;
+                    iss >> tex_idx;
+                    tex_indices[i] = tex_idx;
+                    // Store actual UV coordinates if we have them
+                    if (tex_idx > 0 && static_cast<size_t>(tex_idx) <= texture_coords_.size()) {
+                        tex_coords[i] = texture_coords_[tex_idx - 1];
+                    } else {
+                        tex_coords[i] = glm::vec2(0.0f, 0.0f);
+                    }
+                } else {
+                    tex_indices[i] = 0;
+                    tex_coords[i] = glm::vec2(0.0f, 0.0f);
+                }
+            }
+            current_obj->faces.emplace_back(Face{
+                { vertice[0], vertice[1], vertice[2] },
+                { tex_indices[0], tex_indices[1], tex_indices[2] },
+                { tex_coords[0], tex_coords[1], tex_coords[2] },
+                current_obj->material,
+            });
+        }
+    }
+    cache_faces();
+}
+void Model::cache_faces() noexcept {
+    all_faces_.clear();
+    all_faces_.reserve(std::accumulate(objects_.begin(), objects_.end(), std::size_t(0),
+        [](std::size_t sum, const Object& obj) { return sum + obj.faces.size(); }));
+    
+    for (const auto& object : objects_) {
+        all_faces_.insert(all_faces_.end(), object.faces.begin(), object.faces.end());
+    }
+}
+const std::vector<Face>& Model::collect_all_faces(const std::vector<Model>& models) noexcept {
+   static std::vector<Face> all_faces;
+    std::size_t total_faces = 0;
+    for (const auto& model : models) {
+        total_faces += model.all_faces_.size();
+    }
+    all_faces.clear();
+    all_faces.reserve(total_faces);
+    for (const auto& model : models) {
+        all_faces.insert(all_faces.end(), model.all_faces_.begin(), model.all_faces_.end());
+    }
+    return all_faces;
+}
+void Model::load_materials(std::string filename) {
+    auto current_material = materials_.end();
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        throw std::runtime_error("Could not open material file: " + filename);
+    }
+    std::string line;
+    while (std::getline(file, line)) {
+        std::istringstream iss(line);
+        std::string type;
+        iss >> type;
+        if (type == "newmtl") {
+            std::string name;
+            iss >> name;
+            assert(materials_.find(name) == materials_.end());
+            current_material = materials_.emplace(name, Colour{255, 255, 255}).first;
+        } else if (type == "Kd") {
+            assert(current_material != materials_.end());
+            FloatType r, g, b;
+            iss >> r >> g >> b;
+            current_material->second.colour = Colour{
+                static_cast<std::uint8_t>(Clamp(r * 255.0f, 0.0f, 255.0f)),
+                static_cast<std::uint8_t>(Clamp(g * 255.0f, 0.0f, 255.0f)),
+                static_cast<std::uint8_t>(Clamp(b * 255.0f, 0.0f, 255.0f))
+            };
+        } else if (type == "map_Kd") {
+            assert(current_material != materials_.end());
+            std::string texture_filename;
+            iss >> texture_filename;
+            texture_filename = (std::filesystem::path(filename).parent_path() / texture_filename).string();
+            current_material->second.texture = std::make_shared<Texture>(load_texture(texture_filename));
+        }
+    }
+}
+Texture Model::load_texture(std::string filename) {
+    std::ifstream file(filename, std::ifstream::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Could not open texture file: " + filename);
+    }
+    
+    std::string magic_number;
+    std::getline(file, magic_number);
+    if (magic_number != "P6") {
+        throw std::runtime_error("Invalid PPM format (expected P6): " + filename);
+    }
+    
+    std::string line;
+    std::getline(file, line);
+    while (!line.empty() && line[0] == '#') {
+        std::getline(file, line);
+    }
+    
+    std::istringstream size_stream(line);
+    std::size_t width, height;
+    if (!(size_stream >> width >> height)) {
+        throw std::runtime_error("Failed to parse texture dimensions: " + filename);
+    }
+    std::getline(file, line);
+    
+    std::vector<Colour> texture_data;
+    texture_data.resize(width * height);
+    for (std::size_t i = 0; i < width * height; i++) {
+        int red = file.get();
+        int green = file.get();
+        int blue = file.get();
+        if (red == EOF || green == EOF || blue == EOF) {
+            throw std::runtime_error("Unexpected end of file while reading texture: " + filename);
+        }
+        texture_data[i] = Colour{
+            static_cast<std::uint8_t>(red),
+            static_cast<std::uint8_t>(green),
+            static_cast<std::uint8_t>(blue)
+        };
+    }
+    return Texture(width, height, std::move(texture_data));
+}
+void World::compute_light_position() noexcept {
+    // Find first pure white (255, 255, 255) object without texture
+    std::size_t face_offset = 0;
+    for (const auto& model : models_) {
+        for (const auto& object : model.objects_) {
+            const Material& mat = object.material;
+            if (mat.colour.red == 255 && 
+                mat.colour.green == 255 && 
+                mat.colour.blue == 255 && 
+                mat.texture == nullptr) {
+                // Found white non-textured object - use its centroid as light
+                // Compute centroid (inlined)
+                glm::vec3 sum(0.0f);
+                std::size_t vertex_count = 0;
+                for (const auto& face : object.faces) {
+                    for (const auto& vertex : face.vertices) {
+                        sum += vertex;
+                        vertex_count++;
+                    }
+                }
+                light_position_ = (vertex_count > 0) ? sum / static_cast<FloatType>(vertex_count) : glm::vec3(0.0f);
+                light_face_start_ = face_offset;
+                light_face_end_ = face_offset + object.faces.size();
+                std::cout << "Light source found: " << object.name 
+                          << " at position (" << light_position_.x << ", " 
+                          << light_position_.y << ", " << light_position_.z << ")" << std::endl;
+                std::cout << "Light faces: [" << light_face_start_ << ", " << light_face_end_ << ")" << std::endl;
+                return;
+            }
+            face_offset += object.faces.size();
+        }
+    }
+    
+    // Fallback: no white object found, use default position
+    light_position_ = glm::vec3(0.0f, 2.0f, 0.0f);
+    light_face_start_ = 0;
+    light_face_end_ = 0;
+    std::cout << "No white light source found, using default position (0, 2, 0)" << std::endl;
+}
+void World::load_files(const std::vector<std::string>& filenames) {
+    for (const auto& filename : filenames) {
+        Model group;
+        group.load_file(filename);
+        models_.emplace_back(std::move(group));
+    }
+    
+    // After loading all models, compute light position
+    compute_light_position();
+}
+void World::handle_event(const SDL_Event& event) noexcept {
+    camera_.handle_event(event);
+}
+void World::orbiting() noexcept {
+    camera_.orbiting();
+}
+
 Renderer::Renderer(DrawingWindow& window) noexcept
     : window_(window), z_buffer_(window.width * window.height, 0.0f) {}
 void Renderer::clear() noexcept {
@@ -298,7 +505,6 @@ InplaceVector<ClipVertex, 9> Renderer::clip_triangle(const Camera& camera, const
     
     return polygon;
 }
-
 void Renderer::handle_event(const SDL_Event& event) noexcept {
     if (event.type == SDL_KEYDOWN) {
         switch (event.key.keysym.sym) {
@@ -342,24 +548,20 @@ void Renderer::render(World& world) noexcept {
         break;
     }
 }
-
-// World-based rendering implementations
 void Renderer::wireframe_render(World& world) noexcept {
     for (const auto& model : world.models()) {
-        for (const auto& face : model.all_faces_) {
+        for (const auto& face : model.all_faces()) {
             wireframe_render(world.camera(), face);
         }
     }
 }
-
 void Renderer::rasterized_render(World& world) noexcept {
     for (const auto& model : world.models()) {
-        for (const auto& face : model.all_faces_) {
+        for (const auto& face : model.all_faces()) {
             rasterized_render(world.camera(), face);
         }
     }
 }
-
 void Renderer::raytraced_render(World& world) noexcept {
     const Camera& camera = world.camera();
     const glm::vec3& light_pos = world.light_position();
@@ -424,8 +626,6 @@ void Renderer::raytraced_render(World& world) noexcept {
         first_frame = false;
     }
 }
-
-// Per-face rendering implementations
 void Renderer::wireframe_render(const Camera& camera, const Face& face) noexcept {
     auto clipped = clip_triangle(camera, face);
     if (clipped.size() < 3) return;
@@ -566,8 +766,6 @@ void Renderer::rasterized_render(const Camera& camera, const Face& face) noexcep
         }
     }
 }
-
-// Möller-Trumbore ray-triangle intersection algorithm
 RayTriangleIntersection Renderer::find_closest_intersection(const glm::vec3& ray_origin, const glm::vec3& ray_dir, const std::vector<Face>& faces) noexcept {
     RayTriangleIntersection closest;
     closest.distanceFromCamera = std::numeric_limits<FloatType>::infinity();
@@ -640,251 +838,4 @@ bool Renderer::is_in_shadow(const glm::vec3& point, const glm::vec3& light_pos, 
     }
     
     return false;  // Not in shadow
-}
-
-void Model::load_file(std::string filename) {
-    auto current_obj = objects_.end();
-    std::ifstream file(filename);
-    if (!file.is_open()) {
-        throw std::runtime_error("Could not open file: " + filename);
-    }
-    std::string line;
-    while (std::getline(file, line)) {
-        std::istringstream iss(line);
-        std::string type;
-        iss >> type;
-        if (type == "mtllib") {
-            std::string relative_path;
-            iss >> relative_path;
-            std::string material_filename = (std::filesystem::path(filename).parent_path() / relative_path).string();
-            load_materials(std::move(material_filename));
-        } else if (type == "o") {
-            std::string name;
-            iss >> name;
-            objects_.emplace_back(name);
-            current_obj = std::prev(objects_.end());
-        } else if (type == "usemtl") {
-            assert(current_obj != objects_.end());
-            std::string colour_name;
-            iss >> colour_name;
-            assert(materials_.find(colour_name) != materials_.end());
-            current_obj->material = materials_[colour_name];
-        } else if (type == "v") {
-            assert(current_obj != objects_.end());
-            FloatType x, y, z;
-            iss >> x >> y >> z;
-            vertices_.emplace_back(x, y, z);
-        } else if (type == "vt") {
-            FloatType u, v;
-            iss >> u >> v;
-            texture_coords_.emplace_back(u, v);
-        } else if (type == "f") {
-            assert(current_obj != objects_.end());
-            glm::vec3 vertice[3];
-            std::uint8_t tex_indices[3];
-            glm::vec2 tex_coords[3];
-            for (int i = 0; i < 3; i++) {
-                int vertex_index;
-                char slash;
-                iss >> vertex_index >> slash;
-                vertice[i] = vertices_[vertex_index - 1];
-                if (int c = iss.peek(); c >= '0' && c <= '9') {
-                    int tex_idx;
-                    iss >> tex_idx;
-                    tex_indices[i] = tex_idx;
-                    // Store actual UV coordinates if we have them
-                    if (tex_idx > 0 && static_cast<size_t>(tex_idx) <= texture_coords_.size()) {
-                        tex_coords[i] = texture_coords_[tex_idx - 1];
-                    } else {
-                        tex_coords[i] = glm::vec2(0.0f, 0.0f);
-                    }
-                } else {
-                    tex_indices[i] = 0;
-                    tex_coords[i] = glm::vec2(0.0f, 0.0f);
-                }
-            }
-            current_obj->faces.emplace_back(Face{
-                { vertice[0], vertice[1], vertice[2] },
-                { tex_indices[0], tex_indices[1], tex_indices[2] },
-                { tex_coords[0], tex_coords[1], tex_coords[2] },
-                current_obj->material,
-            });
-        }
-    }
-    
-    // Flatten faces for efficient iteration
-    flatten_faces();
-}
-
-void Model::flatten_faces() noexcept {
-    all_faces_.clear();
-    all_faces_.reserve(std::accumulate(objects_.begin(), objects_.end(), std::size_t(0),
-        [](std::size_t sum, const Object& obj) { return sum + obj.faces.size(); }));
-    
-    for (const auto& object : objects_) {
-        all_faces_.insert(all_faces_.end(), object.faces.begin(), object.faces.end());
-    }
-}
-
-const std::vector<Face>& Model::collect_all_faces(const std::vector<Model>& models) noexcept {
-    // Static buffer to avoid reallocation each frame
-    static std::vector<Face> all_faces;
-    
-    // Calculate total size
-    std::size_t total_faces = 0;
-    for (const auto& model : models) {
-        total_faces += model.all_faces_.size();
-    }
-    
-    // Reserve and collect
-    all_faces.clear();
-    all_faces.reserve(total_faces);
-    for (const auto& model : models) {
-        all_faces.insert(all_faces.end(), model.all_faces_.begin(), model.all_faces_.end());
-    }
-    
-    return all_faces;
-}
-
-void Model::draw(Renderer& renderer, const Camera& camera) const noexcept {
-    // This method is now only used for wireframe/rasterized modes
-    // Raytracing uses World-based rendering
-    for (const auto& face : all_faces_) {
-        switch (renderer.mode_) {
-        case Renderer::Wireframe:
-            renderer.wireframe_render(camera, face);
-            break;
-        case Renderer::Rasterized:
-            renderer.rasterized_render(camera, face);
-            break;
-        case Renderer::Raytraced:
-            // Raytraced mode is handled by Renderer::render(World&)
-            break;
-        }
-    }
-}
-
-void Model::load_materials(std::string filename) {
-    auto current_material = materials_.end();
-    std::ifstream file(filename);
-    if (!file.is_open()) {
-        throw std::runtime_error("Could not open material file: " + filename);
-    }
-    std::string line;
-    while (std::getline(file, line)) {
-        std::istringstream iss(line);
-        std::string type;
-        iss >> type;
-        if (type == "newmtl") {
-            std::string name;
-            iss >> name;
-            assert(materials_.find(name) == materials_.end());
-            current_material = materials_.emplace(name, Colour{255, 255, 255}).first;
-        } else if (type == "Kd") {
-            assert(current_material != materials_.end());
-            FloatType r, g, b;
-            iss >> r >> g >> b;
-            current_material->second.colour = Colour{
-                static_cast<std::uint8_t>(Clamp(r * 255.0f, 0.0f, 255.0f)),
-                static_cast<std::uint8_t>(Clamp(g * 255.0f, 0.0f, 255.0f)),
-                static_cast<std::uint8_t>(Clamp(b * 255.0f, 0.0f, 255.0f))
-            };
-        } else if (type == "map_Kd") {
-            assert(current_material != materials_.end());
-            std::string texture_filename;
-            iss >> texture_filename;
-            texture_filename = (std::filesystem::path(filename).parent_path() / texture_filename).string();
-            current_material->second.texture = std::make_shared<Texture>(load_texture(texture_filename));
-        }
-    }
-}
-Texture Model::load_texture(std::string filename) {
-    std::ifstream file(filename, std::ifstream::binary);
-    if (!file.is_open()) {
-        throw std::runtime_error("Could not open texture file: " + filename);
-    }
-    
-    std::string magic_number;
-    std::getline(file, magic_number);
-    if (magic_number != "P6") {
-        throw std::runtime_error("Invalid PPM format (expected P6): " + filename);
-    }
-    
-    std::string line;
-    std::getline(file, line);
-    while (!line.empty() && line[0] == '#') {
-        std::getline(file, line);
-    }
-    
-    std::istringstream size_stream(line);
-    std::size_t width, height;
-    if (!(size_stream >> width >> height)) {
-        throw std::runtime_error("Failed to parse texture dimensions: " + filename);
-    }
-    std::getline(file, line);
-    
-    std::vector<Colour> texture_data;
-    texture_data.resize(width * height);
-    for (std::size_t i = 0; i < width * height; i++) {
-        int red = file.get();
-        int green = file.get();
-        int blue = file.get();
-        if (red == EOF || green == EOF || blue == EOF) {
-            throw std::runtime_error("Unexpected end of file while reading texture: " + filename);
-        }
-        texture_data[i] = Colour{
-            static_cast<std::uint8_t>(red),
-            static_cast<std::uint8_t>(green),
-            static_cast<std::uint8_t>(blue)
-        };
-    }
-    return Texture(width, height, std::move(texture_data));
-}
-
-void World::compute_light_position() noexcept {
-    // Find first pure white (255, 255, 255) object without texture
-    std::size_t face_offset = 0;
-    for (const auto& model : models_) {
-        for (const auto& object : model.objects_) {
-            const Material& mat = object.material;
-            if (mat.colour.red == 255 && 
-                mat.colour.green == 255 && 
-                mat.colour.blue == 255 && 
-                mat.texture == nullptr) {
-                // Found white non-textured object - use its centroid as light
-                light_position_ = Object::compute_centroid(object);
-                light_face_start_ = face_offset;
-                light_face_end_ = face_offset + object.faces.size();
-                std::cout << "Light source found: " << object.name 
-                          << " at position (" << light_position_.x << ", " 
-                          << light_position_.y << ", " << light_position_.z << ")" << std::endl;
-                std::cout << "Light faces: [" << light_face_start_ << ", " << light_face_end_ << ")" << std::endl;
-                return;
-            }
-            face_offset += object.faces.size();
-        }
-    }
-    
-    // Fallback: no white object found, use default position
-    light_position_ = glm::vec3(0.0f, 2.0f, 0.0f);
-    light_face_start_ = 0;
-    light_face_end_ = 0;
-    std::cout << "No white light source found, using default position (0, 2, 0)" << std::endl;
-}
-void World::load_files(const std::vector<std::string>& filenames) {
-    for (const auto& filename : filenames) {
-        Model group;
-        group.load_file(filename);
-        models_.emplace_back(std::move(group));
-    }
-    
-    // After loading all models, compute light position
-    compute_light_position();
-}
-
-void World::handle_event(const SDL_Event& event) noexcept {
-    camera_.handle_event(event);
-}
-void World::orbiting() noexcept {
-    camera_.orbiting();
 }

@@ -1,6 +1,7 @@
 #pragma once
 #include <glm/glm.hpp>
 #include <array>
+#include "Utils.h"
 
 using FloatType = decltype(std::declval<glm::vec3>().x);
 
@@ -24,10 +25,33 @@ constexpr FloatType ComputeInvZndc(std::array<FloatType, 3> bary, std::array<Flo
 }
 
 // ============================================================================
+// Container Utilities
+// ============================================================================
+
+template<typename T, std::size_t N>
+class InplaceVector {
+private:
+    T data_[N];
+    std::size_t size_ = 0;
+public:
+    constexpr InplaceVector() noexcept = default;
+    constexpr InplaceVector(std::initializer_list<T> init) noexcept : size_(init.size()) {
+        assert(size_ <= N);
+        std::copy(init.begin(), init.end(), std::begin(data_));
+    }
+    constexpr void push_back(const T& value) noexcept {
+        assert(size_ < N);
+        data_[size_++] = value;
+    }
+    constexpr std::size_t size() const noexcept { return size_; }
+    constexpr T& operator[](std::size_t index) noexcept { return data_[index]; }
+    constexpr const T& operator[](std::size_t index) const noexcept { return data_[index]; }
+};
+
+// ============================================================================
 // Ray Tracing Utilities
 // ============================================================================
 
-// Möller-Trumbore ray-triangle intersection algorithm
 inline bool IntersectRayTriangle(
     const glm::vec3& ray_origin,
     const glm::vec3& ray_dir,
