@@ -337,10 +337,6 @@ void World::compute_light_position() noexcept {
                 light_position_ = (vertex_count > 0) ? sum / static_cast<FloatType>(vertex_count) : glm::vec3(0.0f);
                 light_face_start_ = face_offset;
                 light_face_end_ = face_offset + object.faces.size();
-                std::cout << "Light source found: " << object.name 
-                          << " at position (" << light_position_.x << ", " 
-                          << light_position_.y << ", " << light_position_.z << ")" << std::endl;
-                std::cout << "Light faces: [" << light_face_start_ << ", " << light_face_end_ << ")" << std::endl;
                 return;
             }
             face_offset += object.faces.size();
@@ -351,7 +347,6 @@ void World::compute_light_position() noexcept {
     light_position_ = glm::vec3(0.0f, 2.0f, 0.0f);
     light_face_start_ = 0;
     light_face_end_ = 0;
-    std::cout << "No white light source found, using default position (0, 2, 0)" << std::endl;
 }
 void World::load_files(const std::vector<std::string>& filenames) {
     for (const auto& filename : filenames) {
@@ -570,61 +565,39 @@ void Renderer::raytraced_render(World& world) noexcept {
     
     // Use static buffer to collect all faces (avoids reallocation each frame)
     const std::vector<Face>& all_faces = Model::collect_all_faces(world.models());
-    
-    static bool first_frame = true;
-    int hit_count = 0;
-    int shadow_count = 0;
-    int total_pixels = window_.width * window_.height;
+
+    static ThreadPool<> thread_pool;
     
     // Iterate over all pixels
     for (int y = 0; y < static_cast<int>(window_.height); y++) {
-        for (int x = 0; x < static_cast<int>(window_.width); x++) {
-            // Generate ray for this pixel
-            auto [ray_origin, ray_dir] = camera.generate_ray(x, y, window_.width, window_.height, aspect_ratio_);
+        thread_pool.enqueue(std::function<void()>([&, y]() noexcept {
+            for (int x = 0; x < static_cast<int>(window_.width); x++) {
+                // Generate ray for this pixel
+                auto [ray_origin, ray_dir] = camera.generate_ray(x, y, window_.width, window_.height, aspect_ratio_);
+
+                // Find closest intersection
+                RayTriangleIntersection intersection = find_closest_intersection(ray_origin, ray_dir, all_faces);
+
+                if (intersection.triangleIndex != static_cast<std::size_t>(-1)) {
+                    // Check if point is in shadow
+                    bool in_shadow = is_in_shadow(intersection.intersectionPoint, light_pos, all_faces,
+                                                  light_face_start, light_face_end);
             
-            // Debug: print center pixel ray
-            if (first_frame && x == static_cast<int>(window_.width / 2) && y == static_cast<int>(window_.height / 2)) {
-                std::cout << "Center ray: origin=(" << ray_origin.x << "," << ray_origin.y << "," << ray_origin.z 
-                          << ") dir=(" << ray_dir.x << "," << ray_dir.y << "," << ray_dir.z << ")" << std::endl;
-            }
-            
-            // Find closest intersection
-            RayTriangleIntersection intersection = find_closest_intersection(ray_origin, ray_dir, all_faces);
-            
-            if (intersection.triangleIndex != static_cast<std::size_t>(-1)) {
-                hit_count++;
-                
-                // Check if point is in shadow
-                bool in_shadow = is_in_shadow(intersection.intersectionPoint, light_pos, all_faces,
-                                              light_face_start, light_face_end);
-                
-                if (in_shadow) {
-                    shadow_count++;
+                    // Apply simple lighting
+                    Colour final_colour = intersection.colour;
+                    if (in_shadow) {
+                        // Darken shadowed areas
+                        final_colour.red = static_cast<uint8_t>(final_colour.red * 0.3f);
+                        final_colour.green = static_cast<uint8_t>(final_colour.green * 0.3f);
+                        final_colour.blue = static_cast<uint8_t>(final_colour.blue * 0.3f);
+                    }
+
+                    window_.setPixelColour(x, y, final_colour);
                 }
-                
-                // Apply simple lighting
-                Colour final_colour = intersection.colour;
-                if (in_shadow) {
-                    // Darken shadowed areas
-                    final_colour.red = static_cast<uint8_t>(final_colour.red * 0.3f);
-                    final_colour.green = static_cast<uint8_t>(final_colour.green * 0.3f);
-                    final_colour.blue = static_cast<uint8_t>(final_colour.blue * 0.3f);
-                }
-                
-                window_.setPixelColour(x, y, final_colour);
             }
-        }
+        }));
     }
-    
-    if (first_frame) {
-        std::cout << "First frame stats: " << hit_count << "/" << total_pixels 
-                  << " pixels hit geometry (" << (100.0 * hit_count / total_pixels) << "%)" << std::endl;
-        std::cout << "Shadow pixels: " << shadow_count << "/" << hit_count 
-                  << " (" << (hit_count > 0 ? 100.0 * shadow_count / hit_count : 0.0) << "%)" << std::endl;
-        std::cout << "Light position: (" << light_pos.x << "," << light_pos.y << "," << light_pos.z << ")" << std::endl;
-        std::cout << "Total faces: " << all_faces.size() << std::endl;
-        first_frame = false;
-    }
+    thread_pool.wait_idle();
 }
 void Renderer::wireframe_render(const Camera& camera, const Face& face) noexcept {
     auto clipped = clip_triangle(camera, face);

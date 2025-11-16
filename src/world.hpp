@@ -10,6 +10,7 @@
 #include <filesystem>
 #include "DrawingWindow.h"
 #include "utils.hpp"
+#include "thread_pool.hpp"
 
 // Clipping planes for frustum
 enum class ClipPlane {
