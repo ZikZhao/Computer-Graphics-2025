@@ -36,7 +36,7 @@ int main(int argc, char *argv[]) {
         }
         window.clearPixels();
         world.orbiting();
-        world.draw(renderer);
+        renderer.render(world);
 		window.renderFrame();
         
         fps++;

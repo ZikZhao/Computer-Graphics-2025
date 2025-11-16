@@ -10,23 +10,9 @@
 #include <filesystem>
 #include "DrawingWindow.h"
 #include "Utils.h"
+#include "utils.hpp"
 
 using FloatType = decltype(std::declval<glm::vec3>().x);
-
-template<typename T>
-constexpr T Clamp(T value, T min, T max) {
-    return (value < min) ? min : (value > max) ? max : value;
-}
-
-constexpr FloatType ComputeInvZndc(std::array<FloatType, 3> bary, std::array<FloatType, 3> vertices_z_ndc) {
-    return bary[0] / vertices_z_ndc[0] +
-           bary[1] / vertices_z_ndc[1] +
-           bary[2] / vertices_z_ndc[2];
-}
-
-constexpr FloatType ComputeInvZndc(FloatType progress, std::array<FloatType, 2> vertices_z_ndc) {
-    return (1.0f - progress) / vertices_z_ndc[0] + progress / vertices_z_ndc[1];
-}
 
 template<typename T, std::size_t N>
 class InplaceVector {
@@ -65,6 +51,13 @@ struct Colour {
     constexpr operator std::uint32_t () const {
         return (255 << 24) + (red << 16) + (green << 8) + blue;
     }
+};
+
+struct RayTriangleIntersection {
+    glm::vec3 intersectionPoint;
+    FloatType distanceFromCamera;
+    Colour colour;
+    std::size_t triangleIndex;
 };
 
 class Texture {
@@ -125,6 +118,7 @@ public:
     void stop_orbiting();
     void rotate(FloatType angle_x, FloatType angle_y);
     void handle_event(const SDL_Event& event);
+    std::pair<glm::vec3, glm::vec3> generate_ray(int pixel_x, int pixel_y, int screen_width, int screen_height, double aspect_ratio) const noexcept;
 };
 
 struct Face {
@@ -138,30 +132,43 @@ struct Object {
     std::string name;
     Material material;
     std::vector<Face> faces;
+    
+    // Compute centroid of all vertices in this object
+    static glm::vec3 compute_centroid(const Object& object) noexcept;
 };
 
+// Forward declaration
+class World;
+
 class Renderer {
+    friend class Model;  // Allow Model to call private render(Camera, Face) method
 public:
     enum Mode {
         Wireframe,
         Rasterized,
         Raytraced,
     };
+    Mode mode_ = Rasterized;
 private:
     DrawingWindow& window_;
-    Mode mode_ = Rasterized;
     std::vector<FloatType> z_buffer_;
     double aspect_ratio_ = 1.0;
 public:
     Renderer(DrawingWindow& window) noexcept;
     void clear() noexcept;
     ScreenNdcCoord ndc_to_screen(const glm::vec3& ndc, const glm::vec2& uv, FloatType w) const noexcept;
-    void render(const Camera& camera, const Face& face) noexcept;
+    void render(World& world) noexcept;
     void handle_event(const SDL_Event& event) noexcept;
 private:
+    void render(const Camera& camera, const Face& face) noexcept;
+    void render_raytraced(const Camera& camera, const std::vector<Face>& all_faces, const glm::vec3& light_pos,
+                          std::size_t light_face_start, std::size_t light_face_end) noexcept;
     void wireframe_render(const Camera& camera, const Face& face) noexcept;
     void rasterized_render(const Camera& camera, const Face& face) noexcept;
-    void raytraced_render(const Camera& camera, const Face& face) noexcept;
+    // Ray tracing helpers
+    static RayTriangleIntersection find_closest_intersection(const glm::vec3& ray_origin, const glm::vec3& ray_dir, const std::vector<Face>& faces) noexcept;
+    static bool is_in_shadow(const glm::vec3& point, const glm::vec3& light_pos, const std::vector<Face>& faces,
+                             std::size_t light_face_start, std::size_t light_face_end) noexcept;
     // Texture sampling with perspective correction
     static std::uint32_t sample_texture(const Face& face, const glm::vec3& bary, 
                                          const ScreenNdcCoord& v0, const ScreenNdcCoord& v1, const ScreenNdcCoord& v2) noexcept;
@@ -174,11 +181,12 @@ private:
 };
 
 class Model {
+public:
+    std::vector<Object> objects_;
 private:
     std::map<std::string, Material> materials_;
     std::vector<glm::vec3> vertices_;
     std::vector<glm::vec2> texture_coords_;  // vt coordinates from OBJ
-    std::vector<Object> objects_;
 public:
     Model() noexcept = default;
     void load_file(std::string filename);
@@ -190,11 +198,22 @@ private:
 
 class World {
 private:
-    std::vector<Model> groups_;
+    std::vector<Model> models_;
     Camera camera_;
+    glm::vec3 light_position_ = glm::vec3(0.0f, 0.0f, 0.0f);
+    std::size_t light_face_start_ = 0;
+    std::size_t light_face_end_ = 0;
+    void compute_light_position() noexcept;
 public:
     void load_files(const std::vector<std::string>& filenames);
-    void draw(Renderer& renderer) const noexcept;
     void handle_event(const SDL_Event& event) noexcept;
     void orbiting() noexcept;
+    
+    // Accessors for Renderer
+    Camera& camera() noexcept { return camera_; }
+    const Camera& camera() const noexcept { return camera_; }
+    const std::vector<Model>& models() const noexcept { return models_; }
+    const glm::vec3& light_position() const noexcept { return light_position_; }
+    std::size_t light_face_start() const noexcept { return light_face_start_; }
+    std::size_t light_face_end() const noexcept { return light_face_end_; }
 };

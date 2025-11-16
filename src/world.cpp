@@ -1,5 +1,23 @@
 #include "world.hpp"
 
+glm::vec3 Object::compute_centroid(const Object& object) noexcept {
+    glm::vec3 sum(0.0f, 0.0f, 0.0f);
+    std::size_t vertex_count = 0;
+    
+    for (const auto& face : object.faces) {
+        for (const auto& vertex : face.vertices) {
+            sum += vertex;
+            vertex_count++;
+        }
+    }
+    
+    if (vertex_count == 0) {
+        return glm::vec3(0.0f, 0.0f, 0.0f);
+    }
+    
+    return sum / static_cast<FloatType>(vertex_count);
+}
+
 void Camera::start_orbiting(glm::vec3 target) {
     orbit_target_ = target;
     last_orbit_time_ = std::chrono::system_clock::now().time_since_epoch().count();
@@ -123,6 +141,25 @@ glm::vec3 Camera::clip_to_ndc(const glm::vec4& clip) const noexcept {
         return glm::vec3(0.0f, 0.0f, -1.0f);
     }
     return glm::vec3(clip) / clip.w;
+}
+std::pair<glm::vec3, glm::vec3> Camera::generate_ray(int pixel_x, int pixel_y, int screen_width, int screen_height, double aspect_ratio) const noexcept {
+    // Convert pixel coordinates to NDC space [-1, 1]
+    FloatType ndc_x = (static_cast<FloatType>(pixel_x) + 0.5f) / static_cast<FloatType>(screen_width) * 2.0f - 1.0f;
+    FloatType ndc_y = 1.0f - (static_cast<FloatType>(pixel_y) + 0.5f) / static_cast<FloatType>(screen_height) * 2.0f;
+    
+    // Convert NDC to view space using inverse projection
+    double fov_rad = glm::radians(FOV);
+    double tan_half_fov = std::tan(fov_rad / 2.0);
+    
+    FloatType view_x = ndc_x * tan_half_fov * aspect_ratio;
+    FloatType view_y = ndc_y * tan_half_fov;
+    FloatType view_z = 1.0f;  // Forward direction (camera looks in +z in view space)
+    
+    // Transform from view space to world space
+    glm::vec3 ray_dir_view(view_x, view_y, view_z);
+    glm::vec3 ray_dir_world = orientation_ * ray_dir_view;
+    
+    return {position_, glm::normalize(ray_dir_world)};
 }
 
 Renderer::Renderer(DrawingWindow& window) noexcept
@@ -270,7 +307,7 @@ void Renderer::render(const Camera& camera, const Face& face) noexcept {
         rasterized_render(camera, face);
         break;
     case Raytraced:
-        raytraced_render(camera, face);
+        // Raytraced mode is handled by render(World&)
         break;
     }
 }
@@ -440,8 +477,136 @@ void Renderer::rasterized_render(const Camera& camera, const Face& face) noexcep
         }
     }
 }
-void Renderer::raytraced_render(const Camera& camera, const Face& face) noexcept {
-    // Raytracing not implemented yet
+
+// Möller-Trumbore ray-triangle intersection algorithm
+RayTriangleIntersection Renderer::find_closest_intersection(const glm::vec3& ray_origin, const glm::vec3& ray_dir, const std::vector<Face>& faces) noexcept {
+    RayTriangleIntersection closest;
+    closest.distanceFromCamera = std::numeric_limits<FloatType>::infinity();
+    closest.triangleIndex = static_cast<std::size_t>(-1);
+    
+    for (std::size_t i = 0; i < faces.size(); ++i) {
+        const Face& face = faces[i];
+        FloatType t, u, v;
+        
+        if (IntersectRayTriangle(ray_origin, ray_dir,
+                                  face.vertices[0], face.vertices[1], face.vertices[2],
+                                  t, u, v) && t < closest.distanceFromCamera) {
+            closest.distanceFromCamera = t;
+            closest.intersectionPoint = ray_origin + ray_dir * t;
+            closest.triangleIndex = i;
+            
+            // Compute barycentric coordinate w = 1 - u - v
+            FloatType w = 1.0f - u - v;
+            
+            // Interpolate texture coordinates using barycentric coordinates
+            glm::vec2 uv_coord = face.texture_coords[0] * w +
+                                 face.texture_coords[1] * u +
+                                 face.texture_coords[2] * v;
+            
+            // Sample texture or use material color
+            if (face.material.texture) {
+                closest.colour = face.material.texture->sample(uv_coord.x, uv_coord.y);
+            } else {
+                closest.colour = face.material.colour;
+            }
+        }
+    }
+    
+    return closest;
+}
+bool Renderer::is_in_shadow(const glm::vec3& point, const glm::vec3& light_pos, const std::vector<Face>& faces,
+                            std::size_t light_face_start, std::size_t light_face_end) noexcept {
+    glm::vec3 to_light = light_pos - point;
+    FloatType light_distance = glm::length(to_light);
+    glm::vec3 light_dir = to_light / light_distance;
+    
+    // Use the intersection point directly as shadow ray origin
+    // The epsilon in intersect_ray_triangle will handle avoiding self-intersection
+    glm::vec3 shadow_ray_origin = point;
+    
+    for (std::size_t i = 0; i < faces.size(); i++) {
+        // Skip light source faces - light passes through itself
+        if (i >= light_face_start && i < light_face_end) {
+            continue;
+        }
+        
+        const Face& face = faces[i];
+        FloatType t, u, v;
+        
+        bool hit = IntersectRayTriangle(
+            shadow_ray_origin,
+            light_dir,
+            face.vertices[0],
+            face.vertices[1],
+            face.vertices[2],
+            t, u, v
+        );
+        
+        // Check if intersection is between point and light
+        // Use a small epsilon to avoid self-intersection
+        constexpr FloatType min_t = 0.001f;
+        if (hit && t > min_t && t < light_distance) {
+            return true;  // In shadow
+        }
+    }
+    
+    return false;  // Not in shadow
+}
+void Renderer::render_raytraced(const Camera& camera, const std::vector<Face>& all_faces, const glm::vec3& light_pos,
+                                std::size_t light_face_start, std::size_t light_face_end) noexcept {
+    aspect_ratio_ = static_cast<double>(window_.width) / window_.height;
+    
+    static bool first_frame = true;
+    int hit_count = 0;
+    int shadow_count = 0;
+    int total_pixels = window_.width * window_.height;
+    
+    // Iterate over all pixels
+    for (int y = 0; y < static_cast<int>(window_.height); y++) {
+        for (int x = 0; x < static_cast<int>(window_.width); x++) {
+            // Generate ray for this pixel
+            auto [ray_origin, ray_dir] = camera.generate_ray(x, y, window_.width, window_.height, aspect_ratio_);
+            
+            // Debug: print center pixel ray
+            if (first_frame && x == window_.width / 2 && y == window_.height / 2) {
+                std::cout << "Center ray: origin=(" << ray_origin.x << "," << ray_origin.y << "," << ray_origin.z 
+                          << ") dir=(" << ray_dir.x << "," << ray_dir.y << "," << ray_dir.z << ")" << std::endl;
+            }
+            
+            // Find closest intersection
+            RayTriangleIntersection intersection = find_closest_intersection(ray_origin, ray_dir, all_faces);
+            
+            std::uint32_t pixel_colour;
+            
+            if (intersection.triangleIndex != static_cast<size_t>(-1)) {
+                hit_count++;
+                // Check if point is in shadow
+                if (is_in_shadow(intersection.intersectionPoint, light_pos, all_faces, light_face_start, light_face_end)) {
+                    shadow_count++;
+                    // In shadow - render pure black
+                    pixel_colour = 0xFF000000;
+                } else {
+                    // Not in shadow - use the color from intersection
+                    pixel_colour = intersection.colour;
+                }
+            } else {
+                // No intersection - render black (background)
+                pixel_colour = 0xFF000000;
+            }
+            
+            window_.setPixelColour(x, y, pixel_colour);
+        }
+    }
+    
+    if (first_frame) {
+        std::cout << "First frame stats: " << hit_count << "/" << total_pixels << " pixels hit geometry ("
+                  << (100.0 * hit_count / total_pixels) << "%)" << std::endl;
+        std::cout << "Shadow pixels: " << shadow_count << "/" << hit_count << " ("
+                  << (100.0 * shadow_count / hit_count) << "%)" << std::endl;
+        std::cout << "Light position: (" << light_pos.x << "," << light_pos.y << "," << light_pos.z << ")" << std::endl;
+        std::cout << "Total faces: " << all_faces.size() << std::endl;
+        first_frame = false;
+    }
 }
 
 void Model::load_file(std::string filename) {
@@ -598,19 +763,73 @@ Texture Model::load_texture(std::string filename) {
     return Texture(width, height, std::move(texture_data));
 }
 
+void World::compute_light_position() noexcept {
+    // Find first pure white (255, 255, 255) object without texture
+    std::size_t face_offset = 0;
+    for (const auto& model : models_) {
+        for (const auto& object : model.objects_) {
+            const Material& mat = object.material;
+            if (mat.colour.red == 255 && 
+                mat.colour.green == 255 && 
+                mat.colour.blue == 255 && 
+                mat.texture == nullptr) {
+                // Found white non-textured object - use its centroid as light
+                light_position_ = Object::compute_centroid(object);
+                light_face_start_ = face_offset;
+                light_face_end_ = face_offset + object.faces.size();
+                std::cout << "Light source found: " << object.name 
+                          << " at position (" << light_position_.x << ", " 
+                          << light_position_.y << ", " << light_position_.z << ")" << std::endl;
+                std::cout << "Light faces: [" << light_face_start_ << ", " << light_face_end_ << ")" << std::endl;
+                return;
+            }
+            face_offset += object.faces.size();
+        }
+    }
+    
+    // Fallback: no white object found, use default position
+    light_position_ = glm::vec3(0.0f, 2.0f, 0.0f);
+    light_face_start_ = 0;
+    light_face_end_ = 0;
+    std::cout << "No white light source found, using default position (0, 2, 0)" << std::endl;
+}
 void World::load_files(const std::vector<std::string>& filenames) {
     for (const auto& filename : filenames) {
         Model group;
         group.load_file(filename);
-        groups_.emplace_back(std::move(group));
+        models_.emplace_back(std::move(group));
+    }
+    
+    // After loading all models, compute light position
+    compute_light_position();
+}
+
+void Renderer::render(World& world) noexcept {
+    clear();
+    
+    // Check if we're in raytraced mode
+    if (mode_ == Raytraced) {
+        // Collect all faces from all models
+        std::vector<Face> all_faces;
+        for (const auto& model : world.models()) {
+            for (const auto& object : model.objects_) {
+                for (const auto& face : object.faces) {
+                    all_faces.push_back(face);
+                }
+            }
+        }
+        
+        // Render using ray tracing
+        render_raytraced(world.camera(), all_faces, world.light_position(), 
+                        world.light_face_start(), world.light_face_end());
+    } else {
+        // Use traditional per-face rendering for wireframe and rasterized modes
+        for (const auto& model : world.models()) {
+            model.draw(*this, world.camera());
+        }
     }
 }
-void World::draw(Renderer& renderer) const noexcept {
-    renderer.clear();
-    for (const auto& group : groups_) {
-        group.draw(renderer, camera_);
-    }
-}
+
 void World::handle_event(const SDL_Event& event) noexcept {
     camera_.handle_event(event);
 }
