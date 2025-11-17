@@ -843,6 +843,6 @@ bool Renderer::is_in_shadow(const glm::vec3& point, const glm::vec3& light_pos, 
 FloatType Renderer::compute_light_attenuation(FloatType distance, FloatType intensity) noexcept {
     // Distance attenuation formula: intensity / (distance²)
     // Clamped to [0, 1] range
-    FloatType attenuation = intensity / (distance * distance);
+    FloatType attenuation = intensity / (2 * std::numbers::pi * distance * distance);
     return Clamp(attenuation, 0.0f, 1.0f);
 }

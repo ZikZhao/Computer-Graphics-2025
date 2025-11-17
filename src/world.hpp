@@ -8,6 +8,7 @@
 #include <chrono>
 #include <array>
 #include <filesystem>
+#include <numbers>
 #include "DrawingWindow.h"
 #include "utils.hpp"
 #include "thread_pool.hpp"
@@ -140,7 +141,7 @@ private:
     glm::vec3 light_position_ = glm::vec3(0.0f, 0.0f, 0.0f);
     std::size_t light_face_start_ = 0;
     std::size_t light_face_end_ = 0;
-    FloatType light_intensity_ = 15.0f;  // Adjustable light intensity constant
+    FloatType light_intensity_ = 60.0f;  // Adjustable light intensity constant
     void compute_light_position() noexcept;
 public:
     void load_files(const std::vector<std::string>& filenames);
@@ -164,7 +165,7 @@ public:
         Rasterized,
         Raytraced,
     };
-    Mode mode_ = Rasterized;
+    Mode mode_ = Raytraced;
 private:
     DrawingWindow& window_;
     std::vector<FloatType> z_buffer_;
