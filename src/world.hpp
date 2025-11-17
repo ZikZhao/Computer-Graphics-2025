@@ -32,6 +32,40 @@ struct Colour {
     }
 };
 
+// HDR color with floating point precision
+struct ColourHDR {
+    FloatType red;
+    FloatType green;
+    FloatType blue;
+    
+    constexpr ColourHDR() noexcept : red(0.0f), green(0.0f), blue(0.0f) {}
+    constexpr ColourHDR(FloatType r, FloatType g, FloatType b) noexcept : red(r), green(g), blue(b) {}
+    
+    // Convert from 8-bit sRGB to linear HDR
+    static ColourHDR from_srgb(const Colour& srgb, FloatType gamma) noexcept {
+        auto to_linear = [gamma](std::uint8_t component) -> FloatType {
+            FloatType normalized = component / 255.0f;
+            if (gamma == 1.0f) return normalized;  // No gamma correction
+            return std::pow(normalized, gamma);
+        };
+        return ColourHDR(
+            to_linear(srgb.red),
+            to_linear(srgb.green),
+            to_linear(srgb.blue)
+        );
+    }
+    
+    // Multiply by scalar (for lighting)
+    constexpr ColourHDR operator*(FloatType scalar) const noexcept {
+        return ColourHDR(red * scalar, green * scalar, blue * scalar);
+    }
+    
+    // Add colors (for ambient + diffuse)
+    constexpr ColourHDR operator+(const ColourHDR& other) const noexcept {
+        return ColourHDR(red + other.red, green + other.green, blue + other.blue);
+    }
+};
+
 struct RayTriangleIntersection {
     glm::vec3 intersectionPoint;
     FloatType distanceFromCamera;
@@ -169,9 +203,11 @@ public:
         Raytraced,
     };
     Mode mode_ = Raytraced;
+    FloatType gamma_ = 2.2f;  // Gamma value: 1.0 = no correction, 2.2 = standard sRGB
 private:
     DrawingWindow& window_;
     std::vector<FloatType> z_buffer_;
+    std::vector<ColourHDR> hdr_buffer_;  // HDR floating point color buffer
     double aspect_ratio_ = 1.0;
 public:
     Renderer(DrawingWindow& window) noexcept;
@@ -191,6 +227,9 @@ private:
     static RayTriangleIntersection find_closest_intersection(const glm::vec3& ray_origin, const glm::vec3& ray_dir, const std::vector<Face>& faces) noexcept;
     static bool is_in_shadow(const glm::vec3& point, const glm::vec3& light_pos, const std::vector<Face>& faces) noexcept;
     static FloatType compute_lambertian_lighting(const glm::vec3& normal, const glm::vec3& to_light, FloatType distance, FloatType intensity) noexcept;
+    // HDR tonemapping and gamma correction
+    static Colour tonemap_and_gamma_correct(const ColourHDR& hdr, FloatType gamma) noexcept;
+    static FloatType aces_tonemap(FloatType hdr_value) noexcept;
     // Texture sampling with perspective correction
     static std::uint32_t sample_texture(const Face& face, const glm::vec3& bary, 
                                          const ScreenNdcCoord& v0, const ScreenNdcCoord& v1, const ScreenNdcCoord& v2) noexcept;

@@ -366,9 +366,13 @@ void World::orbiting() noexcept {
 }
 
 Renderer::Renderer(DrawingWindow& window) noexcept
-    : window_(window), z_buffer_(window.width * window.height, 0.0f) {}
+    : window_(window), 
+      z_buffer_(window.width * window.height, 0.0f),
+      hdr_buffer_(window.width * window.height, ColourHDR()) {}
+      
 void Renderer::clear() noexcept {
     z_buffer_.assign(window_.width * window_.height, 0.0f);
+    hdr_buffer_.assign(window_.width * window_.height, ColourHDR());
 }
 ScreenNdcCoord Renderer::ndc_to_screen(const glm::vec3& ndc, const glm::vec2& uv, FloatType w) const noexcept {
     return ScreenNdcCoord{
@@ -512,6 +516,10 @@ void Renderer::handle_event(const SDL_Event& event) noexcept {
         case SDLK_3:
             mode_ = Raytraced;
             break;
+        case SDLK_g:
+            gamma_ = (gamma_ == 2.2f) ? 1.0f : 2.2f;
+            std::cout << "Gamma: " << gamma_ << (gamma_ == 2.2f ? " (sRGB)" : " (linear)") << std::endl;
+            break;
         }
     }
 }
@@ -585,27 +593,26 @@ void Renderer::raytraced_render(World& world) noexcept {
                     // Check if point is in shadow
                     bool in_shadow = is_in_shadow(intersection.intersectionPoint, light_pos, all_faces);
             
-                    // Apply Lambert's cosine law lighting
-                    Colour final_colour = intersection.colour;
-                    if (in_shadow) {
-                        // Shadowed areas receive only minimal ambient light
-                        FloatType ambient = 0.1f;
-                        final_colour.red = static_cast<uint8_t>(final_colour.red * ambient);
-                        final_colour.green = static_cast<uint8_t>(final_colour.green * ambient);
-                        final_colour.blue = static_cast<uint8_t>(final_colour.blue * ambient);
-                    } else {
+                    // Convert base color from sRGB to linear HDR space
+                    ColourHDR hdr_colour = ColourHDR::from_srgb(intersection.colour, gamma_);
+
+                    // Apply Lambert's cosine law lighting in linear space
+                    // Lower ambient light to compensate for gamma correction brightening
+                    FloatType ambient = 0.025f;  // Reduced from 0.1 for darker, more realistic shadows
+                    FloatType lambertian = 0.0f;
+
+                    if (!in_shadow) {
                         // Compute Lambertian lighting with distance and angle attenuation
-                        FloatType lambertian = compute_lambertian_lighting(intersection.normal, to_light, 
-                                                                           distance_to_light, light_intensity);
-                        
-                        // Combine ambient and diffuse lighting
-                        FloatType ambient = 0.1f;
-                        FloatType lighting = ambient + (1.0f - ambient) * lambertian;
-                        
-                        final_colour.red = static_cast<uint8_t>(Clamp(final_colour.red * lighting, 0.0f, 255.0f));
-                        final_colour.green = static_cast<uint8_t>(Clamp(final_colour.green * lighting, 0.0f, 255.0f));
-                        final_colour.blue = static_cast<uint8_t>(Clamp(final_colour.blue * lighting, 0.0f, 255.0f));
+                        lambertian = compute_lambertian_lighting(intersection.normal, to_light, 
+                                                                 distance_to_light, light_intensity);
                     }
+
+                    // Combine ambient and diffuse in linear HDR space
+                    FloatType lighting = ambient + (1.0f - ambient) * lambertian;
+                    ColourHDR final_hdr = hdr_colour * lighting;
+
+                    // Tonemap and gamma correct for display
+                    Colour final_colour = tonemap_and_gamma_correct(final_hdr, gamma_);
 
                     window_.setPixelColour(x, y, final_colour);
                 }
@@ -843,4 +850,47 @@ FloatType Renderer::compute_lambertian_lighting(const glm::vec3& normal, const g
     FloatType attenuation = (intensity * cos_theta) / (4.0f * std::numbers::pi * distance * distance);
     
     return Clamp(attenuation, 0.0f, 1.0f);
+}
+
+FloatType Renderer::aces_tonemap(FloatType hdr_value) noexcept {
+    // ACES Filmic tonemapping approximation
+    // https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve/
+    const FloatType a = 2.51f;
+    const FloatType b = 0.03f;
+    const FloatType c = 2.43f;
+    const FloatType d = 0.59f;
+    const FloatType e = 0.14f;
+    
+    FloatType numerator = hdr_value * (a * hdr_value + b);
+    FloatType denominator = hdr_value * (c * hdr_value + d) + e;
+    
+    return Clamp(numerator / denominator, 0.0f, 1.0f);
+}
+
+Colour Renderer::tonemap_and_gamma_correct(const ColourHDR& hdr, FloatType gamma) noexcept {
+    // Step 1: Tonemapping (HDR -> LDR, but still in linear space)
+    FloatType r_ldr = aces_tonemap(hdr.red);
+    FloatType g_ldr = aces_tonemap(hdr.green);
+    FloatType b_ldr = aces_tonemap(hdr.blue);
+    
+    // Step 2: Gamma correction (linear -> sRGB)
+    FloatType r_out, g_out, b_out;
+    if (gamma == 1.0f) {
+        // No gamma correction
+        r_out = r_ldr;
+        g_out = g_ldr;
+        b_out = b_ldr;
+    } else {
+        // Apply gamma correction
+        r_out = std::pow(r_ldr, 1.0f / gamma);
+        g_out = std::pow(g_ldr, 1.0f / gamma);
+        b_out = std::pow(b_ldr, 1.0f / gamma);
+    }
+    
+    // Step 3: Convert to 8-bit
+    return Colour{
+        static_cast<std::uint8_t>(Clamp(r_out * 255.0f, 0.0f, 255.0f)),
+        static_cast<std::uint8_t>(Clamp(g_out * 255.0f, 0.0f, 255.0f)),
+        static_cast<std::uint8_t>(Clamp(b_out * 255.0f, 0.0f, 255.0f))
+    };
 }
