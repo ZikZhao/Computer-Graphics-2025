@@ -1,5 +1,6 @@
 #include "world.hpp"
 #include <numeric>
+#include <iostream>
 
 void Camera::start_orbiting(glm::vec3 target) {
     orbit_target_ = target;
@@ -360,6 +361,21 @@ void World::load_files(const std::vector<std::string>& filenames) {
 }
 void World::handle_event(const SDL_Event& event) noexcept {
     camera_.handle_event(event);
+    
+    // Handle light intensity adjustment
+    if (event.type == SDL_KEYDOWN) {
+        switch (event.key.keysym.sym) {
+        case SDLK_EQUALS:  // '+' key (without shift)
+        case SDLK_PLUS:    // '+' key (with shift)
+            light_intensity_ += 1.0f;
+            std::cout << "Light intensity: " << light_intensity_ << std::endl;
+            break;
+        case SDLK_MINUS:
+            light_intensity_ = std::max(0.1f, light_intensity_ - 1.0f);
+            std::cout << "Light intensity: " << light_intensity_ << std::endl;
+            break;
+        }
+    }
 }
 void World::orbiting() noexcept {
     camera_.orbiting();
@@ -562,6 +578,7 @@ void Renderer::raytraced_render(World& world) noexcept {
     const glm::vec3& light_pos = world.light_position();
     std::size_t light_face_start = world.light_face_start();
     std::size_t light_face_end = world.light_face_end();
+    FloatType light_intensity = world.light_intensity();
     
     // Use static buffer to collect all faces (avoids reallocation each frame)
     const std::vector<Face>& all_faces = Model::collect_all_faces(world.models());
@@ -583,13 +600,24 @@ void Renderer::raytraced_render(World& world) noexcept {
                     bool in_shadow = is_in_shadow(intersection.intersectionPoint, light_pos, all_faces,
                                                   light_face_start, light_face_end);
             
-                    // Apply simple lighting
+                    // Calculate distance to light and apply attenuation
+                    FloatType distance_to_light = glm::length(light_pos - intersection.intersectionPoint);
+                    FloatType attenuation = compute_light_attenuation(distance_to_light, light_intensity);
+                    
+                    // Apply lighting with distance attenuation
                     Colour final_colour = intersection.colour;
                     if (in_shadow) {
-                        // Darken shadowed areas
-                        final_colour.red = static_cast<uint8_t>(final_colour.red * 0.3f);
-                        final_colour.green = static_cast<uint8_t>(final_colour.green * 0.3f);
-                        final_colour.blue = static_cast<uint8_t>(final_colour.blue * 0.3f);
+                        // Shadowed areas receive only minimal ambient light
+                        final_colour.red = static_cast<uint8_t>(final_colour.red * 0.1f);
+                        final_colour.green = static_cast<uint8_t>(final_colour.green * 0.1f);
+                        final_colour.blue = static_cast<uint8_t>(final_colour.blue * 0.1f);
+                    } else {
+                        // Apply distance attenuation to lit areas
+                        FloatType ambient = 0.1f;
+                        FloatType lighting = ambient + (1.0f - ambient) * attenuation;
+                        final_colour.red = static_cast<uint8_t>(Clamp(final_colour.red * lighting, 0.0f, 255.0f));
+                        final_colour.green = static_cast<uint8_t>(Clamp(final_colour.green * lighting, 0.0f, 255.0f));
+                        final_colour.blue = static_cast<uint8_t>(Clamp(final_colour.blue * lighting, 0.0f, 255.0f));
                     }
 
                     window_.setPixelColour(x, y, final_colour);
@@ -811,4 +839,10 @@ bool Renderer::is_in_shadow(const glm::vec3& point, const glm::vec3& light_pos, 
     }
     
     return false;  // Not in shadow
+}
+FloatType Renderer::compute_light_attenuation(FloatType distance, FloatType intensity) noexcept {
+    // Distance attenuation formula: intensity / (distance²)
+    // Clamped to [0, 1] range
+    FloatType attenuation = intensity / (distance * distance);
+    return Clamp(attenuation, 0.0f, 1.0f);
 }

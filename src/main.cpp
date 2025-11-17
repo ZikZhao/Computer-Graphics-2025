@@ -48,12 +48,3 @@ int main(int argc, char *argv[]) {
         }
 	}
 }
-
-// int main(int args, char* argc[]) {
-//     ThreadPool<> pool;
-//     for (int i = 0; i < 10; i++)
-//     pool.enqueue([]() {
-//         std::cout << "Hello from the thread pool!" << std::endl;
-//     });
-//     pool.wait_idle();
-// }

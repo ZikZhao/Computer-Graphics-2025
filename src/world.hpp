@@ -140,6 +140,7 @@ private:
     glm::vec3 light_position_ = glm::vec3(0.0f, 0.0f, 0.0f);
     std::size_t light_face_start_ = 0;
     std::size_t light_face_end_ = 0;
+    FloatType light_intensity_ = 15.0f;  // Adjustable light intensity constant
     void compute_light_position() noexcept;
 public:
     void load_files(const std::vector<std::string>& filenames);
@@ -152,6 +153,8 @@ public:
     const glm::vec3& light_position() const noexcept { return light_position_; }
     std::size_t light_face_start() const noexcept { return light_face_start_; }
     std::size_t light_face_end() const noexcept { return light_face_end_; }
+    FloatType light_intensity() const noexcept { return light_intensity_; }
+    void set_light_intensity(FloatType intensity) noexcept { light_intensity_ = intensity; }
 };
 
 class Renderer {
@@ -184,6 +187,7 @@ private:
     static RayTriangleIntersection find_closest_intersection(const glm::vec3& ray_origin, const glm::vec3& ray_dir, const std::vector<Face>& faces) noexcept;
     static bool is_in_shadow(const glm::vec3& point, const glm::vec3& light_pos, const std::vector<Face>& faces,
                              std::size_t light_face_start, std::size_t light_face_end) noexcept;
+    static FloatType compute_light_attenuation(FloatType distance, FloatType intensity) noexcept;
     // Texture sampling with perspective correction
     static std::uint32_t sample_texture(const Face& face, const glm::vec3& bary, 
                                          const ScreenNdcCoord& v0, const ScreenNdcCoord& v1, const ScreenNdcCoord& v2) noexcept;
