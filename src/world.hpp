@@ -37,6 +37,7 @@ struct RayTriangleIntersection {
     FloatType distanceFromCamera;
     Colour colour;
     std::size_t triangleIndex;
+    glm::vec3 normal;  // Surface normal at intersection
 };
 
 class Texture {
@@ -121,6 +122,8 @@ private:
     std::map<std::string, Material> materials_;
     std::vector<glm::vec3> vertices_;
     std::vector<glm::vec2> texture_coords_;  // vt coordinates from OBJ
+    bool has_light_ = false;
+    glm::vec3 light_position_ = glm::vec3(0.0f, 0.0f, 0.0f);
 public:
     Model() noexcept = default;
     void load_file(std::string filename);
@@ -128,6 +131,9 @@ public:
     static const std::vector<Face>& collect_all_faces(const std::vector<Model>& models) noexcept;
     // Getter for all_faces_
     const std::vector<Face>& all_faces() const noexcept { return all_faces_; }
+    // Light accessors
+    bool has_light() const noexcept { return has_light_; }
+    const glm::vec3& light_position() const noexcept { return light_position_; }
 private:
     void load_materials(std::string filename);
     Texture load_texture(std::string filename);
@@ -139,10 +145,8 @@ private:
     std::vector<Model> models_;
     Camera camera_;
     glm::vec3 light_position_ = glm::vec3(0.0f, 0.0f, 0.0f);
-    std::size_t light_face_start_ = 0;
-    std::size_t light_face_end_ = 0;
-    FloatType light_intensity_ = 60.0f;  // Adjustable light intensity constant
-    void compute_light_position() noexcept;
+    bool has_light_ = false;
+    FloatType light_intensity_ = 100.0f;  // Adjustable light intensity constant
 public:
     void load_files(const std::vector<std::string>& filenames);
     void handle_event(const SDL_Event& event) noexcept;
@@ -152,8 +156,7 @@ public:
     const Camera& camera() const noexcept { return camera_; }
     const std::vector<Model>& models() const noexcept { return models_; }
     const glm::vec3& light_position() const noexcept { return light_position_; }
-    std::size_t light_face_start() const noexcept { return light_face_start_; }
-    std::size_t light_face_end() const noexcept { return light_face_end_; }
+    bool has_light() const noexcept { return has_light_; }
     FloatType light_intensity() const noexcept { return light_intensity_; }
     void set_light_intensity(FloatType intensity) noexcept { light_intensity_ = intensity; }
 };
@@ -186,9 +189,8 @@ private:
     void rasterized_render(const Camera& camera, const Face& face) noexcept;
     // Ray tracing helpers
     static RayTriangleIntersection find_closest_intersection(const glm::vec3& ray_origin, const glm::vec3& ray_dir, const std::vector<Face>& faces) noexcept;
-    static bool is_in_shadow(const glm::vec3& point, const glm::vec3& light_pos, const std::vector<Face>& faces,
-                             std::size_t light_face_start, std::size_t light_face_end) noexcept;
-    static FloatType compute_light_attenuation(FloatType distance, FloatType intensity) noexcept;
+    static bool is_in_shadow(const glm::vec3& point, const glm::vec3& light_pos, const std::vector<Face>& faces) noexcept;
+    static FloatType compute_lambertian_lighting(const glm::vec3& normal, const glm::vec3& to_light, FloatType distance, FloatType intensity) noexcept;
     // Texture sampling with perspective correction
     static std::uint32_t sample_texture(const Face& face, const glm::vec3& bary, 
                                          const ScreenNdcCoord& v0, const ScreenNdcCoord& v1, const ScreenNdcCoord& v2) noexcept;

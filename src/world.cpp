@@ -157,7 +157,13 @@ void Model::load_file(std::string filename) {
         std::istringstream iss(line);
         std::string type;
         iss >> type;
-        if (type == "mtllib") {
+        if (type == "l") {
+            // Light position definition
+            FloatType x, y, z;
+            iss >> x >> y >> z;
+            light_position_ = glm::vec3(x, y, z);
+            has_light_ = true;
+        } else if (type == "mtllib") {
             std::string relative_path;
             iss >> relative_path;
             std::string material_filename = (std::filesystem::path(filename).parent_path() / relative_path).string();
@@ -315,40 +321,7 @@ Texture Model::load_texture(std::string filename) {
     }
     return Texture(width, height, std::move(texture_data));
 }
-void World::compute_light_position() noexcept {
-    // Find first pure white (255, 255, 255) object without texture
-    std::size_t face_offset = 0;
-    for (const auto& model : models_) {
-        for (const auto& object : model.objects_) {
-            const Material& mat = object.material;
-            if (mat.colour.red == 255 && 
-                mat.colour.green == 255 && 
-                mat.colour.blue == 255 && 
-                mat.texture == nullptr) {
-                // Found white non-textured object - use its centroid as light
-                // Compute centroid (inlined)
-                glm::vec3 sum(0.0f);
-                std::size_t vertex_count = 0;
-                for (const auto& face : object.faces) {
-                    for (const auto& vertex : face.vertices) {
-                        sum += vertex;
-                        vertex_count++;
-                    }
-                }
-                light_position_ = (vertex_count > 0) ? sum / static_cast<FloatType>(vertex_count) : glm::vec3(0.0f);
-                light_face_start_ = face_offset;
-                light_face_end_ = face_offset + object.faces.size();
-                return;
-            }
-            face_offset += object.faces.size();
-        }
-    }
-    
-    // Fallback: no white object found, use default position
-    light_position_ = glm::vec3(0.0f, 2.0f, 0.0f);
-    light_face_start_ = 0;
-    light_face_end_ = 0;
-}
+
 void World::load_files(const std::vector<std::string>& filenames) {
     for (const auto& filename : filenames) {
         Model group;
@@ -356,8 +329,19 @@ void World::load_files(const std::vector<std::string>& filenames) {
         models_.emplace_back(std::move(group));
     }
     
-    // After loading all models, compute light position
-    compute_light_position();
+    // Extract light position from first model that has a light definition
+    for (const auto& model : models_) {
+        if (model.has_light()) {
+            light_position_ = model.light_position();
+            has_light_ = true;
+            break;
+        }
+    }
+    
+    // Fallback: if no light found, use default position
+    if (!has_light_) {
+        light_position_ = glm::vec3(0.0f, 2.0f, 0.0f);
+    }
 }
 void World::handle_event(const SDL_Event& event) noexcept {
     camera_.handle_event(event);
@@ -576,8 +560,6 @@ void Renderer::rasterized_render(World& world) noexcept {
 void Renderer::raytraced_render(World& world) noexcept {
     const Camera& camera = world.camera();
     const glm::vec3& light_pos = world.light_position();
-    std::size_t light_face_start = world.light_face_start();
-    std::size_t light_face_end = world.light_face_end();
     FloatType light_intensity = world.light_intensity();
     
     // Use static buffer to collect all faces (avoids reallocation each frame)
@@ -596,25 +578,30 @@ void Renderer::raytraced_render(World& world) noexcept {
                 RayTriangleIntersection intersection = find_closest_intersection(ray_origin, ray_dir, all_faces);
 
                 if (intersection.triangleIndex != static_cast<std::size_t>(-1)) {
-                    // Check if point is in shadow
-                    bool in_shadow = is_in_shadow(intersection.intersectionPoint, light_pos, all_faces,
-                                                  light_face_start, light_face_end);
-            
-                    // Calculate distance to light and apply attenuation
-                    FloatType distance_to_light = glm::length(light_pos - intersection.intersectionPoint);
-                    FloatType attenuation = compute_light_attenuation(distance_to_light, light_intensity);
+                    // Calculate vector to light
+                    glm::vec3 to_light = light_pos - intersection.intersectionPoint;
+                    FloatType distance_to_light = glm::length(to_light);
                     
-                    // Apply lighting with distance attenuation
+                    // Check if point is in shadow
+                    bool in_shadow = is_in_shadow(intersection.intersectionPoint, light_pos, all_faces);
+            
+                    // Apply Lambert's cosine law lighting
                     Colour final_colour = intersection.colour;
                     if (in_shadow) {
                         // Shadowed areas receive only minimal ambient light
-                        final_colour.red = static_cast<uint8_t>(final_colour.red * 0.1f);
-                        final_colour.green = static_cast<uint8_t>(final_colour.green * 0.1f);
-                        final_colour.blue = static_cast<uint8_t>(final_colour.blue * 0.1f);
-                    } else {
-                        // Apply distance attenuation to lit areas
                         FloatType ambient = 0.1f;
-                        FloatType lighting = ambient + (1.0f - ambient) * attenuation;
+                        final_colour.red = static_cast<uint8_t>(final_colour.red * ambient);
+                        final_colour.green = static_cast<uint8_t>(final_colour.green * ambient);
+                        final_colour.blue = static_cast<uint8_t>(final_colour.blue * ambient);
+                    } else {
+                        // Compute Lambertian lighting with distance and angle attenuation
+                        FloatType lambertian = compute_lambertian_lighting(intersection.normal, to_light, 
+                                                                           distance_to_light, light_intensity);
+                        
+                        // Combine ambient and diffuse lighting
+                        FloatType ambient = 0.1f;
+                        FloatType lighting = ambient + (1.0f - ambient) * lambertian;
+                        
                         final_colour.red = static_cast<uint8_t>(Clamp(final_colour.red * lighting, 0.0f, 255.0f));
                         final_colour.green = static_cast<uint8_t>(Clamp(final_colour.green * lighting, 0.0f, 255.0f));
                         final_colour.blue = static_cast<uint8_t>(Clamp(final_colour.blue * lighting, 0.0f, 255.0f));
@@ -783,6 +770,9 @@ RayTriangleIntersection Renderer::find_closest_intersection(const glm::vec3& ray
             closest.intersectionPoint = ray_origin + ray_dir * t;
             closest.triangleIndex = i;
             
+            // Calculate surface normal
+            closest.normal = CalculateNormal(face.vertices[0], face.vertices[1], face.vertices[2]);
+            
             // Compute barycentric coordinate w = 1 - u - v
             FloatType w = 1.0f - u - v;
             
@@ -802,8 +792,7 @@ RayTriangleIntersection Renderer::find_closest_intersection(const glm::vec3& ray
     
     return closest;
 }
-bool Renderer::is_in_shadow(const glm::vec3& point, const glm::vec3& light_pos, const std::vector<Face>& faces,
-                            std::size_t light_face_start, std::size_t light_face_end) noexcept {
+bool Renderer::is_in_shadow(const glm::vec3& point, const glm::vec3& light_pos, const std::vector<Face>& faces) noexcept {
     glm::vec3 to_light = light_pos - point;
     FloatType light_distance = glm::length(to_light);
     glm::vec3 light_dir = to_light / light_distance;
@@ -813,11 +802,6 @@ bool Renderer::is_in_shadow(const glm::vec3& point, const glm::vec3& light_pos, 
     glm::vec3 shadow_ray_origin = point;
     
     for (std::size_t i = 0; i < faces.size(); i++) {
-        // Skip light source faces - light passes through itself
-        if (i >= light_face_start && i < light_face_end) {
-            continue;
-        }
-        
         const Face& face = faces[i];
         FloatType t, u, v;
         
@@ -840,9 +824,23 @@ bool Renderer::is_in_shadow(const glm::vec3& point, const glm::vec3& light_pos, 
     
     return false;  // Not in shadow
 }
-FloatType Renderer::compute_light_attenuation(FloatType distance, FloatType intensity) noexcept {
-    // Distance attenuation formula: intensity / (distance²)
-    // Clamped to [0, 1] range
-    FloatType attenuation = intensity / (2 * std::numbers::pi * distance * distance);
+FloatType Renderer::compute_lambertian_lighting(const glm::vec3& normal, const glm::vec3& to_light, FloatType distance, FloatType intensity) noexcept {
+    // Lambert's cosine law: I = I₀ * cos(θ) / (4πr²)
+    // where θ is the angle between surface normal and light direction
+    
+    glm::vec3 light_dir = glm::normalize(to_light);
+    
+    // Calculate cos(θ) - angle of incidence
+    FloatType cos_theta = glm::dot(normal, light_dir);
+    
+    // If cos_theta <= 0, the surface is backfacing (facing away from light)
+    if (cos_theta <= 0.0f) {
+        return 0.0f;  // No lighting for backfacing surfaces
+    }
+    
+    // Distance attenuation with lambertian cosine
+    // Using 4π instead of 2π for proper spherical distribution
+    FloatType attenuation = (intensity * cos_theta) / (4.0f * std::numbers::pi * distance * distance);
+    
     return Clamp(attenuation, 0.0f, 1.0f);
 }

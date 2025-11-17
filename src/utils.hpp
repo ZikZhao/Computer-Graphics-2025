@@ -52,6 +52,13 @@ public:
 // Ray Tracing Utilities
 // ============================================================================
 
+// Calculate surface normal from triangle vertices
+inline glm::vec3 CalculateNormal(const glm::vec3& v0, const glm::vec3& v1, const glm::vec3& v2) noexcept {
+    glm::vec3 edge1 = v1 - v0;
+    glm::vec3 edge2 = v2 - v0;
+    return glm::normalize(glm::cross(edge1, edge2));
+}
+
 inline bool IntersectRayTriangle(
     const glm::vec3& ray_origin,
     const glm::vec3& ray_dir,
