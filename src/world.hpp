@@ -9,6 +9,7 @@
 #include <array>
 #include <filesystem>
 #include <numbers>
+#include <optional>
 #include "DrawingWindow.h"
 #include "utils.hpp"
 #include "thread_pool.hpp"
@@ -118,20 +119,23 @@ public:
     static constexpr double FarPlane = 100.0;
 public:
     glm::vec3 position_ = { 0.0f, 0.0f, 12.0f };
-    glm::mat3 orientation_ = glm::mat3(
-        glm::vec3(1.0f, 0.0f, 0.0f),  // right
-        glm::vec3(0.0f, 1.0f, 0.0f),  // up
-        glm::vec3(0.0f, 0.0f, -1.0f)  // forward
-    );
+    FloatType yaw_ = 0.0f;      // Horizontal rotation (around world Y axis)
+    FloatType pitch_ = 0.0f;    // Vertical rotation (clamped to ±89 degrees)
+    glm::mat3 orientation_;     // Cached orientation matrix (updated from yaw/pitch)
     glm::vec3 orbit_target_ = { 0.0f, 0.0f, 0.0f };
-    std::int64_t last_orbit_time_ = std::chrono::system_clock::now().time_since_epoch().count();
-    Camera() = default;
+    bool is_orbiting_ = false;
+    FloatType orbit_radius_ = 0.0f;
+    FloatType mouse_sensitivity_ = 0.001f;  // Mouse sensitivity for FPS camera
+    bool is_dragging_ = false;  // Whether mouse drag is active
+    bool first_drag_motion_ = false;  // Flag to skip first motion event after drag starts
+    Camera() { update_orientation(); }
     glm::vec4 world_to_clip(const glm::vec3& vertex, double aspect_ratio) const noexcept;
     glm::vec3 clip_to_ndc(const glm::vec4& clip) const noexcept;
+    void update_orientation();
     void start_orbiting(glm::vec3 target);
     void orbiting();
     void stop_orbiting();
-    void rotate(FloatType angle_x, FloatType angle_y);
+    void rotate(FloatType delta_yaw, FloatType delta_pitch);
     void handle_event(const SDL_Event& event);
     std::pair<glm::vec3, glm::vec3> generate_ray(int pixel_x, int pixel_y, int screen_width, int screen_height, double aspect_ratio) const noexcept;
 };

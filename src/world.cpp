@@ -2,95 +2,155 @@
 #include <numeric>
 #include <iostream>
 
+void Camera::update_orientation() {
+    // Calculate forward direction from yaw and pitch
+    FloatType cos_pitch = std::cos(pitch_);
+    FloatType sin_pitch = std::sin(pitch_);
+    FloatType cos_yaw = std::cos(yaw_);
+    FloatType sin_yaw = std::sin(yaw_);
+    
+    std::cout << "[ORIENT] yaw=" << yaw_ << ", pitch=" << pitch_ 
+              << " | cos_yaw=" << cos_yaw << ", sin_yaw=" << sin_yaw 
+              << ", cos_pitch=" << cos_pitch << ", sin_pitch=" << sin_pitch << std::endl;
+    
+    // Forward vector (camera looks in +Z direction in view space)
+    glm::vec3 forward(
+        sin_yaw * cos_pitch,
+        sin_pitch,
+        -cos_yaw * cos_pitch
+    );
+    
+    // Right vector: cross product of world up (0,1,0) and forward
+    // This ensures right is always perpendicular to Y axis
+    glm::vec3 world_up(0.0f, 1.0f, 0.0f);
+    glm::vec3 right = glm::normalize(glm::cross(forward, world_up));
+    
+    // Up vector: cross product of right and forward
+    glm::vec3 up = glm::normalize(glm::cross(right, forward));
+    
+    std::cout << "[ORIENT] forward=(" << forward.x << "," << forward.y << "," << forward.z << ")" 
+              << " right=(" << right.x << "," << right.y << "," << right.z << ")"
+              << " up=(" << up.x << "," << up.y << "," << up.z << ")" << std::endl;
+    
+    // Build orientation matrix
+    orientation_[0] = right;
+    orientation_[1] = up;
+    orientation_[2] = forward;
+}
+
 void Camera::start_orbiting(glm::vec3 target) {
     orbit_target_ = target;
-    last_orbit_time_ = std::chrono::system_clock::now().time_since_epoch().count();
+    orbit_radius_ = glm::length(position_ - orbit_target_);
+    is_orbiting_ = true;
 }
 void Camera::orbiting() {
-    auto now = std::chrono::system_clock::now().time_since_epoch().count();
-    if (now - last_orbit_time_ > OrbitInterval) {
+    if (is_orbiting_) {
         constexpr static FloatType angle_increment = glm::radians(0.5f);
-        FloatType cos_angle = std::cos(angle_increment);
-        FloatType sin_angle = std::sin(angle_increment);
-        glm::vec3& up = orientation_[1];
-        glm::vec3 k_cross_pos = glm::cross(up, position_);
-        FloatType k_dot_pos = glm::dot(up, position_);
-        position_ = position_ * cos_angle + 
-                   k_cross_pos * sin_angle + 
-                   up * k_dot_pos * (1.0f - cos_angle);
-        orientation_[2] = glm::normalize(orbit_target_ - position_);
-        orientation_[0] = glm::normalize(glm::cross(orientation_[2], up));
-        last_orbit_time_ = now;
+        yaw_ += angle_increment;
+        update_orientation();
+        position_ = orbit_target_ - orientation_[2] * orbit_radius_;
     }
 }
 void Camera::stop_orbiting() {
-    last_orbit_time_ = std::numeric_limits<std::int64_t>::max();
+    is_orbiting_ = false;
 }
-void Camera::rotate(FloatType angle_x, FloatType angle_y) {
-    if (angle_x != 0.0f) {
-        glm::mat3 rotation_y = glm::mat3(
-            std::cos(angle_x), 0.0f, std::sin(angle_x),
-            0.0f, 1.0f, 0.0f,
-            -std::sin(angle_x), 0.0f, std::cos(angle_x)
-        );
-        orientation_ = rotation_y * orientation_;
-    }
-    if (angle_y != 0.0f) {
-        glm::mat3 rotation_x = glm::mat3(
-            1.0f, 0.0f, 0.0f,
-            0.0f, std::cos(angle_y), -std::sin(angle_y),
-            0.0f, std::sin(angle_y), std::cos(angle_y)
-        );
-        orientation_ = rotation_x * orientation_;
-    }
+void Camera::rotate(FloatType delta_yaw, FloatType delta_pitch) {
+    yaw_ += delta_yaw;
+    pitch_ += delta_pitch;
+    
+    // Clamp pitch to prevent gimbal lock (±89 degrees)
+    constexpr FloatType max_pitch = glm::radians(89.0f);
+    pitch_ = Clamp(pitch_, -max_pitch, max_pitch);
+    
+    update_orientation();
 }
+
 void Camera::handle_event(const SDL_Event& event) {
     if (event.type == SDL_KEYDOWN) {
         constexpr FloatType move_step = 0.1f;
-        glm::vec3 movement(0.0f);
         switch (event.key.keysym.sym) {
         case SDLK_w:
-            movement.y = move_step;
+            // Move up (perpendicular to view direction)
+            position_.y += move_step;
             break;
         case SDLK_s:
-            movement.y = -move_step;
+            // Move down
+            position_.y -= move_step;
             break;
         case SDLK_a:
-            movement.x = -move_step;
+            // Move left (perpendicular to view direction)
+            position_ -= orientation_[0] * move_step;
             break;
         case SDLK_d:
-            movement.x = move_step;
+            // Move right
+            position_ += orientation_[0] * move_step;
             break;
         case SDLK_q:
-            movement.z = move_step;
+            // Move closer along view direction
+            position_ += orientation_[2] * move_step;
             break;
         case SDLK_e:
-            movement.z = -move_step;
+            // Move away along view direction
+            position_ -= orientation_[2] * move_step;
             break;
         case SDLK_UP:
-            rotate(0.0f, -glm::radians(1.0f));
+            rotate(0.0f, -glm::radians(2.0f));
             return;
         case SDLK_DOWN:
-            rotate(0.0f, glm::radians(1.0f));
+            rotate(0.0f, glm::radians(2.0f));
             return;
         case SDLK_LEFT:
-            rotate(-glm::radians(1.0f), 0.0f);
+            rotate(-glm::radians(2.0f), 0.0f);
             return;
         case SDLK_RIGHT:
-            rotate(glm::radians(1.0f), 0.0f);
+            rotate(glm::radians(2.0f), 0.0f);
             return;
-        // case SDLK_t:
-        //     start_orbiting(glm::vec3(0.0f, 0.0f, 0.0f));
-        //     return;
         case SDLK_o:
-            if (last_orbit_time_ == std::numeric_limits<std::int64_t>::max()) {
-                last_orbit_time_ = std::chrono::system_clock::now().time_since_epoch().count();
+            if (!is_orbiting_) {
+                start_orbiting(orbit_target_);
             } else {
-                last_orbit_time_ = std::numeric_limits<std::int64_t>::max();
+                stop_orbiting();
             }
             return;
         }
-        position_ += orientation_ * movement;
+    } else if (event.type == SDL_MOUSEBUTTONDOWN) {
+        if (event.button.button == SDL_BUTTON_LEFT) {
+            // If we're in orbiting mode, stop it before drag
+            if (is_orbiting_) {
+                std::cout << "[MOUSE] Stopping orbit mode before drag" << std::endl;
+                stop_orbiting();
+            }
+            
+            // Start dragging and mark that we should skip the first motion event
+            is_dragging_ = true;
+            first_drag_motion_ = true;
+            std::cout << "[MOUSE] Button DOWN - starting drag at x=" << event.button.x << ", y=" << event.button.y << std::endl;
+        }
+    } else if (event.type == SDL_MOUSEBUTTONUP) {
+        if (event.button.button == SDL_BUTTON_LEFT) {
+            // Stop dragging
+            is_dragging_ = false;
+            first_drag_motion_ = false;
+            std::cout << "[MOUSE] Button UP - stopping drag at x=" << event.button.x << ", y=" << event.button.y << std::endl;
+        }
+    } else if (event.type == SDL_MOUSEMOTION) {
+        std::cout << "[MOUSE] Motion event - is_dragging=" << is_dragging_ << ", first_drag_motion=" << first_drag_motion_ 
+                  << " | x=" << event.motion.x << ", y=" << event.motion.y 
+                  << ", xrel=" << event.motion.xrel << ", yrel=" << event.motion.yrel << std::endl;
+        // Only rotate when dragging
+        if (is_dragging_) {
+            // Skip the first motion event to avoid initial jump from accumulated SDL motion
+            if (first_drag_motion_) {
+                first_drag_motion_ = false;
+                std::cout << "[MOUSE] ^^^ First motion SKIPPED ^^^" << std::endl;
+            } else {
+                // Use SDL's relative motion (xrel, yrel) - these are always relative deltas
+                FloatType delta_yaw = -static_cast<FloatType>(event.motion.xrel) * mouse_sensitivity_;
+                FloatType delta_pitch = static_cast<FloatType>(event.motion.yrel) * mouse_sensitivity_;
+                std::cout << "[MOUSE] ^^^ ROTATING - delta_yaw=" << delta_yaw << ", delta_pitch=" << delta_pitch << " ^^^" << std::endl;
+                rotate(delta_yaw, delta_pitch);
+            }
+        }
     }
 }
 glm::vec4 Camera::world_to_clip(const glm::vec3& vertex, double aspect_ratio) const noexcept {

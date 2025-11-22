@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include <memory>
 #include "DrawingWindow.h"
+#include "window.hpp"
 #include "world.hpp"
 
 #define WIDTH 1920
@@ -13,31 +14,34 @@
 int main(int argc, char *argv[]) {
     assert(argc >= 2 && "Please provide a .obj file as a command line argument.");
 
-	DrawingWindow window = DrawingWindow(WIDTH, HEIGHT, false);
+	DrawingWindow drawing_window = DrawingWindow(WIDTH, HEIGHT, false);
+    Window window(drawing_window);
+    
     World world;
     world.load_files(std::vector<std::string>(argv + 1, argv + argc));
-    Renderer renderer(window);
+    Renderer renderer(drawing_window);
+
+    // Register event handlers
+    window.add_event_handler([&](const SDL_Event& event) {
+        if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_SPACE) {
+            window.save_ppm("screenshot.ppm");
+            window.save_bmp("screenshot.bmp");
+        }
+        world.handle_event(event);
+        renderer.handle_event(event);
+    });
 
 	SDL_Event event;
     std::size_t last_print_time = std::chrono::system_clock::now().time_since_epoch().count();
     std::size_t fps = 0;
 	while (true) {
-		while (window.pollForInputEvents(event)) {
-            if (event.type == SDL_QUIT || (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE)) {
-                window.exitCleanly();
-                return 0;
-            }
-            else if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_SPACE) {
-                window.savePPM("screenshot.ppm");
-                window.saveBMP("screenshot.bmp");
-            }
-            world.handle_event(event);
-            renderer.handle_event(event);
+		while (window.poll_events(event)) {
+            // Events are handled by registered handlers
         }
-        window.clearPixels();
+        window.clear_pixels();
         world.orbiting();
         renderer.render(world);
-		window.renderFrame();
+		window.render_frame();
         
         fps++;
         std::size_t now = std::chrono::system_clock::now().time_since_epoch().count();
