@@ -92,6 +92,7 @@ public:
 struct Material {
     Colour colour;
     std::shared_ptr<Texture> texture;
+    FloatType shininess = 64.0f;  // Specular shininess (higher = sharper highlights)
 };
 
 // Vertex in clip space with attributes
@@ -227,6 +228,7 @@ private:
     static RayTriangleIntersection find_closest_intersection(const glm::vec3& ray_origin, const glm::vec3& ray_dir, const std::vector<Face>& faces) noexcept;
     static bool is_in_shadow(const glm::vec3& point, const glm::vec3& light_pos, const std::vector<Face>& faces) noexcept;
     static FloatType compute_lambertian_lighting(const glm::vec3& normal, const glm::vec3& to_light, FloatType distance, FloatType intensity) noexcept;
+    static FloatType compute_specular_lighting(const glm::vec3& normal, const glm::vec3& to_light, const glm::vec3& to_camera, FloatType distance, FloatType intensity, FloatType shininess) noexcept;
     // HDR tonemapping and gamma correction
     static Colour tonemap_and_gamma_correct(const ColourHDR& hdr, FloatType gamma) noexcept;
     static FloatType aces_tonemap(FloatType hdr_value) noexcept;

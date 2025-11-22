@@ -157,17 +157,17 @@ void Model::load_file(std::string filename) {
         std::istringstream iss(line);
         std::string type;
         iss >> type;
-        if (type == "l") {
+        if (type == "mtllib") {
+            std::string relative_path;
+            iss >> relative_path;
+            std::string material_filename = (std::filesystem::path(filename).parent_path() / relative_path).string();
+            load_materials(std::move(material_filename));
+        } else if (type == "l") {
             // Light position definition
             FloatType x, y, z;
             iss >> x >> y >> z;
             light_position_ = glm::vec3(x, y, z);
             has_light_ = true;
-        } else if (type == "mtllib") {
-            std::string relative_path;
-            iss >> relative_path;
-            std::string material_filename = (std::filesystem::path(filename).parent_path() / relative_path).string();
-            load_materials(std::move(material_filename));
         } else if (type == "o") {
             std::string name;
             iss >> name;
@@ -270,6 +270,12 @@ void Model::load_materials(std::string filename) {
                 static_cast<std::uint8_t>(Clamp(g * 255.0f, 0.0f, 255.0f)),
                 static_cast<std::uint8_t>(Clamp(b * 255.0f, 0.0f, 255.0f))
             };
+        } else if (type == "Ns") {
+            // Shininess/specular exponent (0-1000 range in MTL, typically 0-200)
+            assert(current_material != materials_.end());
+            FloatType ns;
+            iss >> ns;
+            current_material->second.shininess = ns;
         } else if (type == "map_Kd") {
             assert(current_material != materials_.end());
             std::string texture_filename;
@@ -590,6 +596,9 @@ void Renderer::raytraced_render(World& world) noexcept {
                     glm::vec3 to_light = light_pos - intersection.intersectionPoint;
                     FloatType distance_to_light = glm::length(to_light);
                     
+                    // Calculate vector to camera
+                    glm::vec3 to_camera = camera.position_ - intersection.intersectionPoint;
+                    
                     // Check if point is in shadow
                     bool in_shadow = is_in_shadow(intersection.intersectionPoint, light_pos, all_faces);
             
@@ -597,19 +606,26 @@ void Renderer::raytraced_render(World& world) noexcept {
                     ColourHDR hdr_colour = ColourHDR::from_srgb(intersection.colour, gamma_);
 
                     // Apply Lambert's cosine law lighting in linear space
-                    // Lower ambient light to compensate for gamma correction brightening
-                    FloatType ambient = 0.025f;  // Reduced from 0.1 for darker, more realistic shadows
+                    FloatType ambient = 0.025f;
                     FloatType lambertian = 0.0f;
+                    FloatType specular = 0.0f;
 
                     if (!in_shadow) {
-                        // Compute Lambertian lighting with distance and angle attenuation
+                        // Compute Lambertian lighting
                         lambertian = compute_lambertian_lighting(intersection.normal, to_light, 
                                                                  distance_to_light, light_intensity);
+                        
+                        // Only compute specular if surface receives diffuse light
+                        if (lambertian > 0.0f) {
+                            specular = compute_specular_lighting(intersection.normal, to_light, to_camera,
+                                                                distance_to_light, light_intensity, 
+                                                                all_faces[intersection.triangleIndex].material.shininess);
+                        }
                     }
 
-                    // Combine ambient and diffuse in linear HDR space
-                    FloatType lighting = ambient + (1.0f - ambient) * lambertian;
-                    ColourHDR final_hdr = hdr_colour * lighting;
+                    // Combine ambient, diffuse, and specular
+                    FloatType diffuse_component = ambient + (1.0f - ambient) * lambertian;
+                    ColourHDR final_hdr = hdr_colour * diffuse_component + ColourHDR(specular, specular, specular);
 
                     // Tonemap and gamma correct for display
                     Colour final_colour = tonemap_and_gamma_correct(final_hdr, gamma_);
@@ -778,7 +794,15 @@ RayTriangleIntersection Renderer::find_closest_intersection(const glm::vec3& ray
             closest.triangleIndex = i;
             
             // Calculate surface normal
-            closest.normal = CalculateNormal(face.vertices[0], face.vertices[1], face.vertices[2]);
+            glm::vec3 geometric_normal = CalculateNormal(face.vertices[0], face.vertices[1], face.vertices[2]);
+            
+            // For proper lighting, the normal should face the ray origin (viewer)
+            // If dot(normal, -ray_dir) < 0, the normal points away from viewer (backface)
+            // In this case, flip it to face the viewer for proper shading
+            if (glm::dot(geometric_normal, -ray_dir) < 0.0f) {
+                geometric_normal = -geometric_normal;
+            }
+            closest.normal = geometric_normal;
             
             // Compute barycentric coordinate w = 1 - u - v
             FloatType w = 1.0f - u - v;
@@ -848,6 +872,37 @@ FloatType Renderer::compute_lambertian_lighting(const glm::vec3& normal, const g
     // Distance attenuation with lambertian cosine
     // Using 4π instead of 2π for proper spherical distribution
     FloatType attenuation = (intensity * cos_theta) / (4.0f * std::numbers::pi * distance * distance);
+    
+    return Clamp(attenuation, 0.0f, 1.0f);
+}
+
+FloatType Renderer::compute_specular_lighting(const glm::vec3& normal, const glm::vec3& to_light, const glm::vec3& to_camera, FloatType distance, FloatType intensity, FloatType shininess) noexcept {
+    // Blinn-Phong specular reflection
+    // Important: This should only be called when the surface is front-facing to the viewer
+    
+    glm::vec3 light_dir = glm::normalize(to_light);
+    glm::vec3 view_dir = glm::normalize(to_camera);
+    
+    // Check that we're viewing the front face (N·V > 0)
+    // This prevents specular on back-facing surfaces
+    FloatType n_dot_v = glm::dot(normal, view_dir);
+    if (n_dot_v <= 0.0f) {
+        return 0.0f;
+    }
+    
+    // Calculate halfway vector
+    glm::vec3 halfway = glm::normalize(light_dir + view_dir);
+    
+    // Calculate cos(α) - angle between normal and halfway vector
+    FloatType cos_alpha = glm::dot(normal, halfway);
+    
+    if (cos_alpha <= 0.0f) {
+        return 0.0f;
+    }
+    
+    // Specular term with distance attenuation
+    FloatType spec_term = std::pow(cos_alpha, shininess);
+    FloatType attenuation = (intensity * spec_term) / (4.0f * std::numbers::pi * distance * distance);
     
     return Clamp(attenuation, 0.0f, 1.0f);
 }
