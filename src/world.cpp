@@ -1,5 +1,8 @@
 #include "world.hpp"
 #include <numeric>
+#include <algorithm>
+#include <functional>
+#include <limits>
 
 glm::mat3 Camera::orientation() const noexcept {
     FloatType cos_pitch = std::cos(pitch_);
@@ -231,7 +234,6 @@ void Model::load_file(std::string filename) {
             current_obj->material = materials_[colour_name];
             current_obj->material.shading = prev_shading;
         } else if (type == "s") {
-            // Shading mode selector: expects "s Gouraud" or "s Phong"
             std::string mode;
             iss >> mode;
             if (current_obj != objects_.end()) {
@@ -262,8 +264,7 @@ void Model::load_file(std::string filename) {
                 iss >> vertex_index >> slash;
                 vertice[i] = vertices_[vertex_index - 1];
                 vi_idx[i] = vertex_index - 1;
-                // Record vertex indices for smoothing
-                tex_indices[i] = 0; // default
+                tex_indices[i] = 0;
                 tex_coords[i] = glm::vec2(0.0f, 0.0f);
                 
                 if (int c = iss.peek(); c >= '0' && c <= '9') {
@@ -277,14 +278,7 @@ void Model::load_file(std::string filename) {
                         tex_coords[i] = glm::vec2(0.0f, 0.0f);
                     }
                 } else {
-                    // No texture index provided
                 }
-                
-                // Save vertex index
-                // OBJ indices are 1-based
-                // Store 0-based index
-                // Will be used to compute smoothed normals later
-                // We temporarily store in a local array for face construction
             }
             Face new_face{
                 { vertice[0], vertice[1], vertice[2] },
@@ -297,13 +291,10 @@ void Model::load_file(std::string filename) {
             current_obj->faces.emplace_back(std::move(new_face));
         }
     }
-    // After loading faces, compute smoothed vertex normals (area-weighted)
-    // Accumulate normals per vertex
     std::vector<glm::vec3> accum_normals(vertices_.size(), glm::vec3(0.0f));
     for (auto& obj : objects_) {
         for (auto& f : obj.faces) {
             glm::vec3 n = CalculateNormal(f.vertices[0], f.vertices[1], f.vertices[2]);
-            // Area weighting via cross product magnitude
             glm::vec3 e0 = f.vertices[1] - f.vertices[0];
             glm::vec3 e1 = f.vertices[2] - f.vertices[0];
             FloatType area2 = glm::length(glm::cross(e0, e1));
@@ -682,17 +673,25 @@ void Renderer::raytraced_render(World& world) noexcept {
     // Use static buffer to collect all faces (avoids reallocation each frame)
     const std::vector<Face>& all_faces = Model::collect_all_faces(world.models());
 
+    if (bvh_nodes_.empty() || bvh_face_count_ != all_faces.size()) {
+        build_bvh(all_faces);
+        bvh_face_count_ = all_faces.size();
+    }
+
     static ThreadPool<> thread_pool;
     
     // Iterate over all pixels
-    for (int y = 0; y < static_cast<int>(window_.height); y++) {
-        thread_pool.enqueue(std::function<void()>([&, y]() noexcept {
-            for (int x = 0; x < static_cast<int>(window_.width); x++) {
+    int tile_h = 16;
+    for (int y0 = 0; y0 < static_cast<int>(window_.height); y0 += tile_h) {
+        int y1 = std::min(y0 + tile_h, static_cast<int>(window_.height));
+        thread_pool.enqueue(std::function<void()>([&, y0, y1]() noexcept {
+            for (int y = y0; y < y1; ++y) {
+                for (int x = 0; x < static_cast<int>(window_.width); x++) {
                 // Generate ray for this pixel
                 auto [ray_origin, ray_dir] = camera.generate_ray(x, y, window_.width, window_.height, aspect_ratio_);
 
                 // Find closest intersection
-                RayTriangleIntersection intersection = find_closest_intersection(ray_origin, ray_dir, all_faces);
+                RayTriangleIntersection intersection = find_closest_intersection_bvh(ray_origin, ray_dir, all_faces);
 
                 if (intersection.triangleIndex != static_cast<std::size_t>(-1)) {
                     const Face& face = all_faces[intersection.triangleIndex];
@@ -702,7 +701,7 @@ void Renderer::raytraced_render(World& world) noexcept {
                     glm::vec3 to_camera_hit = camera.position_ - intersection.intersectionPoint;
 
                     // Shadow test at hit point
-                    bool in_shadow = is_in_shadow(intersection.intersectionPoint, light_pos, all_faces);
+                    bool in_shadow = is_in_shadow_bvh(intersection.intersectionPoint, light_pos, all_faces);
 
                     // Base color in HDR linear space
                     ColourHDR hdr_colour = ColourHDR::from_srgb(intersection.colour, gamma_);
@@ -742,6 +741,7 @@ void Renderer::raytraced_render(World& world) noexcept {
                     ColourHDR final_hdr = hdr_colour * diffuse_component + ColourHDR(specular, specular, specular);
                     Colour final_colour = tonemap_and_gamma_correct(final_hdr, gamma_);
                     window_.setPixelColour(x, y, final_colour);
+                }
                 }
             }
         }));
@@ -937,6 +937,102 @@ RayTriangleIntersection Renderer::find_closest_intersection(const glm::vec3& ray
     
     return closest;
 }
+static inline Renderer::AABB tri_aabb(const Face& f) noexcept {
+    glm::vec3 mn = glm::min(glm::min(f.vertices[0], f.vertices[1]), f.vertices[2]);
+    glm::vec3 mx = glm::max(glm::max(f.vertices[0], f.vertices[1]), f.vertices[2]);
+    return Renderer::AABB{mn, mx};
+}
+bool Renderer::intersect_aabb(const glm::vec3& ro, const glm::vec3& rd, const AABB& box, FloatType tmax) noexcept {
+    glm::vec3 inv = glm::vec3(1.0f) / rd;
+    glm::vec3 t0 = (box.min - ro) * inv;
+    glm::vec3 t1 = (box.max - ro) * inv;
+    glm::vec3 tmin = glm::min(t0, t1);
+    glm::vec3 tmaxv = glm::max(t0, t1);
+    FloatType t_enter = std::max(std::max(tmin.x, tmin.y), tmin.z);
+    FloatType t_exit = std::min(std::min(tmaxv.x, tmaxv.y), tmaxv.z);
+    return t_enter <= t_exit && t_exit >= 0.0f && t_enter <= tmax;
+}
+void Renderer::build_bvh(const std::vector<Face>& faces) noexcept {
+    bvh_tri_indices_.resize(faces.size());
+    std::iota(bvh_tri_indices_.begin(), bvh_tri_indices_.end(), 0);
+    struct Cent { glm::vec3 c; Renderer::AABB b; };
+    std::vector<Cent> data(faces.size());
+    for (std::size_t i = 0; i < faces.size(); ++i) {
+        auto b = tri_aabb(faces[i]);
+        glm::vec3 c = (faces[i].vertices[0] + faces[i].vertices[1] + faces[i].vertices[2]) / 3.0f;
+        data[i] = Cent{c, b};
+    }
+    bvh_nodes_.clear();
+    std::function<int(int,int)> build = [&](int start, int end) -> int {
+        Renderer::AABB box{glm::vec3(std::numeric_limits<float>::infinity()), glm::vec3(-std::numeric_limits<float>::infinity())};
+        Renderer::AABB cbox{box.min, box.max};
+        for (int i = start; i < end; ++i) {
+            box.min = glm::min(box.min, data[bvh_tri_indices_[i]].b.min);
+            box.max = glm::max(box.max, data[bvh_tri_indices_[i]].b.max);
+            cbox.min = glm::min(cbox.min, data[bvh_tri_indices_[i]].c);
+            cbox.max = glm::max(cbox.max, data[bvh_tri_indices_[i]].c);
+        }
+        int count = end - start;
+        int node_index = (int)bvh_nodes_.size();
+        bvh_nodes_.push_back(BVHNode{box, -1, -1, start, count});
+        if (count <= 8) return node_index;
+        glm::vec3 extent = cbox.max - cbox.min;
+        int axis = (extent.x > extent.y && extent.x > extent.z) ? 0 : (extent.y > extent.z ? 1 : 2);
+        int mid = (start + end) / 2;
+        std::nth_element(bvh_tri_indices_.begin() + start, bvh_tri_indices_.begin() + mid, bvh_tri_indices_.begin() + end,
+            [&](int a, int b){ return data[a].c[axis] < data[b].c[axis]; });
+        int left = build(start, mid);
+        int right = build(mid, end);
+        bvh_nodes_[node_index].left = left;
+        bvh_nodes_[node_index].right = right;
+        bvh_nodes_[node_index].count = 0;
+        return node_index;
+    };
+    build(0, (int)faces.size());
+}
+RayTriangleIntersection Renderer::find_closest_intersection_bvh(const glm::vec3& ray_origin, const glm::vec3& ray_dir, const std::vector<Face>& faces) noexcept {
+    RayTriangleIntersection closest;
+    closest.distanceFromCamera = std::numeric_limits<FloatType>::infinity();
+    closest.triangleIndex = static_cast<std::size_t>(-1);
+    if (bvh_nodes_.empty()) return closest;
+    std::vector<int> stack;
+    stack.reserve(64);
+    stack.push_back(0);
+    while (!stack.empty()) {
+        int ni = stack.back();
+        stack.pop_back();
+        const BVHNode& n = bvh_nodes_[ni];
+        if (!intersect_aabb(ray_origin, ray_dir, n.box, closest.distanceFromCamera)) continue;
+        if (n.count == 0) {
+            stack.push_back(n.left);
+            stack.push_back(n.right);
+        } else {
+            for (int i = 0; i < n.count; ++i) {
+                int tri_index = bvh_tri_indices_[n.start + i];
+                const Face& face = faces[tri_index];
+                FloatType t,u,v;
+                if (IntersectRayTriangle(ray_origin, ray_dir, face.vertices[0], face.vertices[1], face.vertices[2], t,u,v) && t < closest.distanceFromCamera) {
+                    closest.distanceFromCamera = t;
+                    closest.intersectionPoint = ray_origin + ray_dir * t;
+                    closest.triangleIndex = tri_index;
+                    closest.u = u;
+                    closest.v = v;
+                    glm::vec3 geometric_normal = CalculateNormal(face.vertices[0], face.vertices[1], face.vertices[2]);
+                    if (glm::dot(geometric_normal, -ray_dir) < 0.0f) geometric_normal = -geometric_normal;
+                    closest.normal = geometric_normal;
+                    FloatType w = 1.0f - u - v;
+                    glm::vec2 uv_coord = face.texture_coords[0] * w + face.texture_coords[1] * u + face.texture_coords[2] * v;
+                    if (face.material.texture) {
+                        closest.colour = face.material.texture->sample(uv_coord.x, uv_coord.y);
+                    } else {
+                        closest.colour = face.material.colour;
+                    }
+                }
+            }
+        }
+    }
+    return closest;
+}
 bool Renderer::is_in_shadow(const glm::vec3& point, const glm::vec3& light_pos, const std::vector<Face>& faces) noexcept {
     glm::vec3 to_light = light_pos - point;
     FloatType light_distance = glm::length(to_light);
@@ -968,6 +1064,37 @@ bool Renderer::is_in_shadow(const glm::vec3& point, const glm::vec3& light_pos, 
     }
     
     return false;  // Not in shadow
+}
+bool Renderer::is_in_shadow_bvh(const glm::vec3& point, const glm::vec3& light_pos, const std::vector<Face>& faces) noexcept {
+    glm::vec3 to_light = light_pos - point;
+    FloatType light_distance = glm::length(to_light);
+    glm::vec3 light_dir = to_light / light_distance;
+    if (bvh_nodes_.empty()) return false;
+    std::vector<int> stack;
+    stack.reserve(64);
+    stack.push_back(0);
+    constexpr FloatType min_t = 0.001f;
+    while (!stack.empty()) {
+        int ni = stack.back();
+        stack.pop_back();
+        const BVHNode& n = bvh_nodes_[ni];
+        if (!intersect_aabb(point, light_dir, n.box, light_distance)) continue;
+        if (n.count == 0) {
+            stack.push_back(n.left);
+            stack.push_back(n.right);
+        } else {
+            for (int i = 0; i < n.count; ++i) {
+                int tri_index = bvh_tri_indices_[n.start + i];
+                const Face& face = faces[tri_index];
+                FloatType t,u,v;
+                bool hit = IntersectRayTriangle(point, light_dir, face.vertices[0], face.vertices[1], face.vertices[2], t,u,v);
+                if (hit && t > min_t && t < light_distance) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
 }
 FloatType Renderer::compute_lambertian_lighting(const glm::vec3& normal, const glm::vec3& to_light, FloatType distance, FloatType intensity) noexcept {
     // Lambert's cosine law: I = I₀ * cos(θ) / (4πr²)

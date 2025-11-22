@@ -222,6 +222,13 @@ private:
     std::vector<ColourHDR> hdr_buffer_;  // HDR floating point color buffer
     double aspect_ratio_ = 1.0;
 public:
+    struct AABB { glm::vec3 min; glm::vec3 max; };
+    struct BVHNode { AABB box; int left; int right; int start; int count; };
+private:
+    std::vector<int> bvh_tri_indices_;
+    std::vector<BVHNode> bvh_nodes_;
+    std::size_t bvh_face_count_ = 0;
+public:
     Renderer(DrawingWindow& window) noexcept;
     void clear() noexcept;
     ScreenNdcCoord ndc_to_screen(const glm::vec3& ndc, const glm::vec2& uv, FloatType w) const noexcept;
@@ -237,7 +244,11 @@ private:
     void rasterized_render(const Camera& camera, const Face& face) noexcept;
     // Ray tracing helpers
     static RayTriangleIntersection find_closest_intersection(const glm::vec3& ray_origin, const glm::vec3& ray_dir, const std::vector<Face>& faces) noexcept;
+    RayTriangleIntersection find_closest_intersection_bvh(const glm::vec3& ray_origin, const glm::vec3& ray_dir, const std::vector<Face>& faces) noexcept;
+    void build_bvh(const std::vector<Face>& faces) noexcept;
+    static bool intersect_aabb(const glm::vec3& ro, const glm::vec3& rd, const AABB& box, FloatType tmax) noexcept;
     static bool is_in_shadow(const glm::vec3& point, const glm::vec3& light_pos, const std::vector<Face>& faces) noexcept;
+    bool is_in_shadow_bvh(const glm::vec3& point, const glm::vec3& light_pos, const std::vector<Face>& faces) noexcept;
     static FloatType compute_lambertian_lighting(const glm::vec3& normal, const glm::vec3& to_light, FloatType distance, FloatType intensity) noexcept;
     static FloatType compute_specular_lighting(const glm::vec3& normal, const glm::vec3& to_light, const glm::vec3& to_camera, FloatType distance, FloatType intensity, FloatType shininess) noexcept;
     // HDR tonemapping and gamma correction
