@@ -73,6 +73,8 @@ struct RayTriangleIntersection {
     Colour colour;
     std::size_t triangleIndex;
     glm::vec3 normal;  // Surface normal at intersection
+    FloatType u; // Barycentric coordinate for vertex 1
+    FloatType v; // Barycentric coordinate for vertex 2
 };
 
 class Texture {
@@ -94,6 +96,7 @@ struct Material {
     Colour colour;
     std::shared_ptr<Texture> texture;
     FloatType shininess = 64.0f;  // Specular shininess (higher = sharper highlights)
+    enum class Shading { Gouraud, Phong } shading = Shading::Phong;
 };
 
 // Vertex in clip space with attributes
@@ -147,6 +150,8 @@ struct Face {
     std::array<std::uint8_t, 3> texture_vertices;
     std::array<glm::vec2, 3> texture_coords;  // Actual UV coordinates for this face
     Material material;
+    std::array<int, 3> vertex_indices;  // Indices into model's vertices_
+    std::array<glm::vec3, 3> vertex_normals; // Smoothed vertex normals
 };
 
 struct Object {

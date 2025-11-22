@@ -227,7 +227,20 @@ void Model::load_file(std::string filename) {
             std::string colour_name;
             iss >> colour_name;
             assert(materials_.find(colour_name) != materials_.end());
+            auto prev_shading = current_obj->material.shading;
             current_obj->material = materials_[colour_name];
+            current_obj->material.shading = prev_shading;
+        } else if (type == "s") {
+            // Shading mode selector: expects "s Gouraud" or "s Phong"
+            std::string mode;
+            iss >> mode;
+            if (current_obj != objects_.end()) {
+                if (mode == "Gouraud") {
+                    current_obj->material.shading = Material::Shading::Gouraud;
+                } else if (mode == "Phong") {
+                    current_obj->material.shading = Material::Shading::Phong;
+                }
+            }
         } else if (type == "v") {
             assert(current_obj != objects_.end());
             FloatType x, y, z;
@@ -242,11 +255,17 @@ void Model::load_file(std::string filename) {
             glm::vec3 vertice[3];
             std::uint8_t tex_indices[3];
             glm::vec2 tex_coords[3];
+            int vi_idx[3];
             for (int i = 0; i < 3; i++) {
                 int vertex_index;
                 char slash;
                 iss >> vertex_index >> slash;
                 vertice[i] = vertices_[vertex_index - 1];
+                vi_idx[i] = vertex_index - 1;
+                // Record vertex indices for smoothing
+                tex_indices[i] = 0; // default
+                tex_coords[i] = glm::vec2(0.0f, 0.0f);
+                
                 if (int c = iss.peek(); c >= '0' && c <= '9') {
                     int tex_idx;
                     iss >> tex_idx;
@@ -258,16 +277,54 @@ void Model::load_file(std::string filename) {
                         tex_coords[i] = glm::vec2(0.0f, 0.0f);
                     }
                 } else {
-                    tex_indices[i] = 0;
-                    tex_coords[i] = glm::vec2(0.0f, 0.0f);
+                    // No texture index provided
                 }
+                
+                // Save vertex index
+                // OBJ indices are 1-based
+                // Store 0-based index
+                // Will be used to compute smoothed normals later
+                // We temporarily store in a local array for face construction
             }
-            current_obj->faces.emplace_back(Face{
+            Face new_face{
                 { vertice[0], vertice[1], vertice[2] },
                 { tex_indices[0], tex_indices[1], tex_indices[2] },
                 { tex_coords[0], tex_coords[1], tex_coords[2] },
                 current_obj->material,
-            });
+                { vi_idx[0], vi_idx[1], vi_idx[2] },
+                { glm::vec3(0.0f), glm::vec3(0.0f), glm::vec3(0.0f) }
+            };
+            current_obj->faces.emplace_back(std::move(new_face));
+        }
+    }
+    // After loading faces, compute smoothed vertex normals (area-weighted)
+    // Accumulate normals per vertex
+    std::vector<glm::vec3> accum_normals(vertices_.size(), glm::vec3(0.0f));
+    for (auto& obj : objects_) {
+        for (auto& f : obj.faces) {
+            glm::vec3 n = CalculateNormal(f.vertices[0], f.vertices[1], f.vertices[2]);
+            // Area weighting via cross product magnitude
+            glm::vec3 e0 = f.vertices[1] - f.vertices[0];
+            glm::vec3 e1 = f.vertices[2] - f.vertices[0];
+            FloatType area2 = glm::length(glm::cross(e0, e1));
+            glm::vec3 weighted = n * area2;
+            for (int k = 0; k < 3; ++k) {
+                int idx = f.vertex_indices[k];
+                if (idx >= 0 && static_cast<std::size_t>(idx) < accum_normals.size()) {
+                    accum_normals[idx] += weighted;
+                }
+            }
+        }
+    }
+    for (auto& acc : accum_normals) {
+        if (glm::length(acc) > 0.0f) acc = glm::normalize(acc);
+    }
+    for (auto& obj : objects_) {
+        for (auto& f : obj.faces) {
+            for (int k = 0; k < 3; ++k) {
+                int idx = f.vertex_indices[k];
+                f.vertex_normals[k] = (idx >= 0 && static_cast<std::size_t>(idx) < accum_normals.size()) ? accum_normals[idx] : CalculateNormal(f.vertices[0], f.vertices[1], f.vertices[2]);
+            }
         }
     }
     cache_faces();
@@ -638,44 +695,52 @@ void Renderer::raytraced_render(World& world) noexcept {
                 RayTriangleIntersection intersection = find_closest_intersection(ray_origin, ray_dir, all_faces);
 
                 if (intersection.triangleIndex != static_cast<std::size_t>(-1)) {
-                    // Calculate vector to light
-                    glm::vec3 to_light = light_pos - intersection.intersectionPoint;
-                    FloatType distance_to_light = glm::length(to_light);
-                    
-                    // Calculate vector to camera
-                    glm::vec3 to_camera = camera.position_ - intersection.intersectionPoint;
-                    
-                    // Check if point is in shadow
+                    const Face& face = all_faces[intersection.triangleIndex];
+                    // Calculate vectors to light and camera at hit point
+                    glm::vec3 to_light_hit = light_pos - intersection.intersectionPoint;
+                    FloatType dist_light_hit = glm::length(to_light_hit);
+                    glm::vec3 to_camera_hit = camera.position_ - intersection.intersectionPoint;
+
+                    // Shadow test at hit point
                     bool in_shadow = is_in_shadow(intersection.intersectionPoint, light_pos, all_faces);
-            
-                    // Convert base color from sRGB to linear HDR space
+
+                    // Base color in HDR linear space
                     ColourHDR hdr_colour = ColourHDR::from_srgb(intersection.colour, gamma_);
 
-                    // Apply Lambert's cosine law lighting in linear space
                     FloatType ambient = 0.025f;
                     FloatType lambertian = 0.0f;
                     FloatType specular = 0.0f;
 
                     if (!in_shadow) {
-                        // Compute Lambertian lighting
-                        lambertian = compute_lambertian_lighting(intersection.normal, to_light, 
-                                                                 distance_to_light, light_intensity);
-                        
-                        // Only compute specular if surface receives diffuse light
-                        if (lambertian > 0.0f) {
-                            specular = compute_specular_lighting(intersection.normal, to_light, to_camera,
-                                                                distance_to_light, light_intensity, 
-                                                                all_faces[intersection.triangleIndex].material.shininess);
+                        FloatType w = 1.0f - intersection.u - intersection.v;
+                        if (face.material.shading == Material::Shading::Gouraud) {
+                            // Per-vertex lighting and barycentric interpolation
+                            FloatType lam_v[3] = {0.0f, 0.0f, 0.0f};
+                            FloatType spec_v[3] = {0.0f, 0.0f, 0.0f};
+                            for (int k = 0; k < 3; ++k) {
+                                glm::vec3 to_light_v = light_pos - face.vertices[k];
+                                FloatType dist_v = glm::length(to_light_v);
+                                glm::vec3 to_camera_v = camera.position_ - face.vertices[k];
+                                lam_v[k] = compute_lambertian_lighting(face.vertex_normals[k], to_light_v, dist_v, light_intensity);
+                                if (lam_v[k] > 0.0f) {
+                                    spec_v[k] = compute_specular_lighting(face.vertex_normals[k], to_light_v, to_camera_v, dist_v, light_intensity, face.material.shininess);
+                                }
+                            }
+                            lambertian = w * lam_v[0] + intersection.u * lam_v[1] + intersection.v * lam_v[2];
+                            specular = w * spec_v[0] + intersection.u * spec_v[1] + intersection.v * spec_v[2];
+                        } else { // Phong
+                            // Interpolate normal and shade at hit point
+                            glm::vec3 n_interp = glm::normalize(w * face.vertex_normals[0] + intersection.u * face.vertex_normals[1] + intersection.v * face.vertex_normals[2]);
+                            lambertian = compute_lambertian_lighting(n_interp, to_light_hit, dist_light_hit, light_intensity);
+                            if (lambertian > 0.0f) {
+                                specular = compute_specular_lighting(n_interp, to_light_hit, to_camera_hit, dist_light_hit, light_intensity, face.material.shininess);
+                            }
                         }
                     }
 
-                    // Combine ambient, diffuse, and specular
                     FloatType diffuse_component = ambient + (1.0f - ambient) * lambertian;
                     ColourHDR final_hdr = hdr_colour * diffuse_component + ColourHDR(specular, specular, specular);
-
-                    // Tonemap and gamma correct for display
                     Colour final_colour = tonemap_and_gamma_correct(final_hdr, gamma_);
-
                     window_.setPixelColour(x, y, final_colour);
                 }
             }
@@ -839,6 +904,8 @@ RayTriangleIntersection Renderer::find_closest_intersection(const glm::vec3& ray
             closest.distanceFromCamera = t;
             closest.intersectionPoint = ray_origin + ray_dir * t;
             closest.triangleIndex = i;
+            closest.u = u;
+            closest.v = v;
             
             // Calculate surface normal
             glm::vec3 geometric_normal = CalculateNormal(face.vertices[0], face.vertices[1], face.vertices[2]);
