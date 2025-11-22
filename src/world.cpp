@@ -353,6 +353,7 @@ Texture Model::load_texture(std::string filename) {
     if (!(size_stream >> width >> height)) {
         throw std::runtime_error("Failed to parse texture dimensions: " + filename);
     }
+    
     std::getline(file, line);
     
     std::vector<Colour> texture_data;
@@ -433,15 +434,13 @@ ScreenNdcCoord Renderer::ndc_to_screen(const glm::vec3& ndc, const glm::vec2& uv
     };
 }
 bool Renderer::inside_plane(const glm::vec4& v, ClipPlane plane) noexcept {
-    FloatType abs_w = std::abs(v.w);
-    
     switch (plane) {
-        case ClipPlane::Left:   return v.x >= -abs_w;
-        case ClipPlane::Right:  return v.x <= abs_w;
-        case ClipPlane::Bottom: return v.y >= -abs_w;
-        case ClipPlane::Top:    return v.y <= abs_w;
-        case ClipPlane::Near:   return v.z >= -abs_w;
-        case ClipPlane::Far:    return v.z <= abs_w;
+        case ClipPlane::Left:   return v.x >= -v.w;
+        case ClipPlane::Right:  return v.x <= v.w;
+        case ClipPlane::Bottom: return v.y >= -v.w;
+        case ClipPlane::Top:    return v.y <= v.w;
+        case ClipPlane::Near:   return v.z >= 0.0f;
+        case ClipPlane::Far:    return v.z <= v.w;
     }
     return false;
 }
@@ -449,33 +448,32 @@ FloatType Renderer::compute_intersection_t(const glm::vec4& v0, const glm::vec4&
     FloatType d0, d1;
     switch (plane) {
         case ClipPlane::Left:
-            d0 = v0.x + std::abs(v0.w);
-            d1 = v1.x + std::abs(v1.w);
+            d0 = v0.x + v0.w;
+            d1 = v1.x + v1.w;
             break;
         case ClipPlane::Right:
-            d0 = std::abs(v0.w) - v0.x;
-            d1 = std::abs(v1.w) - v1.x;
+            d0 = v0.w - v0.x;
+            d1 = v1.w - v1.x;
             break;
         case ClipPlane::Bottom:
-            d0 = v0.y + std::abs(v0.w);
-            d1 = v1.y + std::abs(v1.w);
+            d0 = v0.y + v0.w;
+            d1 = v1.y + v1.w;
             break;
         case ClipPlane::Top:
-            d0 = std::abs(v0.w) - v0.y;
-            d1 = std::abs(v1.w) - v1.y;
+            d0 = v0.w - v0.y;
+            d1 = v1.w - v1.y;
             break;
         case ClipPlane::Near:
-            d0 = v0.z + std::abs(v0.w);
-            d1 = v1.z + std::abs(v1.w);
+            d0 = v0.z;
+            d1 = v1.z;
             break;
         case ClipPlane::Far:
-            d0 = std::abs(v0.w) - v0.z;
-            d1 = std::abs(v1.w) - v1.z;
+            d0 = v0.w - v0.z;
+            d1 = v1.w - v1.z;
             break;
         default:
             return 0.0f;
     }
-    
     if (std::abs(d1 - d0) < 1e-6f) {
         return 0.0f;
     }
@@ -550,7 +548,7 @@ InplaceVector<ClipVertex, 9> Renderer::clip_triangle(const Camera& camera, const
     if (polygon.size() < 3) return {};
     
     polygon = clip_against_plane(polygon, ClipPlane::Far);
-    
+
     return polygon;
 }
 void Renderer::handle_event(const SDL_Event& event) noexcept {
@@ -617,6 +615,7 @@ void Renderer::raytraced_render(World& world) noexcept {
     const Camera& camera = world.camera();
     const glm::vec3& light_pos = world.light_position();
     FloatType light_intensity = world.light_intensity();
+    
     
     // Use static buffer to collect all faces (avoids reallocation each frame)
     const std::vector<Face>& all_faces = Model::collect_all_faces(world.models());
@@ -823,6 +822,7 @@ RayTriangleIntersection Renderer::find_closest_intersection(const glm::vec3& ray
     RayTriangleIntersection closest;
     closest.distanceFromCamera = std::numeric_limits<FloatType>::infinity();
     closest.triangleIndex = static_cast<std::size_t>(-1);
+    
     
     for (std::size_t i = 0; i < faces.size(); ++i) {
         const Face& face = faces[i];

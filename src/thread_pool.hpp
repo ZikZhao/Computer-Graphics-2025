@@ -118,7 +118,6 @@ private:
             try {
                 task();
             } catch (const std::exception& e) {
-                std::cerr << "Exception in thread pool task: " << e.what() << std::endl;
             }
             idle_wait_group_.done();
         }
