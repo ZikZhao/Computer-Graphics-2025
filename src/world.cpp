@@ -1,37 +1,45 @@
 #include "world.hpp"
 #include <numeric>
 
-Camera::Camera() noexcept {
-    update_orientation();
-}
-void Camera::update_orientation() noexcept {
-    // Calculate forward direction from yaw and pitch
+glm::mat3 Camera::orientation() const noexcept {
     FloatType cos_pitch = std::cos(pitch_);
     FloatType sin_pitch = std::sin(pitch_);
     FloatType cos_yaw = std::cos(yaw_);
     FloatType sin_yaw = std::sin(yaw_);
-    
-    
-    // Forward vector (camera looks in +Z direction in view space)
-    glm::vec3 forward(
+    glm::vec3 f(
         sin_yaw * cos_pitch,
         sin_pitch,
         -cos_yaw * cos_pitch
     );
-    
-    // Right vector: cross product of world up (0,1,0) and forward
-    // This ensures right is always perpendicular to Y axis
     glm::vec3 world_up(0.0f, 1.0f, 0.0f);
-    glm::vec3 right = glm::normalize(glm::cross(forward, world_up));
-    
-    // Up vector: cross product of right and forward
-    glm::vec3 up = glm::normalize(glm::cross(right, forward));
-    
-    
-    // Build orientation matrix
-    orientation_[0] = right;
-    orientation_[1] = up;
-    orientation_[2] = forward;
+    glm::vec3 r = glm::normalize(glm::cross(f, world_up));
+    glm::vec3 u = glm::normalize(glm::cross(r, f));
+    glm::mat3 o;
+    o[0] = r;
+    o[1] = u;
+    o[2] = f;
+    return o;
+}
+glm::vec3 Camera::forward() const noexcept {
+    FloatType cos_pitch = std::cos(pitch_);
+    FloatType sin_pitch = std::sin(pitch_);
+    FloatType cos_yaw = std::cos(yaw_);
+    FloatType sin_yaw = std::sin(yaw_);
+    return glm::vec3(
+        sin_yaw * cos_pitch,
+        sin_pitch,
+        -cos_yaw * cos_pitch
+    );
+}
+glm::vec3 Camera::right() const noexcept {
+    glm::vec3 f = forward();
+    glm::vec3 world_up(0.0f, 1.0f, 0.0f);
+    return glm::normalize(glm::cross(f, world_up));
+}
+glm::vec3 Camera::up() const noexcept {
+    glm::vec3 r = right();
+    glm::vec3 f = forward();
+    return glm::normalize(glm::cross(r, f));
 }
 
 void Camera::start_orbiting(glm::vec3 target) noexcept {
@@ -43,8 +51,7 @@ void Camera::orbiting() noexcept {
     if (is_orbiting_) {
         constexpr static FloatType angle_increment = glm::radians(0.5f);
         yaw_ += angle_increment;
-        update_orientation();
-        position_ = orbit_target_ - orientation_[2] * orbit_radius_;
+        position_ = orbit_target_ - forward() * orbit_radius_;
     }
 }
 void Camera::stop_orbiting() noexcept {
@@ -58,7 +65,7 @@ void Camera::rotate(FloatType delta_yaw, FloatType delta_pitch) noexcept {
     constexpr FloatType max_pitch = glm::radians(89.0f);
     pitch_ = Clamp(pitch_, -max_pitch, max_pitch);
     
-    update_orientation();
+    
 }
 
 void Camera::handle_event(const SDL_Event& event) noexcept {
@@ -66,28 +73,22 @@ void Camera::handle_event(const SDL_Event& event) noexcept {
         constexpr FloatType move_step = 0.1f;
         switch (event.key.keysym.sym) {
         case SDLK_w:
-            // Move up (perpendicular to view direction)
-            position_.y += move_step;
+            position_ += up() * move_step;
             break;
         case SDLK_s:
-            // Move down
-            position_.y -= move_step;
+            position_ -= up() * move_step;
             break;
         case SDLK_a:
-            // Move left (perpendicular to view direction)
-            position_ -= orientation_[0] * move_step;
+            position_ -= right() * move_step;
             break;
         case SDLK_d:
-            // Move right
-            position_ += orientation_[0] * move_step;
+            position_ += right() * move_step;
             break;
         case SDLK_q:
-            // Move closer along view direction
-            position_ += orientation_[2] * move_step;
+            position_ += forward() * move_step;
             break;
         case SDLK_e:
-            // Move away along view direction
-            position_ -= orientation_[2] * move_step;
+            position_ -= forward() * move_step;
             break;
         case SDLK_UP:
             rotate(0.0f, -glm::radians(2.0f));
@@ -144,7 +145,7 @@ void Camera::handle_event(const SDL_Event& event) noexcept {
 glm::vec4 Camera::world_to_clip(const glm::vec3& vertex, double aspect_ratio) const noexcept {
     // View transformation
     glm::vec3 view_vector = vertex - position_;
-    glm::mat3 view_rotation = glm::transpose(orientation_);
+    glm::mat3 view_rotation = glm::transpose(orientation());
     glm::vec3 view_space = view_rotation * view_vector;
     
     // In our coordinate system, positive view_space.z means in front of camera
@@ -189,7 +190,7 @@ std::pair<glm::vec3, glm::vec3> Camera::generate_ray(int pixel_x, int pixel_y, i
     
     // Transform from view space to world space
     glm::vec3 ray_dir_view(view_x, view_y, view_z);
-    glm::vec3 ray_dir_world = orientation_ * ray_dir_view;
+    glm::vec3 ray_dir_world = orientation() * ray_dir_view;
     
     return {position_, glm::normalize(ray_dir_world)};
 }
@@ -585,6 +586,7 @@ std::uint32_t Renderer::sample_texture(const Face& face, const glm::vec3& bary,
 }
 void Renderer::render(World& world) noexcept {
     clear();
+    
     aspect_ratio_ = static_cast<double>(window_.width) / window_.height;
     
     // Dispatch based on rendering mode

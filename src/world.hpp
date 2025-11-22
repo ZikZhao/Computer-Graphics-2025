@@ -121,17 +121,19 @@ public:
     glm::vec3 position_ = { 0.0f, 0.0f, 12.0f };
     FloatType yaw_ = 0.0f;      // Horizontal rotation (around world Y axis)
     FloatType pitch_ = 0.0f;    // Vertical rotation (clamped to ±89 degrees)
-    glm::mat3 orientation_;     // Cached orientation matrix (updated from yaw/pitch)
     glm::vec3 orbit_target_ = { 0.0f, 0.0f, 0.0f };
     bool is_orbiting_ = false;
     FloatType orbit_radius_ = 0.0f;
     FloatType mouse_sensitivity_ = 0.001f;
     bool is_dragging_ = false;
     bool first_drag_motion_ = false;  // Flag to skip first motion event after drag starts
-    Camera() noexcept;
+    Camera() noexcept = default;
     glm::vec4 world_to_clip(const glm::vec3& vertex, double aspect_ratio) const noexcept;
     glm::vec3 clip_to_ndc(const glm::vec4& clip) const noexcept;
-    void update_orientation() noexcept;
+    glm::mat3 orientation() const noexcept;
+    glm::vec3 forward() const noexcept;
+    glm::vec3 right() const noexcept;
+    glm::vec3 up() const noexcept;
     void start_orbiting(glm::vec3 target) noexcept;
     void orbiting() noexcept;
     void stop_orbiting() noexcept;
