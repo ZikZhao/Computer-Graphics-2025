@@ -13,15 +13,15 @@ private:
     std::vector<std::function<void(const SDL_Event&)>> event_handlers_;
     
 public:
-    Window(DrawingWindow& dw) : drawing_window(dw) {}
+    Window(DrawingWindow& dw) noexcept : drawing_window(dw) {}
     
     // Add event handler
-    void add_event_handler(std::function<void(const SDL_Event&)> handler) {
+    void add_event_handler(std::function<void(const SDL_Event&)> handler) noexcept {
         event_handlers_.push_back(handler);
     }
     
     // Poll for events
-    bool poll_events(SDL_Event& event) {
+    bool poll_events(SDL_Event& event) noexcept {
         if (!SDL_PollEvent(&event)) {
             return false;
         }
@@ -49,22 +49,22 @@ public:
     }
     
     // Forward rendering functions
-    void render_frame() { drawing_window.renderFrame(); }
-    void clear_pixels() { drawing_window.clearPixels(); }
-    void set_pixel_colour(size_t x, size_t y, uint32_t colour) {
+    void render_frame() noexcept { drawing_window.renderFrame(); }
+    void clear_pixels() noexcept { drawing_window.clearPixels(); }
+    void set_pixel_colour(size_t x, size_t y, uint32_t colour) noexcept {
         drawing_window.setPixelColour(x, y, colour);
     }
-    uint32_t get_pixel_colour(size_t x, size_t y) {
+    uint32_t get_pixel_colour(size_t x, size_t y) noexcept {
         return drawing_window.getPixelColour(x, y);
     }
-    void save_ppm(const std::string& filename) const {
+    void save_ppm(const std::string& filename) const noexcept {
         drawing_window.savePPM(filename);
     }
-    void save_bmp(const std::string& filename) const {
+    void save_bmp(const std::string& filename) const noexcept {
         drawing_window.saveBMP(filename);
     }
     
     // Accessors
-    size_t width() const { return drawing_window.width; }
-    size_t height() const { return drawing_window.height; }
+    size_t width() const noexcept { return drawing_window.width; }
+    size_t height() const noexcept { return drawing_window.height; }
 };

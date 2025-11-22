@@ -1,7 +1,10 @@
 #include "world.hpp"
 #include <numeric>
 
-void Camera::update_orientation() {
+Camera::Camera() noexcept {
+    update_orientation();
+}
+void Camera::update_orientation() noexcept {
     // Calculate forward direction from yaw and pitch
     FloatType cos_pitch = std::cos(pitch_);
     FloatType sin_pitch = std::sin(pitch_);
@@ -31,12 +34,12 @@ void Camera::update_orientation() {
     orientation_[2] = forward;
 }
 
-void Camera::start_orbiting(glm::vec3 target) {
+void Camera::start_orbiting(glm::vec3 target) noexcept {
     orbit_target_ = target;
     orbit_radius_ = glm::length(position_ - orbit_target_);
     is_orbiting_ = true;
 }
-void Camera::orbiting() {
+void Camera::orbiting() noexcept {
     if (is_orbiting_) {
         constexpr static FloatType angle_increment = glm::radians(0.5f);
         yaw_ += angle_increment;
@@ -44,10 +47,10 @@ void Camera::orbiting() {
         position_ = orbit_target_ - orientation_[2] * orbit_radius_;
     }
 }
-void Camera::stop_orbiting() {
+void Camera::stop_orbiting() noexcept {
     is_orbiting_ = false;
 }
-void Camera::rotate(FloatType delta_yaw, FloatType delta_pitch) {
+void Camera::rotate(FloatType delta_yaw, FloatType delta_pitch) noexcept {
     yaw_ += delta_yaw;
     pitch_ += delta_pitch;
     
@@ -58,7 +61,7 @@ void Camera::rotate(FloatType delta_yaw, FloatType delta_pitch) {
     update_orientation();
 }
 
-void Camera::handle_event(const SDL_Event& event) {
+void Camera::handle_event(const SDL_Event& event) noexcept {
     if (event.type == SDL_KEYDOWN) {
         constexpr FloatType move_step = 0.1f;
         switch (event.key.keysym.sym) {

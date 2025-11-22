@@ -2,7 +2,7 @@
 #include <sstream>
 #include "Utils.h"
 
-std::vector<std::string> split(const std::string &line, char delimiter) {
+std::vector<std::string> split(const std::string &line, char delimiter) noexcept {
 	auto haystack = line;
 	std::vector<std::string> tokens;
 	size_t pos;
@@ -16,7 +16,7 @@ std::vector<std::string> split(const std::string &line, char delimiter) {
 }
 
 // Uses Cramer’s rule to convert from 2D coordinates to Barycentric proportional proximities
-glm::vec3 convertToBarycentricCoordinates(glm::vec2 v0, glm::vec2 v1, glm::vec2 v2, glm::vec2 r)
+glm::vec3 convertToBarycentricCoordinates(glm::vec2 v0, glm::vec2 v1, glm::vec2 v2, glm::vec2 r) noexcept
 {
     glm::vec2 e0 = v1 - v0;
     glm::vec2 e1 = v2 - v0;

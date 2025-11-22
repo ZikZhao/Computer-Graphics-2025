@@ -2,9 +2,7 @@
 #include "DrawingWindow.h"
 // On some platforms you may need to include <cstring> (if you compiler can't find memset !)
 
-DrawingWindow::DrawingWindow() {}
-
-DrawingWindow::DrawingWindow(int w, int h, bool fullscreen) : width(w), height(h), pixelBuffer(w * h) {
+DrawingWindow::DrawingWindow(int w, int h, bool fullscreen) noexcept : width(w), height(h), pixelBuffer(w * h) {
 	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) printMessageAndQuit("Could not initialise SDL: ", SDL_GetError());
 	uint32_t flags = SDL_WINDOW_OPENGL;
 	if (fullscreen) flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
@@ -24,7 +22,7 @@ DrawingWindow::DrawingWindow(int w, int h, bool fullscreen) : width(w), height(h
 	if (!texture) printMessageAndQuit("Could not allocate texture: ", SDL_GetError());
 }
 
-void DrawingWindow::renderFrame() {
+void DrawingWindow::renderFrame() noexcept {
 	SDL_UpdateTexture(texture, nullptr, pixelBuffer.data(), width * sizeof(uint32_t));
 	SDL_RenderClear(renderer);
 	SDL_RenderCopy(renderer, texture, nullptr, nullptr);
@@ -55,7 +53,7 @@ void DrawingWindow::savePPM(const std::string &filename) const {
 	outputStream.close();
 }
 
-void DrawingWindow::exitCleanly()
+void DrawingWindow::exitCleanly() noexcept
 {
 	SDL_DestroyTexture(texture);
 	SDL_DestroyRenderer(renderer);
@@ -64,7 +62,7 @@ void DrawingWindow::exitCleanly()
 	printMessageAndQuit("Exiting", nullptr);
 }
 
-bool DrawingWindow::pollForInputEvents(SDL_Event &event) {
+bool DrawingWindow::pollForInputEvents(SDL_Event &event) noexcept {
 	if (SDL_PollEvent(&event)) {
 		if (event.type == SDL_QUIT) exitCleanly();
 		else if ((event.type == SDL_KEYDOWN) && (event.key.keysym.sym == SDLK_ESCAPE)) exitCleanly();
@@ -78,24 +76,24 @@ bool DrawingWindow::pollForInputEvents(SDL_Event &event) {
 	return false;
 }
 
-void DrawingWindow::setPixelColour(size_t x, size_t y, uint32_t colour) {
+void DrawingWindow::setPixelColour(size_t x, size_t y, uint32_t colour) noexcept {
 	if ((x >= width) || (y >= height)) {
 		std::cout << x << "," << y << " not on visible screen area" << std::endl;
 	} else pixelBuffer[(y * width) + x] = colour;
 }
 
-uint32_t DrawingWindow::getPixelColour(size_t x, size_t y) {
+uint32_t DrawingWindow::getPixelColour(size_t x, size_t y) noexcept {
 	if ((x >= width) || (y >= height)) {
 		std::cout << x << "," << y << " not on visible screen area" << std::endl;
 		return -1;
 	} else return pixelBuffer[(y * width) + x];
 }
 
-void DrawingWindow::clearPixels() {
+void DrawingWindow::clearPixels() noexcept {
 	std::fill(pixelBuffer.begin(), pixelBuffer.end(), 0);
 }
 
-void printMessageAndQuit(const std::string &message, const char *error) {
+void printMessageAndQuit(const std::string &message, const char *error) noexcept {
 	if (error == nullptr) {
 		std::cout << message << std::endl;
 		exit(0);

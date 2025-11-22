@@ -125,18 +125,18 @@ public:
     glm::vec3 orbit_target_ = { 0.0f, 0.0f, 0.0f };
     bool is_orbiting_ = false;
     FloatType orbit_radius_ = 0.0f;
-    FloatType mouse_sensitivity_ = 0.001f;  // Mouse sensitivity for FPS camera
-    bool is_dragging_ = false;  // Whether mouse drag is active
+    FloatType mouse_sensitivity_ = 0.001f;
+    bool is_dragging_ = false;
     bool first_drag_motion_ = false;  // Flag to skip first motion event after drag starts
-    Camera() { update_orientation(); }
+    Camera() noexcept;
     glm::vec4 world_to_clip(const glm::vec3& vertex, double aspect_ratio) const noexcept;
     glm::vec3 clip_to_ndc(const glm::vec4& clip) const noexcept;
-    void update_orientation();
-    void start_orbiting(glm::vec3 target);
-    void orbiting();
-    void stop_orbiting();
-    void rotate(FloatType delta_yaw, FloatType delta_pitch);
-    void handle_event(const SDL_Event& event);
+    void update_orientation() noexcept;
+    void start_orbiting(glm::vec3 target) noexcept;
+    void orbiting() noexcept;
+    void stop_orbiting() noexcept;
+    void rotate(FloatType delta_yaw, FloatType delta_pitch) noexcept;
+    void handle_event(const SDL_Event& event) noexcept;
     std::pair<glm::vec3, glm::vec3> generate_ray(int pixel_x, int pixel_y, int screen_width, int screen_height, double aspect_ratio) const noexcept;
 };
 
