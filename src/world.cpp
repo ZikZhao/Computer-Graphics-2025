@@ -1,6 +1,5 @@
 #include "world.hpp"
 #include <numeric>
-#include <iostream>
 
 void Camera::update_orientation() {
     // Calculate forward direction from yaw and pitch
@@ -9,9 +8,6 @@ void Camera::update_orientation() {
     FloatType cos_yaw = std::cos(yaw_);
     FloatType sin_yaw = std::sin(yaw_);
     
-    std::cout << "[ORIENT] yaw=" << yaw_ << ", pitch=" << pitch_ 
-              << " | cos_yaw=" << cos_yaw << ", sin_yaw=" << sin_yaw 
-              << ", cos_pitch=" << cos_pitch << ", sin_pitch=" << sin_pitch << std::endl;
     
     // Forward vector (camera looks in +Z direction in view space)
     glm::vec3 forward(
@@ -28,9 +24,6 @@ void Camera::update_orientation() {
     // Up vector: cross product of right and forward
     glm::vec3 up = glm::normalize(glm::cross(right, forward));
     
-    std::cout << "[ORIENT] forward=(" << forward.x << "," << forward.y << "," << forward.z << ")" 
-              << " right=(" << right.x << "," << right.y << "," << right.z << ")"
-              << " up=(" << up.x << "," << up.y << "," << up.z << ")" << std::endl;
     
     // Build orientation matrix
     orientation_[0] = right;
@@ -117,37 +110,29 @@ void Camera::handle_event(const SDL_Event& event) {
         if (event.button.button == SDL_BUTTON_LEFT) {
             // If we're in orbiting mode, stop it before drag
             if (is_orbiting_) {
-                std::cout << "[MOUSE] Stopping orbit mode before drag" << std::endl;
                 stop_orbiting();
             }
             
             // Start dragging and mark that we should skip the first motion event
             is_dragging_ = true;
             first_drag_motion_ = true;
-            std::cout << "[MOUSE] Button DOWN - starting drag at x=" << event.button.x << ", y=" << event.button.y << std::endl;
         }
     } else if (event.type == SDL_MOUSEBUTTONUP) {
         if (event.button.button == SDL_BUTTON_LEFT) {
             // Stop dragging
             is_dragging_ = false;
             first_drag_motion_ = false;
-            std::cout << "[MOUSE] Button UP - stopping drag at x=" << event.button.x << ", y=" << event.button.y << std::endl;
         }
     } else if (event.type == SDL_MOUSEMOTION) {
-        std::cout << "[MOUSE] Motion event - is_dragging=" << is_dragging_ << ", first_drag_motion=" << first_drag_motion_ 
-                  << " | x=" << event.motion.x << ", y=" << event.motion.y 
-                  << ", xrel=" << event.motion.xrel << ", yrel=" << event.motion.yrel << std::endl;
         // Only rotate when dragging
         if (is_dragging_) {
             // Skip the first motion event to avoid initial jump from accumulated SDL motion
             if (first_drag_motion_) {
                 first_drag_motion_ = false;
-                std::cout << "[MOUSE] ^^^ First motion SKIPPED ^^^" << std::endl;
             } else {
                 // Use SDL's relative motion (xrel, yrel) - these are always relative deltas
                 FloatType delta_yaw = -static_cast<FloatType>(event.motion.xrel) * mouse_sensitivity_;
                 FloatType delta_pitch = static_cast<FloatType>(event.motion.yrel) * mouse_sensitivity_;
-                std::cout << "[MOUSE] ^^^ ROTATING - delta_yaw=" << delta_yaw << ", delta_pitch=" << delta_pitch << " ^^^" << std::endl;
                 rotate(delta_yaw, delta_pitch);
             }
         }
@@ -418,11 +403,9 @@ void World::handle_event(const SDL_Event& event) noexcept {
         case SDLK_EQUALS:  // '+' key (without shift)
         case SDLK_PLUS:    // '+' key (with shift)
             light_intensity_ += 1.0f;
-            std::cout << "Light intensity: " << light_intensity_ << std::endl;
             break;
         case SDLK_MINUS:
             light_intensity_ = std::max(0.1f, light_intensity_ - 1.0f);
-            std::cout << "Light intensity: " << light_intensity_ << std::endl;
             break;
         }
     }
@@ -584,7 +567,6 @@ void Renderer::handle_event(const SDL_Event& event) noexcept {
             break;
         case SDLK_g:
             gamma_ = (gamma_ == 2.2f) ? 1.0f : 2.2f;
-            std::cout << "Gamma: " << gamma_ << (gamma_ == 2.2f ? " (sRGB)" : " (linear)") << std::endl;
             break;
         }
     }
