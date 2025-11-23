@@ -71,9 +71,7 @@ void Camera::rotate(FloatType delta_yaw, FloatType delta_pitch) noexcept {
     
     // Clamp pitch to prevent gimbal lock (±89 degrees)
     constexpr FloatType max_pitch = glm::radians(89.0f);
-    pitch_ = Clamp(pitch_, -max_pitch, max_pitch);
-    
-    
+    pitch_ = std::clamp(pitch_, -max_pitch, max_pitch);
 }
 
 void Camera::handle_event(const SDL_Event& event) noexcept {
@@ -356,9 +354,9 @@ void Model::load_materials(std::string filename) {
             FloatType r, g, b;
             iss >> r >> g >> b;
             current_material->second.colour = Colour{
-                static_cast<std::uint8_t>(Clamp(r * 255.0f, 0.0f, 255.0f)),
-                static_cast<std::uint8_t>(Clamp(g * 255.0f, 0.0f, 255.0f)),
-                static_cast<std::uint8_t>(Clamp(b * 255.0f, 0.0f, 255.0f))
+                static_cast<std::uint8_t>(std::clamp(r * 255.0f, 0.0f, 255.0f)),
+                static_cast<std::uint8_t>(std::clamp(g * 255.0f, 0.0f, 255.0f)),
+                static_cast<std::uint8_t>(std::clamp(b * 255.0f, 0.0f, 255.0f))
             };
         } else if (type == "Ns") {
             // Shininess/specular exponent (0-1000 range in MTL, typically 0-200)
@@ -425,6 +423,54 @@ Texture Model::load_texture(std::string filename) {
     return Texture(width, height, std::move(texture_data));
 }
 
+FloatType EnvironmentMap::compute_auto_exposure(const std::vector<ColourHDR>& hdr_data) noexcept {
+    if (hdr_data.empty()) return 1.0f;
+    
+    // Compute luminance for each pixel using Rec. 709 coefficients
+    std::vector<FloatType> luminances;
+    luminances.reserve(hdr_data.size());
+    
+    for (const auto& pixel : hdr_data) {
+        // Rec. 709 luma coefficients for linear RGB
+        FloatType luma = 0.2126f * pixel.red + 0.7152f * pixel.green + 0.0722f * pixel.blue;
+        if (luma > 0.0f) {  // Only consider non-black pixels
+            luminances.push_back(luma);
+        }
+    }
+    
+    if (luminances.empty()) return 1.0f;
+    
+    // Sort luminances to find percentiles
+    std::sort(luminances.begin(), luminances.end());
+    
+    // Use the 90th percentile to avoid being influenced by extremely bright spots (like the sun)
+    std::size_t percentile_90_idx = static_cast<std::size_t>(luminances.size() * 0.90f);
+    FloatType percentile_90 = luminances[percentile_90_idx];
+    
+    // Calculate average log luminance (geometric mean) for better HDR handling
+    FloatType log_lum_sum = 0.0f;
+    for (FloatType lum : luminances) {
+        log_lum_sum += std::log(lum + 1e-6f);  // Add epsilon to avoid log(0)
+    }
+    FloatType avg_log_lum = std::exp(log_lum_sum / luminances.size());
+    
+    // Target middle gray value (typically 0.18 in photography, but we use 0.3 for brighter result)
+    constexpr FloatType target_middle_gray = 0.3f;
+    
+    // Calculate exposure compensation based on both average and 90th percentile
+    // Use weighted combination: 70% based on average, 30% based on bright areas
+    FloatType exposure_from_avg = target_middle_gray / (avg_log_lum + 1e-6f);
+    FloatType exposure_from_p90 = target_middle_gray / (percentile_90 + 1e-6f);
+    
+    FloatType auto_exposure = 0.7f * exposure_from_avg + 0.3f * exposure_from_p90;
+    
+    // Clamp to reasonable range to avoid extreme values
+    auto_exposure = std::clamp(auto_exposure, 0.05f, 2.0f);
+    
+    // Reduce by 50% to avoid overexposure
+    return auto_exposure * 0.5f;
+}
+
 World::World() : light_position_(0.0f, 0.0f, 0.0f), has_light_(false) {}
 
 void World::load_files(const std::vector<std::string>& filenames) {
@@ -451,8 +497,11 @@ void World::load_files(const std::vector<std::string>& filenames) {
                 }
                 
                 stbi_image_free(data);
-                // Use 0.3 intensity to avoid overexposure (can be adjusted)
-                env_map_ = EnvironmentMap(width, height, std::move(hdr_data), 0.1f);
+                
+                // Compute automatic exposure based on image histogram
+                FloatType auto_intensity = EnvironmentMap::compute_auto_exposure(hdr_data);
+                
+                env_map_ = EnvironmentMap(width, height, std::move(hdr_data), auto_intensity);
             } else {
                 throw std::runtime_error("Failed to load HDR environment map: " + filename);
             }
@@ -1091,7 +1140,7 @@ std::pair<std::vector<int>, std::vector<Renderer::BVHNode>> Renderer::build_bvh(
                 FloatType centroid = data[tri_indices[i]].c[axis];
                 int bucket_idx = static_cast<int>(sah_buckets * 
                     ((centroid - cbox.min[axis]) / extent[axis]));
-                bucket_idx = Clamp(bucket_idx, 0, sah_buckets - 1);
+                bucket_idx = std::clamp(bucket_idx, 0, sah_buckets - 1);
                 
                 buckets[bucket_idx].count++;
                 buckets[bucket_idx].bounds.min = glm::min(buckets[bucket_idx].bounds.min, 
@@ -1156,7 +1205,7 @@ std::pair<std::vector<int>, std::vector<Renderer::BVHNode>> Renderer::build_bvh(
                 FloatType centroid = data[idx].c[best_axis];
                 int bucket_idx = static_cast<int>(sah_buckets * 
                     ((centroid - cbox.min[best_axis]) / extent[best_axis]));
-                bucket_idx = Clamp(bucket_idx, 0, sah_buckets - 1);
+                bucket_idx = std::clamp(bucket_idx, 0, sah_buckets - 1);
                 return bucket_idx <= best_split;
             });
         
@@ -1470,7 +1519,7 @@ FloatType Renderer::compute_lambertian_lighting(const glm::vec3& normal, const g
     // Using 4π instead of 2π for proper spherical distribution
     FloatType attenuation = (intensity * cos_theta) / (4.0f * std::numbers::pi * distance * distance);
     
-    return Clamp(attenuation, 0.0f, 1.0f);
+    return std::clamp(attenuation, 0.0f, 1.0f);
 }
 
 FloatType Renderer::compute_specular_lighting(const glm::vec3& normal, const glm::vec3& to_light, const glm::vec3& to_camera, FloatType distance, FloatType intensity, FloatType shininess) noexcept {
@@ -1501,7 +1550,7 @@ FloatType Renderer::compute_specular_lighting(const glm::vec3& normal, const glm
     FloatType spec_term = std::pow(cos_alpha, shininess);
     FloatType attenuation = (intensity * spec_term) / (4.0f * std::numbers::pi * distance * distance);
     
-    return Clamp(attenuation, 0.0f, 1.0f);
+    return std::clamp(attenuation, 0.0f, 1.0f);
 }
 
 FloatType Renderer::aces_tonemap(FloatType hdr_value) noexcept {
@@ -1516,7 +1565,7 @@ FloatType Renderer::aces_tonemap(FloatType hdr_value) noexcept {
     FloatType numerator = hdr_value * (a * hdr_value + b);
     FloatType denominator = hdr_value * (c * hdr_value + d) + e;
     
-    return Clamp(numerator / denominator, 0.0f, 1.0f);
+    return std::clamp(numerator / denominator, 0.0f, 1.0f);
 }
 
 Colour Renderer::tonemap_and_gamma_correct(const ColourHDR& hdr, FloatType gamma) noexcept {
@@ -1541,9 +1590,9 @@ Colour Renderer::tonemap_and_gamma_correct(const ColourHDR& hdr, FloatType gamma
     
     // Step 3: Convert to 8-bit
     return Colour{
-        static_cast<std::uint8_t>(Clamp(r_out * 255.0f, 0.0f, 255.0f)),
-        static_cast<std::uint8_t>(Clamp(g_out * 255.0f, 0.0f, 255.0f)),
-        static_cast<std::uint8_t>(Clamp(b_out * 255.0f, 0.0f, 255.0f))
+        static_cast<std::uint8_t>(std::clamp(r_out * 255.0f, 0.0f, 255.0f)),
+        static_cast<std::uint8_t>(std::clamp(g_out * 255.0f, 0.0f, 255.0f)),
+        static_cast<std::uint8_t>(std::clamp(b_out * 255.0f, 0.0f, 255.0f))
     };
 }
 

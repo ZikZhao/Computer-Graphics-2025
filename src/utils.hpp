@@ -1,6 +1,7 @@
 #pragma once
 #include <glm/glm.hpp>
 #include <array>
+#include <algorithm>
 #include "Utils.h"
 
 using FloatType = decltype(std::declval<glm::vec3>().x);
@@ -8,11 +9,6 @@ using FloatType = decltype(std::declval<glm::vec3>().x);
 // ============================================================================
 // Math Utilities
 // ============================================================================
-
-template<typename T>
-constexpr T Clamp(T value, T min, T max) noexcept {
-    return (value < min) ? min : (value > max) ? max : value;
-}
 
 constexpr FloatType ComputeInvZndc(FloatType progress, std::array<FloatType, 2> vertices_z_ndc) noexcept {
     return (1.0f - progress) / vertices_z_ndc[0] + progress / vertices_z_ndc[1];
