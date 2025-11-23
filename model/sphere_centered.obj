@@ -1,7 +1,7 @@
-mtllib textured-cornell-box.mtl
+mtllib material.mtl
 
 o sphere
-usemtl Green
+usemtl GreenMetallic
 s Phong
 v 1.770598 -2.423880 -1.270598
 v 1.500000 -2.423880 -1.382683

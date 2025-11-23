@@ -138,6 +138,7 @@ struct Material {
     std::shared_ptr<Texture> texture;
     FloatType shininess = 64.0f;  // Specular shininess (higher = sharper highlights)
     bool is_mirror = false;  // True for perfect mirror reflection
+    FloatType metallic = 0.0f;  // Metallic property (0.0 = non-metallic, 1.0 = fully metallic)
     enum class Shading { Gouraud, Phong } shading = Shading::Phong;
 };
 

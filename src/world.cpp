@@ -364,12 +364,18 @@ void Model::load_materials(std::string filename) {
             FloatType ns;
             iss >> ns;
             current_material->second.shininess = ns;
-        } else if (type == "m") {
+        } else if (type == "mirror") {
             // Mirror material flag
             assert(current_material != materials_.end());
             std::string flag;
             iss >> flag;
             current_material->second.is_mirror = (flag == "True" || flag == "true" || flag == "1");
+        } else if (type == "metallic") {
+            // Metallic property (0.0 = non-metallic, 1.0 = fully metallic)
+            assert(current_material != materials_.end());
+            FloatType metallic_value;
+            iss >> metallic_value;
+            current_material->second.metallic = std::clamp(metallic_value, 0.0f, 1.0f);
         } else if (type == "map_Kd") {
             assert(current_material != materials_.end());
             std::string texture_filename;
@@ -1440,7 +1446,96 @@ ColourHDR Renderer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray_
             return reflected_color;
         }
         
-        // Non-mirror materials: use standard lighting
+        // Handle metallic materials with reflection (metallic > 0 means some reflection)
+        // Metallic materials reflect rays like mirrors but tinted with material color
+        // metallic value determines the blend: 0=full diffuse, 1=full reflection
+        if (face.material.metallic > 0.0f) {
+            // Calculate reflection direction
+            glm::vec3 reflected_dir = glm::reflect(ray_dir, intersection.normal);
+            
+            // Offset ray origin slightly along normal to avoid self-intersection
+            constexpr FloatType epsilon = 0.001f;
+            glm::vec3 offset_origin = intersection.intersectionPoint + intersection.normal * epsilon;
+            
+            // Trace reflected ray recursively
+            ColourHDR reflected_color = trace_ray(offset_origin, reflected_dir, depth + 1);
+            
+            // Tint reflection with material color (metals reflect colored light)
+            // Use component-wise multiplication to tint the reflection
+            ColourHDR material_color = ColourHDR::from_srgb(intersection.colour, gamma_);
+            ColourHDR metallic_reflection = ColourHDR(
+                reflected_color.red * material_color.red,
+                reflected_color.green * material_color.green,
+                reflected_color.blue * material_color.blue
+            );
+            
+            // If metallic = 1, return pure metallic reflection
+            // If metallic < 1, blend with diffuse lighting below
+            if (face.material.metallic >= 0.99f) {
+                return metallic_reflection;
+            }
+            
+            // For partial metallic (0 < metallic < 1), we need to blend with diffuse
+            // Calculate diffuse component and blend based on metallic value
+            ColourHDR diffuse_color = ColourHDR(0.0f, 0.0f, 0.0f);  // Will be calculated below
+            
+            // Calculate diffuse lighting (code continues below)
+            {
+                glm::vec3 to_light_hit = light_pos - intersection.intersectionPoint;
+                FloatType dist_light_hit = glm::length(to_light_hit);
+                glm::vec3 to_camera_hit = camera.position_ - intersection.intersectionPoint;
+                
+                // Compute shadow factor
+                FloatType shadow_factor;
+                if (soft_shadows_enabled_) {
+                    constexpr int shadow_samples = 16;
+                    FloatType light_radius = world_.light_radius();
+                    shadow_factor = compute_soft_shadow(intersection.intersectionPoint, light_pos, light_radius, shadow_samples);
+                } else {
+                    shadow_factor = is_in_shadow_bvh(intersection.intersectionPoint, light_pos) ? 0.0f : 1.0f;
+                }
+                
+                FloatType ambient = 0.025f;
+                FloatType lambertian = 0.0f;
+                FloatType specular = 0.0f;
+                
+                FloatType w = 1.0f - intersection.u - intersection.v;
+                if (face.material.shading == Material::Shading::Gouraud) {
+                    FloatType lam_v[3] = {0.0f, 0.0f, 0.0f};
+                    FloatType spec_v[3] = {0.0f, 0.0f, 0.0f};
+                    for (int k = 0; k < 3; ++k) {
+                        glm::vec3 to_light_v = light_pos - face.vertices[k];
+                        FloatType dist_v = glm::length(to_light_v);
+                        glm::vec3 to_camera_v = camera.position_ - face.vertices[k];
+                        lam_v[k] = compute_lambertian_lighting(face.vertex_normals[k], to_light_v, dist_v, light_intensity);
+                        if (lam_v[k] > 0.0f) {
+                            spec_v[k] = compute_specular_lighting(face.vertex_normals[k], to_light_v, to_camera_v, dist_v, light_intensity, face.material.shininess);
+                        }
+                    }
+                    lambertian = w * lam_v[0] + intersection.u * lam_v[1] + intersection.v * lam_v[2];
+                    specular = w * spec_v[0] + intersection.u * spec_v[1] + intersection.v * spec_v[2];
+                } else {
+                    glm::vec3 n_interp = glm::normalize(w * face.vertex_normals[0] + intersection.u * face.vertex_normals[1] + intersection.v * face.vertex_normals[2]);
+                    lambertian = compute_lambertian_lighting(n_interp, to_light_hit, dist_light_hit, light_intensity);
+                    if (lambertian > 0.0f) {
+                        specular = compute_specular_lighting(n_interp, to_light_hit, to_camera_hit, dist_light_hit, light_intensity, face.material.shininess);
+                    }
+                }
+                
+                FloatType diffuse_component = ambient + (1.0f - ambient) * lambertian * shadow_factor;
+                FloatType specular_component = specular * shadow_factor;
+                
+                // Metallic materials have colored specular highlights
+                ColourHDR specular_color = material_color;
+                
+                diffuse_color = material_color * diffuse_component + specular_color * specular_component;
+            }
+            
+            // Blend diffuse and metallic reflection based on metallic value
+            return diffuse_color * (1.0f - face.material.metallic) + metallic_reflection * face.material.metallic;
+        }
+        
+        // Non-mirror, non-metallic materials: use standard lighting
         RayTriangleIntersection old_intersection = intersection;
         if (old_intersection.triangleIndex != static_cast<std::size_t>(-1)) {
             glm::vec3 to_light_hit = light_pos - old_intersection.intersectionPoint;
@@ -1491,6 +1586,8 @@ ColourHDR Renderer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray_
             // Apply soft shadow to diffuse and specular components
             FloatType diffuse_component = ambient + (1.0f - ambient) * lambertian * shadow_factor;
             FloatType specular_component = specular * shadow_factor;
+            
+            // Standard non-metallic materials: white specular highlights
             return hdr_colour * diffuse_component + ColourHDR(specular_component, specular_component, specular_component);
         }
     }

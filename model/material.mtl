@@ -7,7 +7,9 @@ Kd 0.700000 0.700000 0.700000
 newmtl Red
 Kd 1.000000 0.000000 0.000000
 
-newmtl Green
+newmtl GreenMetallic
+s Phong
+metallic 1.0
 Kd 0.000000 1.000000 0.000000
 
 newmtl Blue
@@ -27,4 +29,4 @@ Kd 1.000000 1.000000 1.000000
 map_Kd texture.ppm
 
 newmtl Mirror
-m True
+mirror True
