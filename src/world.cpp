@@ -1389,12 +1389,26 @@ glm::vec3 Renderer::sample_sphere_halton(int index, FloatType radius, const glm:
 FloatType Renderer::compute_soft_shadow(const glm::vec3& point, const glm::vec3& light_center, FloatType light_radius, int num_samples) const noexcept {
     int visible_samples = 0;
     
-    // Halton sequence sampling on the sphere surface
-    for (int i = 0; i < num_samples; ++i) {
-        // Get Halton sequence sample point on the light sphere
+    // Adaptive sampling with early exit
+    // First phase: test a few samples to detect uniform cases
+    constexpr int early_test_samples = 4;
+    int early_visible = 0;
+    
+    for (int i = 0; i < early_test_samples; ++i) {
         glm::vec3 light_sample = sample_sphere_halton(i, light_radius, light_center);
-        
-        // Check if this sample point is visible from the shading point
+        if (!is_in_shadow_bvh(point, light_sample)) {
+            early_visible++;
+        }
+    }
+    
+    // Early exit for uniform lighting conditions
+    if (early_visible == 0) return 0.0f;  // Fully shadowed
+    if (early_visible == early_test_samples) return 1.0f;  // Fully lit
+    
+    // Mixed case: continue with remaining samples
+    visible_samples = early_visible;
+    for (int i = early_test_samples; i < num_samples; ++i) {
+        glm::vec3 light_sample = sample_sphere_halton(i, light_radius, light_center);
         if (!is_in_shadow_bvh(point, light_sample)) {
             visible_samples++;
         }
