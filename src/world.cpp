@@ -451,7 +451,8 @@ void World::load_files(const std::vector<std::string>& filenames) {
                 }
                 
                 stbi_image_free(data);
-                env_map_ = EnvironmentMap(width, height, std::move(hdr_data));
+                // Use 0.3 intensity to avoid overexposure (can be adjusted)
+                env_map_ = EnvironmentMap(width, height, std::move(hdr_data), 0.1f);
             } else {
                 throw std::runtime_error("Failed to load HDR environment map: " + filename);
             }

@@ -75,10 +75,11 @@ private:
     std::size_t width_;
     std::size_t height_;
     std::vector<ColourHDR> data_;  // HDR pixel data
+    FloatType intensity_;  // Scaling factor for environment map brightness
 public:
-    EnvironmentMap() noexcept : width_(0), height_(0) {}
-    EnvironmentMap(std::size_t w, std::size_t h, std::vector<ColourHDR> data) noexcept
-        : width_(w), height_(h), data_(std::move(data)) {}
+    EnvironmentMap() noexcept : width_(0), height_(0), intensity_(1.0f) {}
+    EnvironmentMap(std::size_t w, std::size_t h, std::vector<ColourHDR> data, FloatType intensity = 0.3f) noexcept
+        : width_(w), height_(h), data_(std::move(data)), intensity_(intensity) {}
     
     bool is_loaded() const noexcept { return width_ > 0 && height_ > 0; }
     
@@ -99,7 +100,8 @@ public:
         std::size_t x = static_cast<std::size_t>(Clamp(u * static_cast<FloatType>(width_), 0.0f, static_cast<FloatType>(width_ - 1)));
         std::size_t y = static_cast<std::size_t>(Clamp(v * static_cast<FloatType>(height_), 0.0f, static_cast<FloatType>(height_ - 1)));
         
-        return data_[y * width_ + x];
+        // Apply intensity scaling to reduce brightness
+        return data_[y * width_ + x] * intensity_;
     }
 };
 
