@@ -467,11 +467,22 @@ void World::orbiting() noexcept {
     camera_.orbiting();
 }
 
-Renderer::Renderer(DrawingWindow& window) noexcept
-    : window_(window), 
+Renderer::Renderer(DrawingWindow& window, const World& world) noexcept
+    : window_(window),
+      world_(world),
       z_buffer_(window.width * window.height, 0.0f),
-      hdr_buffer_(window.width * window.height, ColourHDR()) {}
-      
+      hdr_buffer_(window.width * window.height, ColourHDR()),
+      frame_barrier_(std::thread::hardware_concurrency() + 1) {
+    // Build initial BVH from world models
+    const std::vector<Face>& all_faces = Model::collect_all_faces(world.models());
+    build_bvh(all_faces);
+    bvh_face_count_ = all_faces.size();
+    
+    // Start worker threads
+    for (unsigned int i = 0; i < std::thread::hardware_concurrency(); ++i) {
+        workers_.emplace_back([this](std::stop_token) { this->worker_thread(); });
+    }
+}
 void Renderer::clear() noexcept {
     z_buffer_.assign(window_.width * window_.height, 0.0f);
     hdr_buffer_.assign(window_.width * window_.height, ColourHDR());
@@ -632,7 +643,7 @@ std::uint32_t Renderer::sample_texture(const Face& face, const glm::vec3& bary,
     
     return face.material.texture->sample(u, v);
 }
-void Renderer::render(World& world) noexcept {
+void Renderer::render() noexcept {
     clear();
     
     aspect_ratio_ = static_cast<double>(window_.width) / window_.height;
@@ -640,113 +651,54 @@ void Renderer::render(World& world) noexcept {
     // Dispatch based on rendering mode
     switch (mode_) {
     case Wireframe:
-        wireframe_render(world);
+        wireframe_render();
         break;
     case Rasterized:
-        rasterized_render(world);
+        rasterized_render();
         break;
     case Raytraced:
-        raytraced_render(world);
+        raytraced_render();
         break;
     }
 }
-void Renderer::wireframe_render(World& world) noexcept {
-    for (const auto& model : world.models()) {
+void Renderer::wireframe_render() noexcept {
+    for (const auto& model : world_.models()) {
         for (const auto& face : model.all_faces()) {
-            wireframe_render(world.camera(), face);
+            wireframe_render(world_.camera(), face);
         }
     }
 }
-void Renderer::rasterized_render(World& world) noexcept {
-    for (const auto& model : world.models()) {
+void Renderer::rasterized_render() noexcept {
+    for (const auto& model : world_.models()) {
         for (const auto& face : model.all_faces()) {
-            rasterized_render(world.camera(), face);
+            rasterized_render(world_.camera(), face);
         }
     }
 }
-void Renderer::raytraced_render(World& world) noexcept {
-    const Camera& camera = world.camera();
-    const glm::vec3& light_pos = world.light_position();
-    FloatType light_intensity = world.light_intensity();
-    
+void Renderer::raytraced_render() noexcept {
+    const Camera& camera = world_.camera();
+    const glm::vec3& light_pos = world_.light_position();
+    FloatType light_intensity = world_.light_intensity();
     
     // Use static buffer to collect all faces (avoids reallocation each frame)
-    const std::vector<Face>& all_faces = Model::collect_all_faces(world.models());
+    const std::vector<Face>& all_faces = Model::collect_all_faces(world_.models());
 
+    // Rebuild BVH only if the number of faces has changed
     if (bvh_nodes_.empty() || bvh_face_count_ != all_faces.size()) {
         build_bvh(all_faces);
         bvh_face_count_ = all_faces.size();
     }
 
-    static ThreadPool<> thread_pool;
+    // Set up frame context for worker threads
+    current_faces_ = &all_faces;
+    current_camera_ = &camera;
+    current_light_pos_ = light_pos;
+    current_light_intensity_ = light_intensity;
+    tile_counter_.store(0, std::memory_order_relaxed);
     
-    // Iterate over all pixels
-    int tile_h = 16;
-    for (int y0 = 0; y0 < static_cast<int>(window_.height); y0 += tile_h) {
-        int y1 = std::min(y0 + tile_h, static_cast<int>(window_.height));
-        thread_pool.enqueue(std::function<void()>([&, y0, y1]() noexcept {
-            for (int y = y0; y < y1; ++y) {
-                for (int x = 0; x < static_cast<int>(window_.width); x++) {
-                // Generate ray for this pixel
-                auto [ray_origin, ray_dir] = camera.generate_ray(x, y, window_.width, window_.height, aspect_ratio_);
-
-                // Find closest intersection
-                RayTriangleIntersection intersection = find_closest_intersection_bvh(ray_origin, ray_dir, all_faces);
-
-                if (intersection.triangleIndex != static_cast<std::size_t>(-1)) {
-                    const Face& face = all_faces[intersection.triangleIndex];
-                    // Calculate vectors to light and camera at hit point
-                    glm::vec3 to_light_hit = light_pos - intersection.intersectionPoint;
-                    FloatType dist_light_hit = glm::length(to_light_hit);
-                    glm::vec3 to_camera_hit = camera.position_ - intersection.intersectionPoint;
-
-                    // Shadow test at hit point
-                    bool in_shadow = is_in_shadow_bvh(intersection.intersectionPoint, light_pos, all_faces);
-
-                    // Base color in HDR linear space
-                    ColourHDR hdr_colour = ColourHDR::from_srgb(intersection.colour, gamma_);
-
-                    FloatType ambient = 0.025f;
-                    FloatType lambertian = 0.0f;
-                    FloatType specular = 0.0f;
-
-                    if (!in_shadow) {
-                        FloatType w = 1.0f - intersection.u - intersection.v;
-                        if (face.material.shading == Material::Shading::Gouraud) {
-                            // Per-vertex lighting and barycentric interpolation
-                            FloatType lam_v[3] = {0.0f, 0.0f, 0.0f};
-                            FloatType spec_v[3] = {0.0f, 0.0f, 0.0f};
-                            for (int k = 0; k < 3; ++k) {
-                                glm::vec3 to_light_v = light_pos - face.vertices[k];
-                                FloatType dist_v = glm::length(to_light_v);
-                                glm::vec3 to_camera_v = camera.position_ - face.vertices[k];
-                                lam_v[k] = compute_lambertian_lighting(face.vertex_normals[k], to_light_v, dist_v, light_intensity);
-                                if (lam_v[k] > 0.0f) {
-                                    spec_v[k] = compute_specular_lighting(face.vertex_normals[k], to_light_v, to_camera_v, dist_v, light_intensity, face.material.shininess);
-                                }
-                            }
-                            lambertian = w * lam_v[0] + intersection.u * lam_v[1] + intersection.v * lam_v[2];
-                            specular = w * spec_v[0] + intersection.u * spec_v[1] + intersection.v * spec_v[2];
-                        } else { // Phong
-                            // Interpolate normal and shade at hit point
-                            glm::vec3 n_interp = glm::normalize(w * face.vertex_normals[0] + intersection.u * face.vertex_normals[1] + intersection.v * face.vertex_normals[2]);
-                            lambertian = compute_lambertian_lighting(n_interp, to_light_hit, dist_light_hit, light_intensity);
-                            if (lambertian > 0.0f) {
-                                specular = compute_specular_lighting(n_interp, to_light_hit, to_camera_hit, dist_light_hit, light_intensity, face.material.shininess);
-                            }
-                        }
-                    }
-
-                    FloatType diffuse_component = ambient + (1.0f - ambient) * lambertian;
-                    ColourHDR final_hdr = hdr_colour * diffuse_component + ColourHDR(specular, specular, specular);
-                    Colour final_colour = tonemap_and_gamma_correct(final_hdr, gamma_);
-                    window_.setPixelColour(x, y, final_colour);
-                }
-                }
-            }
-        }));
-    }
-    thread_pool.wait_idle();
+    // Signal workers to start processing and wait for completion
+    frame_barrier_.arrive_and_wait();  // Start signal
+    frame_barrier_.arrive_and_wait();  // Completion wait
 }
 void Renderer::wireframe_render(const Camera& camera, const Face& face) noexcept {
     auto clipped = clip_triangle(camera, face);
@@ -1096,6 +1048,55 @@ bool Renderer::is_in_shadow_bvh(const glm::vec3& point, const glm::vec3& light_p
     }
     return false;
 }
+void Renderer::process_rows(int y0, int y1) noexcept {
+    const Camera& camera = *current_camera_;
+    const std::vector<Face>& all_faces = *current_faces_;
+    for (int y = y0; y < y1; ++y) {
+        for (int x = 0; x < static_cast<int>(window_.width); x++) {
+            auto [ray_origin, ray_dir] = camera.generate_ray(x, y, window_.width, window_.height, aspect_ratio_);
+            RayTriangleIntersection intersection = find_closest_intersection_bvh(ray_origin, ray_dir, all_faces);
+            if (intersection.triangleIndex != static_cast<std::size_t>(-1)) {
+                const Face& face = all_faces[intersection.triangleIndex];
+                glm::vec3 to_light_hit = current_light_pos_ - intersection.intersectionPoint;
+                FloatType dist_light_hit = glm::length(to_light_hit);
+                glm::vec3 to_camera_hit = camera.position_ - intersection.intersectionPoint;
+                bool in_shadow = is_in_shadow_bvh(intersection.intersectionPoint, current_light_pos_, all_faces);
+                ColourHDR hdr_colour = ColourHDR::from_srgb(intersection.colour, gamma_);
+                FloatType ambient = 0.025f;
+                FloatType lambertian = 0.0f;
+                FloatType specular = 0.0f;
+                if (!in_shadow) {
+                    FloatType w = 1.0f - intersection.u - intersection.v;
+                    if (face.material.shading == Material::Shading::Gouraud) {
+                        FloatType lam_v[3] = {0.0f, 0.0f, 0.0f};
+                        FloatType spec_v[3] = {0.0f, 0.0f, 0.0f};
+                        for (int k = 0; k < 3; ++k) {
+                            glm::vec3 to_light_v = current_light_pos_ - face.vertices[k];
+                            FloatType dist_v = glm::length(to_light_v);
+                            glm::vec3 to_camera_v = camera.position_ - face.vertices[k];
+                            lam_v[k] = compute_lambertian_lighting(face.vertex_normals[k], to_light_v, dist_v, current_light_intensity_);
+                            if (lam_v[k] > 0.0f) {
+                                spec_v[k] = compute_specular_lighting(face.vertex_normals[k], to_light_v, to_camera_v, dist_v, current_light_intensity_, face.material.shininess);
+                            }
+                        }
+                        lambertian = w * lam_v[0] + intersection.u * lam_v[1] + intersection.v * lam_v[2];
+                        specular = w * spec_v[0] + intersection.u * spec_v[1] + intersection.v * spec_v[2];
+                    } else {
+                        glm::vec3 n_interp = glm::normalize(w * face.vertex_normals[0] + intersection.u * face.vertex_normals[1] + intersection.v * face.vertex_normals[2]);
+                        lambertian = compute_lambertian_lighting(n_interp, to_light_hit, dist_light_hit, current_light_intensity_);
+                        if (lambertian > 0.0f) {
+                            specular = compute_specular_lighting(n_interp, to_light_hit, to_camera_hit, dist_light_hit, current_light_intensity_, face.material.shininess);
+                        }
+                    }
+                }
+                FloatType diffuse_component = ambient + (1.0f - ambient) * lambertian;
+                ColourHDR final_hdr = hdr_colour * diffuse_component + ColourHDR(specular, specular, specular);
+                Colour final_colour = tonemap_and_gamma_correct(final_hdr, gamma_);
+                window_.setPixelColour(x, y, final_colour);
+            }
+        }
+    }
+}
 FloatType Renderer::compute_lambertian_lighting(const glm::vec3& normal, const glm::vec3& to_light, FloatType distance, FloatType intensity) noexcept {
     // Lambert's cosine law: I = I₀ * cos(θ) / (4πr²)
     // where θ is the angle between surface normal and light direction
@@ -1189,4 +1190,25 @@ Colour Renderer::tonemap_and_gamma_correct(const ColourHDR& hdr, FloatType gamma
         static_cast<std::uint8_t>(Clamp(g_out * 255.0f, 0.0f, 255.0f)),
         static_cast<std::uint8_t>(Clamp(b_out * 255.0f, 0.0f, 255.0f))
     };
+}
+
+void Renderer::worker_thread() noexcept {
+    while (true) {
+        // Wait for frame start signal
+        frame_barrier_.arrive_and_wait();
+        
+        // Process tiles until all are done
+        const int num_tiles = (window_.height + TileHeight - 1) / TileHeight;
+        while (true) {
+            int tile_idx = tile_counter_.fetch_add(1, std::memory_order_relaxed);
+            if (tile_idx >= num_tiles) break;
+            
+            int y0 = tile_idx * TileHeight;
+            int y1 = std::min(y0 + TileHeight, static_cast<int>(window_.height));
+            process_rows(y0, y1);
+        }
+        
+        // Signal frame completion
+        frame_barrier_.arrive_and_wait();
+    }
 }

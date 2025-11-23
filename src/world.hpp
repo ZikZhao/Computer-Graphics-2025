@@ -10,9 +10,11 @@
 #include <filesystem>
 #include <numbers>
 #include <optional>
+#include <barrier>
+#include <atomic>
+#include <thread>
 #include "DrawingWindow.h"
 #include "utils.hpp"
-#include "thread_pool.hpp"
 
 // Clipping planes for frustum
 enum class ClipPlane {
@@ -218,27 +220,48 @@ public:
     FloatType gamma_ = 2.2f;  // Gamma value: 1.0 = no correction, 2.2 = standard sRGB
 private:
     DrawingWindow& window_;
+    const World& world_;
     std::vector<FloatType> z_buffer_;
     std::vector<ColourHDR> hdr_buffer_;  // HDR floating point color buffer
     double aspect_ratio_ = 1.0;
 public:
-    struct AABB { glm::vec3 min; glm::vec3 max; };
-    struct BVHNode { AABB box; int left; int right; int start; int count; };
+    struct AABB {
+        glm::vec3 min;
+        glm::vec3 max;
+    };
+    struct BVHNode {
+        AABB box;
+        int left;
+        int right;
+        int start;
+        int count;
+    };
+    static constexpr int TileHeight = 16;
 private:
     std::vector<int> bvh_tri_indices_;
     std::vector<BVHNode> bvh_nodes_;
     std::size_t bvh_face_count_ = 0;
+    // Worker threads and synchronization
+    std::barrier<> frame_barrier_;
+    std::vector<std::jthread> workers_;
+    std::atomic<int> tile_counter_ = 0;
+    // Current frame context for workers
+    const std::vector<Face>* current_faces_ = nullptr;
+    const Camera* current_camera_ = nullptr;
+    glm::vec3 current_light_pos_ = glm::vec3(0.0f);
+    FloatType current_light_intensity_ = 0.0f;
 public:
-    Renderer(DrawingWindow& window) noexcept;
+    Renderer(DrawingWindow& window, const World& world) noexcept;
+    ~Renderer() noexcept = default;
     void clear() noexcept;
     ScreenNdcCoord ndc_to_screen(const glm::vec3& ndc, const glm::vec2& uv, FloatType w) const noexcept;
-    void render(World& world) noexcept;
+    void render() noexcept;
     void handle_event(const SDL_Event& event) noexcept;
 private:
     // World-based rendering (used by render() dispatch)
-    void wireframe_render(World& world) noexcept;
-    void rasterized_render(World& world) noexcept;
-    void raytraced_render(World& world) noexcept;
+    void wireframe_render() noexcept;
+    void rasterized_render() noexcept;
+    void raytraced_render() noexcept;
     // Per-face rendering (used by Model::draw for wireframe/rasterized)
     void wireframe_render(const Camera& camera, const Face& face) noexcept;
     void rasterized_render(const Camera& camera, const Face& face) noexcept;
@@ -251,6 +274,8 @@ private:
     bool is_in_shadow_bvh(const glm::vec3& point, const glm::vec3& light_pos, const std::vector<Face>& faces) noexcept;
     static FloatType compute_lambertian_lighting(const glm::vec3& normal, const glm::vec3& to_light, FloatType distance, FloatType intensity) noexcept;
     static FloatType compute_specular_lighting(const glm::vec3& normal, const glm::vec3& to_light, const glm::vec3& to_camera, FloatType distance, FloatType intensity, FloatType shininess) noexcept;
+    void process_rows(int y0, int y1) noexcept;
+    void worker_thread() noexcept;
     // HDR tonemapping and gamma correction
     static Colour tonemap_and_gamma_correct(const ColourHDR& hdr, FloatType gamma) noexcept;
     static FloatType aces_tonemap(FloatType hdr_value) noexcept;
