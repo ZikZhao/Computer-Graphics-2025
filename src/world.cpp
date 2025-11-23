@@ -236,7 +236,7 @@ void Model::load_file(std::string filename) {
             auto prev_shading = current_obj->material.shading;
             current_obj->material = materials_[colour_name];
             current_obj->material.shading = prev_shading;
-        } else if (type == "s") {
+        } else if (type == "shading") {
             std::string mode;
             iss >> mode;
             if (current_obj != objects_.end()) {
@@ -289,15 +289,24 @@ void Model::load_file(std::string filename) {
                 { tex_coords[0], tex_coords[1], tex_coords[2] },
                 current_obj->material,
                 { vi_idx[0], vi_idx[1], vi_idx[2] },
-                { glm::vec3(0.0f), glm::vec3(0.0f), glm::vec3(0.0f) }
+                { glm::vec3(0.0f), glm::vec3(0.0f), glm::vec3(0.0f) },
+                glm::vec3(0.0f)  // face_normal will be computed later
             };
             current_obj->faces.emplace_back(std::move(new_face));
         }
     }
+    // First pass: compute and store face normals
+    for (auto& obj : objects_) {
+        for (auto& f : obj.faces) {
+            f.face_normal = CalculateNormal(f.vertices[0], f.vertices[1], f.vertices[2]);
+        }
+    }
+    
+    // Second pass: accumulate normals for smooth shading
     std::vector<glm::vec3> accum_normals(vertices_.size(), glm::vec3(0.0f));
     for (auto& obj : objects_) {
         for (auto& f : obj.faces) {
-            glm::vec3 n = CalculateNormal(f.vertices[0], f.vertices[1], f.vertices[2]);
+            glm::vec3 n = f.face_normal;
             glm::vec3 e0 = f.vertices[1] - f.vertices[0];
             glm::vec3 e1 = f.vertices[2] - f.vertices[0];
             FloatType area2 = glm::length(glm::cross(e0, e1));
@@ -1564,7 +1573,13 @@ ColourHDR Renderer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray_
         
         // Apply shadow_factor to diffuse and specular (0 = fully shadowed, 1 = fully lit)
         FloatType w = 1.0f - intersection.u - intersection.v;
-        if (face.material.shading == Material::Shading::Gouraud) {
+        if (face.material.shading == Material::Shading::Flat) {
+            // Flat shading: use geometric face normal (no interpolation)
+            lambertian = compute_lambertian_lighting(face.face_normal, to_light_hit, dist_light_hit, light_intensity);
+            if (lambertian > 0.0f) {
+                specular = compute_specular_lighting(face.face_normal, to_light_hit, to_camera_hit, dist_light_hit, light_intensity, face.material.shininess);
+            }
+        } else if (face.material.shading == Material::Shading::Gouraud) {
             FloatType lam_v[3] = {0.0f, 0.0f, 0.0f};
             FloatType spec_v[3] = {0.0f, 0.0f, 0.0f};
             for (int k = 0; k < 3; ++k) {

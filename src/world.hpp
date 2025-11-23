@@ -138,7 +138,7 @@ struct Material {
     std::shared_ptr<Texture> texture;
     FloatType shininess = 64.0f;  // Specular shininess (higher = sharper highlights)
     FloatType metallic = 0.0f;  // Metallic property (0.0 = non-metallic, 1.0 = fully metallic)
-    enum class Shading { Gouraud, Phong } shading = Shading::Phong;
+    enum class Shading { Flat, Gouraud, Phong } shading = Shading::Flat;
 };
 
 // Vertex in clip space with attributes
@@ -194,6 +194,7 @@ struct Face {
     Material material;
     std::array<int, 3> vertex_indices;  // Indices into model's vertices_
     std::array<glm::vec3, 3> vertex_normals; // Smoothed vertex normals
+    glm::vec3 face_normal;  // Geometric face normal (for flat shading)
 };
 
 struct Object {
