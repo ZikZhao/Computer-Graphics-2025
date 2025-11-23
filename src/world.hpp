@@ -259,10 +259,15 @@ public:
         Wireframe,
         Rasterized,
         Raytraced,
+        DepthOfField,
     };
     Mode mode_ = Raytraced;
     FloatType gamma_ = 2.2f;  // Gamma value: 1.0 = no correction, 2.2 = standard sRGB
     bool soft_shadows_enabled_ = false;  // Toggle for soft shadows (expensive)
+    // Depth of field parameters
+    FloatType focal_distance_ = 8.0f;  // Distance to the focal plane
+    FloatType aperture_size_ = 0.1f;   // Aperture radius (0 = pinhole, larger = more blur)
+    int dof_samples_ = 16;              // Number of samples per pixel for DOF
 private:
     DrawingWindow& window_;
     const World& world_;
@@ -303,6 +308,7 @@ private:
     void wireframe_render() noexcept;
     void rasterized_render() noexcept;
     void raytraced_render() noexcept;
+    void depth_of_field_render() noexcept;
     // Per-face rendering (used by Model::draw for wireframe/rasterized)
     void wireframe_render(const Camera& camera, const Face& face) noexcept;
     void rasterized_render(const Camera& camera, const Face& face) noexcept;

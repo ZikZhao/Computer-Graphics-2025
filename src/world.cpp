@@ -724,6 +724,9 @@ void Renderer::handle_event(const SDL_Event& event) noexcept {
         case SDLK_3:
             mode_ = Raytraced;
             break;
+        case SDLK_4:
+            mode_ = DepthOfField;
+            break;
         case SDLK_g:
             gamma_ = (gamma_ == 2.2f) ? 1.0f : 2.2f;
             break;
@@ -760,6 +763,9 @@ void Renderer::render() noexcept {
     case Raytraced:
         raytraced_render();
         break;
+    case DepthOfField:
+        depth_of_field_render();
+        break;
     }
 }
 void Renderer::wireframe_render() noexcept {
@@ -778,6 +784,15 @@ void Renderer::rasterized_render() noexcept {
 }
 void Renderer::raytraced_render() noexcept {
     // Set up frame context for worker threads (only camera changes per frame)
+    current_camera_ = &world_.camera();
+    tile_counter_.store(0, std::memory_order_relaxed);
+    
+    // Signal workers to start processing and wait for completion
+    frame_barrier_.arrive_and_wait();  // Start signal
+    frame_barrier_.arrive_and_wait();  // Completion wait
+}
+void Renderer::depth_of_field_render() noexcept {
+    // Set up frame context for worker threads
     current_camera_ = &world_.camera();
     tile_counter_.store(0, std::memory_order_relaxed);
     
@@ -1417,16 +1432,84 @@ FloatType Renderer::compute_soft_shadow(const glm::vec3& point, const glm::vec3&
     // Return the fraction of visible samples (0 = fully shadowed, 1 = fully lit)
     return static_cast<FloatType>(visible_samples) / static_cast<FloatType>(num_samples);
 }
+
+// Helper function to sample points on a disk (for depth of field lens aperture)
+static glm::vec2 sample_disk_concentric(FloatType u1, FloatType u2) noexcept {
+    // Concentric disk sampling (Shirley & Chiu mapping)
+    // Maps [0,1]² to unit disk with better distribution than naive polar mapping
+    FloatType a = 2.0f * u1 - 1.0f;
+    FloatType b = 2.0f * u2 - 1.0f;
+    
+    if (a == 0.0f && b == 0.0f) {
+        return glm::vec2(0.0f, 0.0f);
+    }
+    
+    FloatType r, theta;
+    if (a * a > b * b) {
+        r = a;
+        theta = (std::numbers::pi / 4.0f) * (b / a);
+    } else {
+        r = b;
+        theta = (std::numbers::pi / 2.0f) - (std::numbers::pi / 4.0f) * (a / b);
+    }
+    
+    return glm::vec2(r * std::cos(theta), r * std::sin(theta));
+}
+
 void Renderer::process_rows(int y0, int y1) noexcept {
     const Camera& camera = *current_camera_;
     const std::vector<Face>& all_faces = world_.all_faces();
     const glm::vec3& light_pos = world_.light_position();
     const FloatType light_intensity = world_.light_intensity();
     
+    // Check if we're in depth of field mode
+    bool is_dof = (mode_ == DepthOfField);
+    
     for (int y = y0; y < y1; ++y) {
         for (int x = 0; x < static_cast<int>(window_.width); x++) {
-            auto [ray_origin, ray_dir] = camera.generate_ray(x, y, window_.width, window_.height, aspect_ratio_);
-            ColourHDR final_hdr = trace_ray(ray_origin, ray_dir, 0);
+            ColourHDR final_hdr;
+            
+            if (is_dof) {
+                // Depth of field: average multiple samples with different lens positions
+                ColourHDR accumulated_color(0.0f, 0.0f, 0.0f);
+                
+                for (int sample = 0; sample < dof_samples_; ++sample) {
+                    // Generate jittered sample position on lens aperture
+                    FloatType u1 = halton(sample, 2);
+                    FloatType u2 = halton(sample, 3);
+                    glm::vec2 lens_sample = sample_disk_concentric(u1, u2) * aperture_size_;
+                    
+                    // Get the ray through the center of the pixel to the focal plane
+                    auto [center_origin, center_dir] = camera.generate_ray(x, y, window_.width, window_.height, aspect_ratio_);
+                    
+                    // Find the focal point (point on focal plane)
+                    glm::vec3 focal_point = center_origin + center_dir * focal_distance_;
+                    
+                    // Offset the ray origin by the lens sample
+                    // Transform lens sample to world space using camera orientation
+                    glm::mat3 cam_orientation = camera.orientation();
+                    glm::vec3 lens_offset = cam_orientation[0] * lens_sample.x + cam_orientation[1] * lens_sample.y;
+                    glm::vec3 ray_origin = center_origin + lens_offset;
+                    
+                    // Ray direction points from lens sample to focal point
+                    glm::vec3 ray_dir = glm::normalize(focal_point - ray_origin);
+                    
+                    // Trace ray and accumulate color
+                    accumulated_color = accumulated_color + trace_ray(ray_origin, ray_dir, 0);
+                }
+                
+                // Average the samples
+                final_hdr = ColourHDR(
+                    accumulated_color.red / static_cast<FloatType>(dof_samples_),
+                    accumulated_color.green / static_cast<FloatType>(dof_samples_),
+                    accumulated_color.blue / static_cast<FloatType>(dof_samples_)
+                );
+            } else {
+                // Standard ray tracing: single sample per pixel
+                auto [ray_origin, ray_dir] = camera.generate_ray(x, y, window_.width, window_.height, aspect_ratio_);
+                final_hdr = trace_ray(ray_origin, ray_dir, 0);
+            }
+            
             Colour final_colour = tonemap_and_gamma_correct(final_hdr, gamma_);
             window_.setPixelColour(x, y, final_colour);
         }
