@@ -1031,19 +1031,21 @@ RayTriangleIntersection Renderer::find_closest_intersection(const glm::vec3& ray
             closest.u = u;
             closest.v = v;
             
-            // Calculate surface normal
-            glm::vec3 geometric_normal = CalculateNormal(face.vertices[0], face.vertices[1], face.vertices[2]);
-            
-            // For proper lighting, the normal should face the ray origin (viewer)
-            // If dot(normal, -ray_dir) < 0, the normal points away from viewer (backface)
-            // In this case, flip it to face the viewer for proper shading
-            if (glm::dot(geometric_normal, -ray_dir) < 0.0f) {
-                geometric_normal = -geometric_normal;
-            }
-            closest.normal = geometric_normal;
-            
             // Compute barycentric coordinate w = 1 - u - v
             FloatType w = 1.0f - u - v;
+            
+            // Use interpolated vertex normal for smooth shading
+            glm::vec3 interpolated_normal = glm::normalize(
+                w * face.vertex_normals[0] + 
+                u * face.vertex_normals[1] + 
+                v * face.vertex_normals[2]
+            );
+            
+            // Flip normal if facing away from ray (for double-sided surfaces)
+            if (glm::dot(interpolated_normal, -ray_dir) < 0.0f) {
+                interpolated_normal = -interpolated_normal;
+            }
+            closest.normal = interpolated_normal;
             
             // Interpolate texture coordinates using barycentric coordinates
             glm::vec2 uv_coord = face.texture_coords[0] * w +
@@ -1264,10 +1266,21 @@ RayTriangleIntersection Renderer::find_closest_intersection_bvh(const glm::vec3&
                     closest.triangleIndex = tri_index;
                     closest.u = u;
                     closest.v = v;
-                    glm::vec3 geometric_normal = CalculateNormal(face.vertices[0], face.vertices[1], face.vertices[2]);
-                    if (glm::dot(geometric_normal, -ray_dir) < 0.0f) geometric_normal = -geometric_normal;
-                    closest.normal = geometric_normal;
+                    
+                    // Use interpolated vertex normal for smooth shading
                     FloatType w = 1.0f - u - v;
+                    glm::vec3 interpolated_normal = glm::normalize(
+                        w * face.vertex_normals[0] + 
+                        u * face.vertex_normals[1] + 
+                        v * face.vertex_normals[2]
+                    );
+                    
+                    // Flip normal if facing away from ray (for double-sided surfaces)
+                    if (glm::dot(interpolated_normal, -ray_dir) < 0.0f) {
+                        interpolated_normal = -interpolated_normal;
+                    }
+                    closest.normal = interpolated_normal;
+                    
                     glm::vec2 uv_coord = face.texture_coords[0] * w + face.texture_coords[1] * u + face.texture_coords[2] * v;
                     if (face.material.texture) {
                         closest.colour = face.material.texture->sample(uv_coord.x, uv_coord.y);
@@ -1446,9 +1459,71 @@ ColourHDR Renderer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray_
             return reflected_color;
         }
         
-        // Handle metallic materials with reflection (metallic > 0 means some reflection)
-        // Metallic materials reflect rays like mirrors but tinted with material color
-        // metallic value determines the blend: 0=full diffuse, 1=full reflection
+        // Calculate standard Phong/Gouraud lighting for all non-mirror materials
+        // (this applies to both metallic and non-metallic materials)
+        glm::vec3 to_light_hit = light_pos - intersection.intersectionPoint;
+        FloatType dist_light_hit = glm::length(to_light_hit);
+        // For ray tracing, the view direction is opposite to the ray direction
+        // This ensures proper specular highlights in reflections
+        glm::vec3 to_camera_hit = -ray_dir;
+        
+        // Compute shadow factor (soft or hard based on setting)
+        FloatType shadow_factor;
+        if (soft_shadows_enabled_) {
+            // Soft shadows with Halton sequence sampling (16 samples for good quality)
+            constexpr int shadow_samples = 16;
+            FloatType light_radius = world_.light_radius();
+            shadow_factor = compute_soft_shadow(intersection.intersectionPoint, light_pos, light_radius, shadow_samples);
+        } else {
+            // Hard shadows (1 sample, much faster)
+            shadow_factor = is_in_shadow_bvh(intersection.intersectionPoint, light_pos) ? 0.0f : 1.0f;
+        }
+        
+        ColourHDR hdr_colour = ColourHDR::from_srgb(intersection.colour, gamma_);
+        FloatType ambient = 0.025f;
+        FloatType lambertian = 0.0f;
+        FloatType specular = 0.0f;
+        
+        // Apply shadow_factor to diffuse and specular (0 = fully shadowed, 1 = fully lit)
+        FloatType w = 1.0f - intersection.u - intersection.v;
+        if (face.material.shading == Material::Shading::Gouraud) {
+            FloatType lam_v[3] = {0.0f, 0.0f, 0.0f};
+            FloatType spec_v[3] = {0.0f, 0.0f, 0.0f};
+            for (int k = 0; k < 3; ++k) {
+                glm::vec3 to_light_v = light_pos - face.vertices[k];
+                FloatType dist_v = glm::length(to_light_v);
+                // Use ray direction for view vector in ray tracing context
+                glm::vec3 to_camera_v = -ray_dir;
+                lam_v[k] = compute_lambertian_lighting(face.vertex_normals[k], to_light_v, dist_v, light_intensity);
+                if (lam_v[k] > 0.0f) {
+                    spec_v[k] = compute_specular_lighting(face.vertex_normals[k], to_light_v, to_camera_v, dist_v, light_intensity, face.material.shininess);
+                }
+            }
+            lambertian = w * lam_v[0] + intersection.u * lam_v[1] + intersection.v * lam_v[2];
+            specular = w * spec_v[0] + intersection.u * spec_v[1] + intersection.v * spec_v[2];
+        } else {
+            glm::vec3 n_interp = glm::normalize(w * face.vertex_normals[0] + intersection.u * face.vertex_normals[1] + intersection.v * face.vertex_normals[2]);
+            lambertian = compute_lambertian_lighting(n_interp, to_light_hit, dist_light_hit, light_intensity);
+            if (lambertian > 0.0f) {
+                specular = compute_specular_lighting(n_interp, to_light_hit, to_camera_hit, dist_light_hit, light_intensity, face.material.shininess);
+            }
+        }
+        
+        // Apply shadow to diffuse and specular components
+        FloatType diffuse_component = ambient + (1.0f - ambient) * lambertian * shadow_factor;
+        FloatType specular_component = specular * shadow_factor;
+        
+        // Calculate direct lighting (Phong shading)
+        ColourHDR direct_lighting;
+        if (face.material.metallic > 0.0f) {
+            // Metallic materials: specular highlights are colored
+            direct_lighting = hdr_colour * diffuse_component + hdr_colour * specular_component;
+        } else {
+            // Non-metallic materials: white specular highlights
+            direct_lighting = hdr_colour * diffuse_component + ColourHDR(specular_component, specular_component, specular_component);
+        }
+        
+        // If material is metallic, add environment reflection
         if (face.material.metallic > 0.0f) {
             // Calculate reflection direction
             glm::vec3 reflected_dir = glm::reflect(ray_dir, intersection.normal);
@@ -1461,135 +1536,21 @@ ColourHDR Renderer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray_
             ColourHDR reflected_color = trace_ray(offset_origin, reflected_dir, depth + 1);
             
             // Tint reflection with material color (metals reflect colored light)
-            // Use component-wise multiplication to tint the reflection
-            ColourHDR material_color = ColourHDR::from_srgb(intersection.colour, gamma_);
             ColourHDR metallic_reflection = ColourHDR(
-                reflected_color.red * material_color.red,
-                reflected_color.green * material_color.green,
-                reflected_color.blue * material_color.blue
+                reflected_color.red * hdr_colour.red,
+                reflected_color.green * hdr_colour.green,
+                reflected_color.blue * hdr_colour.blue
             );
             
-            // If metallic = 1, return pure metallic reflection
-            // If metallic < 1, blend with diffuse lighting below
-            if (face.material.metallic >= 0.99f) {
-                return metallic_reflection;
-            }
-            
-            // For partial metallic (0 < metallic < 1), we need to blend with diffuse
-            // Calculate diffuse component and blend based on metallic value
-            ColourHDR diffuse_color = ColourHDR(0.0f, 0.0f, 0.0f);  // Will be calculated below
-            
-            // Calculate diffuse lighting (code continues below)
-            {
-                glm::vec3 to_light_hit = light_pos - intersection.intersectionPoint;
-                FloatType dist_light_hit = glm::length(to_light_hit);
-                glm::vec3 to_camera_hit = camera.position_ - intersection.intersectionPoint;
-                
-                // Compute shadow factor
-                FloatType shadow_factor;
-                if (soft_shadows_enabled_) {
-                    constexpr int shadow_samples = 16;
-                    FloatType light_radius = world_.light_radius();
-                    shadow_factor = compute_soft_shadow(intersection.intersectionPoint, light_pos, light_radius, shadow_samples);
-                } else {
-                    shadow_factor = is_in_shadow_bvh(intersection.intersectionPoint, light_pos) ? 0.0f : 1.0f;
-                }
-                
-                FloatType ambient = 0.025f;
-                FloatType lambertian = 0.0f;
-                FloatType specular = 0.0f;
-                
-                FloatType w = 1.0f - intersection.u - intersection.v;
-                if (face.material.shading == Material::Shading::Gouraud) {
-                    FloatType lam_v[3] = {0.0f, 0.0f, 0.0f};
-                    FloatType spec_v[3] = {0.0f, 0.0f, 0.0f};
-                    for (int k = 0; k < 3; ++k) {
-                        glm::vec3 to_light_v = light_pos - face.vertices[k];
-                        FloatType dist_v = glm::length(to_light_v);
-                        glm::vec3 to_camera_v = camera.position_ - face.vertices[k];
-                        lam_v[k] = compute_lambertian_lighting(face.vertex_normals[k], to_light_v, dist_v, light_intensity);
-                        if (lam_v[k] > 0.0f) {
-                            spec_v[k] = compute_specular_lighting(face.vertex_normals[k], to_light_v, to_camera_v, dist_v, light_intensity, face.material.shininess);
-                        }
-                    }
-                    lambertian = w * lam_v[0] + intersection.u * lam_v[1] + intersection.v * lam_v[2];
-                    specular = w * spec_v[0] + intersection.u * spec_v[1] + intersection.v * spec_v[2];
-                } else {
-                    glm::vec3 n_interp = glm::normalize(w * face.vertex_normals[0] + intersection.u * face.vertex_normals[1] + intersection.v * face.vertex_normals[2]);
-                    lambertian = compute_lambertian_lighting(n_interp, to_light_hit, dist_light_hit, light_intensity);
-                    if (lambertian > 0.0f) {
-                        specular = compute_specular_lighting(n_interp, to_light_hit, to_camera_hit, dist_light_hit, light_intensity, face.material.shininess);
-                    }
-                }
-                
-                FloatType diffuse_component = ambient + (1.0f - ambient) * lambertian * shadow_factor;
-                FloatType specular_component = specular * shadow_factor;
-                
-                // Metallic materials have colored specular highlights
-                ColourHDR specular_color = material_color;
-                
-                diffuse_color = material_color * diffuse_component + specular_color * specular_component;
-            }
-            
-            // Blend diffuse and metallic reflection based on metallic value
-            return diffuse_color * (1.0f - face.material.metallic) + metallic_reflection * face.material.metallic;
+            // Blend direct lighting and metallic reflection based on metallic value
+            // metallic=0: full direct lighting, no reflection
+            // metallic=1: reduced direct lighting, full reflection
+            // For metals, we reduce direct lighting but don't eliminate it entirely
+            return direct_lighting * (1.0f - face.material.metallic * 0.8f) + metallic_reflection * face.material.metallic;
         }
         
-        // Non-mirror, non-metallic materials: use standard lighting
-        RayTriangleIntersection old_intersection = intersection;
-        if (old_intersection.triangleIndex != static_cast<std::size_t>(-1)) {
-            glm::vec3 to_light_hit = light_pos - old_intersection.intersectionPoint;
-            FloatType dist_light_hit = glm::length(to_light_hit);
-            glm::vec3 to_camera_hit = camera.position_ - old_intersection.intersectionPoint;
-            
-            // Compute shadow factor (soft or hard based on setting)
-            FloatType shadow_factor;
-            if (soft_shadows_enabled_) {
-                // Soft shadows with Halton sequence sampling (16 samples for good quality)
-                constexpr int shadow_samples = 16;
-                FloatType light_radius = world_.light_radius();
-                shadow_factor = compute_soft_shadow(old_intersection.intersectionPoint, light_pos, light_radius, shadow_samples);
-            } else {
-                // Hard shadows (1 sample, much faster)
-                shadow_factor = is_in_shadow_bvh(old_intersection.intersectionPoint, light_pos) ? 0.0f : 1.0f;
-            }
-            
-            ColourHDR hdr_colour = ColourHDR::from_srgb(old_intersection.colour, gamma_);
-            FloatType ambient = 0.025f;
-            FloatType lambertian = 0.0f;
-            FloatType specular = 0.0f;
-            
-            // Apply shadow_factor to diffuse and specular (0 = fully shadowed, 1 = fully lit)
-            FloatType w = 1.0f - old_intersection.u - old_intersection.v;
-            if (face.material.shading == Material::Shading::Gouraud) {
-                FloatType lam_v[3] = {0.0f, 0.0f, 0.0f};
-                FloatType spec_v[3] = {0.0f, 0.0f, 0.0f};
-                for (int k = 0; k < 3; ++k) {
-                    glm::vec3 to_light_v = light_pos - face.vertices[k];
-                    FloatType dist_v = glm::length(to_light_v);
-                    glm::vec3 to_camera_v = camera.position_ - face.vertices[k];
-                    lam_v[k] = compute_lambertian_lighting(face.vertex_normals[k], to_light_v, dist_v, light_intensity);
-                    if (lam_v[k] > 0.0f) {
-                        spec_v[k] = compute_specular_lighting(face.vertex_normals[k], to_light_v, to_camera_v, dist_v, light_intensity, face.material.shininess);
-                    }
-                }
-                lambertian = w * lam_v[0] + old_intersection.u * lam_v[1] + old_intersection.v * lam_v[2];
-                specular = w * spec_v[0] + old_intersection.u * spec_v[1] + old_intersection.v * spec_v[2];
-            } else {
-                glm::vec3 n_interp = glm::normalize(w * face.vertex_normals[0] + old_intersection.u * face.vertex_normals[1] + old_intersection.v * face.vertex_normals[2]);
-                lambertian = compute_lambertian_lighting(n_interp, to_light_hit, dist_light_hit, light_intensity);
-                if (lambertian > 0.0f) {
-                    specular = compute_specular_lighting(n_interp, to_light_hit, to_camera_hit, dist_light_hit, light_intensity, face.material.shininess);
-                }
-            }
-            
-            // Apply soft shadow to diffuse and specular components
-            FloatType diffuse_component = ambient + (1.0f - ambient) * lambertian * shadow_factor;
-            FloatType specular_component = specular * shadow_factor;
-            
-            // Standard non-metallic materials: white specular highlights
-            return hdr_colour * diffuse_component + ColourHDR(specular_component, specular_component, specular_component);
-        }
+        // Non-metallic material: return direct lighting only
+        return direct_lighting;
     }
     
     // No intersection - return environment map color if available, otherwise black

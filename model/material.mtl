@@ -8,7 +8,6 @@ newmtl Red
 Kd 1.000000 0.000000 0.000000
 
 newmtl GreenMetallic
-s Phong
 metallic 1.0
 Kd 0.000000 1.000000 0.000000
 
