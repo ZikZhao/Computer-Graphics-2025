@@ -194,7 +194,7 @@ private:
     const glm::vec3 light_position_;  // Immutable after loading
     const bool has_light_;
     FloatType light_intensity_ = 100.0f;  // Adjustable light intensity constant
-    static constexpr FloatType light_radius_ = 0.3f;  // Sphere light radius for soft shadows
+    static constexpr FloatType light_radius_ = 0.05f;  // Sphere light radius for soft shadows
 public:
     World();
     void load_files(const std::vector<std::string>& filenames);
@@ -221,6 +221,7 @@ public:
     };
     Mode mode_ = Raytraced;
     FloatType gamma_ = 2.2f;  // Gamma value: 1.0 = no correction, 2.2 = standard sRGB
+    bool soft_shadows_enabled_ = false;  // Toggle for soft shadows (expensive)
 private:
     DrawingWindow& window_;
     const World& world_;
@@ -273,8 +274,9 @@ private:
     static bool is_in_shadow(const glm::vec3& point, const glm::vec3& light_pos, const std::vector<Face>& faces) noexcept;
     bool is_in_shadow_bvh(const glm::vec3& point, const glm::vec3& light_pos) const noexcept;
     // Soft shadow with stratified sampling on sphere light
-    FloatType compute_soft_shadow(const glm::vec3& point, const glm::vec3& light_center, FloatType light_radius, int samples_per_dim) const noexcept;
-    static glm::vec3 sample_disk_stratified(int i, int j, int n, FloatType radius, const glm::vec3& center, const glm::vec3& normal) noexcept;
+    FloatType compute_soft_shadow(const glm::vec3& point, const glm::vec3& light_center, FloatType light_radius, int num_samples) const noexcept;
+    static glm::vec3 sample_sphere_halton(int index, FloatType radius, const glm::vec3& center) noexcept;
+    static FloatType halton(int index, int base) noexcept;
     static FloatType compute_lambertian_lighting(const glm::vec3& normal, const glm::vec3& to_light, FloatType distance, FloatType intensity) noexcept;
     static FloatType compute_specular_lighting(const glm::vec3& normal, const glm::vec3& to_light, const glm::vec3& to_camera, FloatType distance, FloatType intensity, FloatType shininess) noexcept;
     void process_rows(int y0, int y1) noexcept;
