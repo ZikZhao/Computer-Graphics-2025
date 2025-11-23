@@ -6,6 +6,9 @@
 #include <cstdlib>
 #include <random>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "../libs/stb_image.h"
+
 glm::mat3 Camera::orientation() const noexcept {
     FloatType cos_pitch = std::cos(pitch_);
     FloatType sin_pitch = std::sin(pitch_);
@@ -426,9 +429,38 @@ World::World() : light_position_(0.0f, 0.0f, 0.0f), has_light_(false) {}
 
 void World::load_files(const std::vector<std::string>& filenames) {
     for (const auto& filename : filenames) {
-        Model group;
-        group.load_file(filename);
-        models_.emplace_back(std::move(group));
+        // Check file extension to determine if it's an environment map
+        std::string ext = std::filesystem::path(filename).extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        
+        if (ext == ".hdr") {
+            // Load HDR environment map
+            int width, height, channels;
+            float* data = stbi_loadf(filename.c_str(), &width, &height, &channels, 3);
+            
+            if (data) {
+                std::vector<ColourHDR> hdr_data;
+                hdr_data.reserve(width * height);
+                
+                for (int i = 0; i < width * height; ++i) {
+                    hdr_data.emplace_back(
+                        data[i * 3 + 0],
+                        data[i * 3 + 1],
+                        data[i * 3 + 2]
+                    );
+                }
+                
+                stbi_image_free(data);
+                env_map_ = EnvironmentMap(width, height, std::move(hdr_data));
+            } else {
+                throw std::runtime_error("Failed to load HDR environment map: " + filename);
+            }
+        } else {
+            // Load as OBJ model
+            Model group;
+            group.load_file(filename);
+            models_.emplace_back(std::move(group));
+        }
     }
     
     // Extract light position from first model that has a light definition
@@ -757,6 +789,87 @@ void Renderer::wireframe_render(const Camera& camera, const Face& face) noexcept
     }
 }
 void Renderer::rasterized_render(const Camera& camera, const Face& face) noexcept {
+    // Render mirror materials as black in rasterization mode
+    if (face.material.is_mirror) {
+        auto clipped = clip_triangle(camera, face);
+        if (clipped.size() < 3) return;
+        
+        InplaceVector<ScreenNdcCoord, 9> screen_verts;
+        for (size_t i = 0; i < clipped.size(); i++) {
+            glm::vec3 ndc = camera.clip_to_ndc(clipped[i].position_clip);
+            screen_verts.push_back(ndc_to_screen(ndc, clipped[i].uv, clipped[i].position_clip.w));
+        }
+        
+        // Fill with black color
+        constexpr std::uint32_t black = Colour{0, 0, 0};
+        for (size_t i = 1; i + 1 < clipped.size(); i++) {
+            ScreenNdcCoord v0 = screen_verts[0];
+            ScreenNdcCoord v1 = screen_verts[i];
+            ScreenNdcCoord v2 = screen_verts[i + 1];
+            
+            if (v0.y > v1.y) std::swap(v0, v1);
+            if (v0.y > v2.y) std::swap(v0, v2);
+            if (v1.y > v2.y) std::swap(v1, v2);
+
+            std::int64_t from_y = std::max<std::int64_t>(static_cast<std::int64_t>(std::ceil(v0.y)), 0);
+            std::int64_t mid_y = std::min<std::int64_t>(static_cast<std::int64_t>(std::ceil(v1.y)), static_cast<std::int64_t>(window_.height - 1));
+            std::int64_t to_y = std::min<std::int64_t>(static_cast<std::int64_t>(std::ceil(v2.y)), static_cast<std::int64_t>(window_.height - 1));
+
+            FloatType inv_slope_v0v1 = (v1.y - v0.y) == 0 ? 0 : (v1.x - v0.x) / (v1.y - v0.y);
+            FloatType inv_slope_v0v2 = (v2.y - v0.y) == 0 ? 0 : (v2.x - v0.x) / (v2.y - v0.y);
+            FloatType inv_slope_v1v2 = (v2.y - v1.y) == 0 ? 0 : (v2.x - v1.x) / (v2.y - v1.y);
+
+            for (std::int64_t y = from_y; y < mid_y; y++) {
+                FloatType y_center = static_cast<FloatType>(y) + 0.5f;
+                FloatType x01 = inv_slope_v0v1 * (y_center - v0.y) + v0.x;
+                FloatType x02 = inv_slope_v0v2 * (y_center - v0.y) + v0.x;
+                std::int64_t start_x = std::max<std::int64_t>(static_cast<std::int64_t>(std::floor(std::min(x01, x02))), 0);
+                std::int64_t end_x = std::min<std::int64_t>(static_cast<std::int64_t>(std::ceil(std::max(x01, x02))), static_cast<std::int64_t>(window_.width - 1));
+                
+                for (std::int64_t x = start_x; x <= end_x; x++) {
+                    FloatType x_center = static_cast<FloatType>(x) + 0.5f;
+                    glm::vec3 bary = convertToBarycentricCoordinates(
+                        { v0.x, v0.y }, { v1.x, v1.y }, { v2.x, v2.y }, { x_center, y_center });
+                    
+                    if (bary.x >= 0.0f && bary.y >= 0.0f && bary.z >= 0.0f) {
+                        FloatType inv_z = ComputeInvZndc(std::array<FloatType, 3>{bary.z, bary.x, bary.y}, 
+                                                         std::array<FloatType, 3>{v0.z_ndc, v1.z_ndc, v2.z_ndc});
+                        FloatType& depth = z_buffer_[y * window_.width + x];
+                        if (inv_z > depth) {
+                            depth = inv_z;
+                            window_.setPixelColour(x, y, black);
+                        }
+                    }
+                }
+            }
+
+            for (std::int64_t y = mid_y; y <= to_y; y++) {
+                FloatType y_center = static_cast<FloatType>(y) + 0.5f;
+                FloatType x12 = inv_slope_v1v2 * (y_center - v1.y) + v1.x;
+                FloatType x02 = inv_slope_v0v2 * (y_center - v0.y) + v0.x;
+                std::int64_t start_x = std::max<std::int64_t>(static_cast<std::int64_t>(std::floor(std::min(x12, x02))), 0);
+                std::int64_t end_x = std::min<std::int64_t>(static_cast<std::int64_t>(std::ceil(std::max(x12, x02))), static_cast<std::int64_t>(window_.width - 1));
+                
+                for (std::int64_t x = start_x; x <= end_x; x++) {
+                    FloatType x_center = static_cast<FloatType>(x) + 0.5f;
+                    glm::vec3 bary = convertToBarycentricCoordinates(
+                        { v0.x, v0.y }, { v1.x, v1.y }, { v2.x, v2.y }, { x_center, y_center });
+                    
+                    if (bary.x >= 0.0f && bary.y >= 0.0f && bary.z >= 0.0f) {
+                        FloatType inv_z = ComputeInvZndc(std::array<FloatType, 3>{bary.z, bary.x, bary.y}, 
+                                                         std::array<FloatType, 3>{v0.z_ndc, v1.z_ndc, v2.z_ndc});
+                        FloatType& depth = z_buffer_[y * window_.width + x];
+                        if (inv_z > depth) {
+                            depth = inv_z;
+                            window_.setPixelColour(x, y, black);
+                        }
+                    }
+                }
+            }
+        }
+        return;
+    }
+    
     auto clipped = clip_triangle(camera, face);
     if (clipped.size() < 3) return;
     
@@ -1246,7 +1359,11 @@ ColourHDR Renderer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray_
     constexpr int MAX_DEPTH = 5;  // Maximum recursion depth for reflections
     
     if (depth >= MAX_DEPTH) {
-        return ColourHDR(0.0f, 0.0f, 0.0f);  // Return black after max depth
+        // Return environment map color if available, otherwise black
+        if (world_.env_map().is_loaded()) {
+            return world_.env_map().sample(ray_dir);
+        }
+        return ColourHDR(0.0f, 0.0f, 0.0f);
     }
     
     RayTriangleIntersection intersection = find_closest_intersection_bvh(ray_origin, ray_dir);
@@ -1269,7 +1386,8 @@ ColourHDR Renderer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray_
             glm::vec3 offset_origin = intersection.intersectionPoint + intersection.normal * epsilon;
             
             // Trace reflected ray recursively
-            return trace_ray(offset_origin, reflected_dir, depth + 1);
+            ColourHDR reflected_color = trace_ray(offset_origin, reflected_dir, depth + 1);
+            return reflected_color;
         }
         
         // Non-mirror materials: use standard lighting
@@ -1327,7 +1445,10 @@ ColourHDR Renderer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray_
         }
     }
     
-    // No intersection - return background color (black)
+    // No intersection - return environment map color if available, otherwise black
+    if (world_.env_map().is_loaded()) {
+        return world_.env_map().sample(ray_dir);
+    }
     return ColourHDR(0.0f, 0.0f, 0.0f);
 }
 FloatType Renderer::compute_lambertian_lighting(const glm::vec3& normal, const glm::vec3& to_light, FloatType distance, FloatType intensity) noexcept {

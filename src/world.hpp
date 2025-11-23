@@ -69,6 +69,40 @@ struct ColourHDR {
     }
 };
 
+// Environment map for HDR lighting
+class EnvironmentMap {
+private:
+    std::size_t width_;
+    std::size_t height_;
+    std::vector<ColourHDR> data_;  // HDR pixel data
+public:
+    EnvironmentMap() noexcept : width_(0), height_(0) {}
+    EnvironmentMap(std::size_t w, std::size_t h, std::vector<ColourHDR> data) noexcept
+        : width_(w), height_(h), data_(std::move(data)) {}
+    
+    bool is_loaded() const noexcept { return width_ > 0 && height_ > 0; }
+    
+    // Sample environment map using spherical coordinates from direction vector
+    ColourHDR sample(const glm::vec3& direction) const noexcept {
+        if (!is_loaded()) return ColourHDR(0.0f, 0.0f, 0.0f);
+        
+        // Convert direction to spherical coordinates (latitude-longitude)
+        // Assumes equirectangular projection
+        FloatType theta = std::atan2(direction.x, -direction.z);  // Azimuth angle
+        FloatType phi = std::asin(Clamp(direction.y, -1.0f, 1.0f));  // Elevation angle
+        
+        // Map to UV coordinates [0, 1]
+        FloatType u = (theta / (2.0f * std::numbers::pi)) + 0.5f;
+        FloatType v = (phi / std::numbers::pi) + 0.5f;
+        
+        // Convert to pixel coordinates
+        std::size_t x = static_cast<std::size_t>(Clamp(u * static_cast<FloatType>(width_), 0.0f, static_cast<FloatType>(width_ - 1)));
+        std::size_t y = static_cast<std::size_t>(Clamp(v * static_cast<FloatType>(height_), 0.0f, static_cast<FloatType>(height_ - 1)));
+        
+        return data_[y * width_ + x];
+    }
+};
+
 struct RayTriangleIntersection {
     glm::vec3 intersectionPoint;
     FloatType distanceFromCamera;
@@ -195,6 +229,7 @@ private:
     const bool has_light_;
     FloatType light_intensity_ = 100.0f;  // Adjustable light intensity constant
     static constexpr FloatType light_radius_ = 0.05f;  // Sphere light radius for soft shadows
+    EnvironmentMap env_map_;  // HDR environment map
 public:
     World();
     void load_files(const std::vector<std::string>& filenames);
@@ -210,6 +245,7 @@ public:
     FloatType light_intensity() const noexcept { return light_intensity_; }
     FloatType light_radius() const noexcept { return light_radius_; }
     void set_light_intensity(FloatType intensity) noexcept { light_intensity_ = intensity; }
+    const EnvironmentMap& env_map() const noexcept { return env_map_; }
 };
 
 class Renderer {
