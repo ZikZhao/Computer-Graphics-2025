@@ -163,10 +163,9 @@ struct Object {
 };
 
 class Model {
-public:
-    std::vector<Object> objects_;
-    std::vector<Face> all_faces_;  // Flattened faces for efficient iteration
 private:
+    std::vector<Object> objects_;
+    std::vector<Face> all_faces_;  // Flattened faces for efficient iteration (cached)
     std::map<std::string, Material> materials_;
     std::vector<glm::vec3> vertices_;
     std::vector<glm::vec2> texture_coords_;  // vt coordinates from OBJ
@@ -175,8 +174,6 @@ private:
 public:
     Model() noexcept = default;
     void load_file(std::string filename);
-    // Helper to collect all faces from multiple models (uses static buffer to avoid reallocation)
-    static const std::vector<Face>& collect_all_faces(const std::vector<Model>& models) noexcept;
     // Getter for all_faces_
     const std::vector<Face>& all_faces() const noexcept { return all_faces_; }
     // Light accessors
@@ -191,11 +188,13 @@ private:
 class World {
 private:
     std::vector<Model> models_;
+    std::vector<Face> all_faces_;  // Cached flattened faces from all models
     Camera camera_;
-    glm::vec3 light_position_ = glm::vec3(0.0f, 0.0f, 0.0f);
-    bool has_light_ = false;
+    const glm::vec3 light_position_;  // Immutable after loading
+    const bool has_light_;
     FloatType light_intensity_ = 100.0f;  // Adjustable light intensity constant
 public:
+    World();
     void load_files(const std::vector<std::string>& filenames);
     void handle_event(const SDL_Event& event) noexcept;
     void orbiting() noexcept;
@@ -203,6 +202,7 @@ public:
     Camera& camera() noexcept { return camera_; }
     const Camera& camera() const noexcept { return camera_; }
     const std::vector<Model>& models() const noexcept { return models_; }
+    const std::vector<Face>& all_faces() const noexcept { return all_faces_; }
     const glm::vec3& light_position() const noexcept { return light_position_; }
     bool has_light() const noexcept { return has_light_; }
     FloatType light_intensity() const noexcept { return light_intensity_; }
@@ -238,18 +238,14 @@ public:
     };
     static constexpr int TileHeight = 16;
 private:
-    std::vector<int> bvh_tri_indices_;
-    std::vector<BVHNode> bvh_nodes_;
-    std::size_t bvh_face_count_ = 0;
+    const std::vector<int> bvh_tri_indices_;  // Immutable after construction
+    const std::vector<BVHNode> bvh_nodes_;    // Immutable after construction
     // Worker threads and synchronization
     std::barrier<> frame_barrier_;
     std::vector<std::jthread> workers_;
     std::atomic<int> tile_counter_ = 0;
-    // Current frame context for workers
-    const std::vector<Face>* current_faces_ = nullptr;
+    // Current frame context for workers (only camera changes per frame)
     const Camera* current_camera_ = nullptr;
-    glm::vec3 current_light_pos_ = glm::vec3(0.0f);
-    FloatType current_light_intensity_ = 0.0f;
 public:
     Renderer(DrawingWindow& window, const World& world) noexcept;
     ~Renderer() noexcept = default;
@@ -267,11 +263,11 @@ private:
     void rasterized_render(const Camera& camera, const Face& face) noexcept;
     // Ray tracing helpers
     static RayTriangleIntersection find_closest_intersection(const glm::vec3& ray_origin, const glm::vec3& ray_dir, const std::vector<Face>& faces) noexcept;
-    RayTriangleIntersection find_closest_intersection_bvh(const glm::vec3& ray_origin, const glm::vec3& ray_dir, const std::vector<Face>& faces) noexcept;
-    void build_bvh(const std::vector<Face>& faces) noexcept;
+    RayTriangleIntersection find_closest_intersection_bvh(const glm::vec3& ray_origin, const glm::vec3& ray_dir) const noexcept;
+    static std::pair<std::vector<int>, std::vector<Renderer::BVHNode>> build_bvh(const std::vector<Face>& faces) noexcept;
     static bool intersect_aabb(const glm::vec3& ro, const glm::vec3& rd, const AABB& box, FloatType tmax) noexcept;
     static bool is_in_shadow(const glm::vec3& point, const glm::vec3& light_pos, const std::vector<Face>& faces) noexcept;
-    bool is_in_shadow_bvh(const glm::vec3& point, const glm::vec3& light_pos, const std::vector<Face>& faces) noexcept;
+    bool is_in_shadow_bvh(const glm::vec3& point, const glm::vec3& light_pos) const noexcept;
     static FloatType compute_lambertian_lighting(const glm::vec3& normal, const glm::vec3& to_light, FloatType distance, FloatType intensity) noexcept;
     static FloatType compute_specular_lighting(const glm::vec3& normal, const glm::vec3& to_light, const glm::vec3& to_camera, FloatType distance, FloatType intensity, FloatType shininess) noexcept;
     void process_rows(int y0, int y1) noexcept;

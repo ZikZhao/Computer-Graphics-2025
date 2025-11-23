@@ -329,19 +329,7 @@ void Model::cache_faces() noexcept {
         all_faces_.insert(all_faces_.end(), object.faces.begin(), object.faces.end());
     }
 }
-const std::vector<Face>& Model::collect_all_faces(const std::vector<Model>& models) noexcept {
-   static std::vector<Face> all_faces;
-    std::size_t total_faces = 0;
-    for (const auto& model : models) {
-        total_faces += model.all_faces_.size();
-    }
-    all_faces.clear();
-    all_faces.reserve(total_faces);
-    for (const auto& model : models) {
-        all_faces.insert(all_faces.end(), model.all_faces_.begin(), model.all_faces_.end());
-    }
-    return all_faces;
-}
+
 void Model::load_materials(std::string filename) {
     auto current_material = materials_.end();
     std::ifstream file(filename);
@@ -426,6 +414,8 @@ Texture Model::load_texture(std::string filename) {
     return Texture(width, height, std::move(texture_data));
 }
 
+World::World() : light_position_(0.0f, 0.0f, 0.0f), has_light_(false) {}
+
 void World::load_files(const std::vector<std::string>& filenames) {
     for (const auto& filename : filenames) {
         Model group;
@@ -434,17 +424,33 @@ void World::load_files(const std::vector<std::string>& filenames) {
     }
     
     // Extract light position from first model that has a light definition
+    glm::vec3 light_pos(0.0f, 0.0f, 0.0f);
+    bool found_light = false;
     for (const auto& model : models_) {
         if (model.has_light()) {
-            light_position_ = model.light_position();
-            has_light_ = true;
+            light_pos = model.light_position();
+            found_light = true;
             break;
         }
     }
     
     // Fallback: if no light found, use default position
-    if (!has_light_) {
-        light_position_ = glm::vec3(0.0f, 2.0f, 0.0f);
+    if (!found_light) {
+        light_pos = glm::vec3(0.0f, 2.0f, 0.0f);
+    }
+    
+    // Initialize const members via const_cast (safe since this is during construction phase)
+    const_cast<glm::vec3&>(light_position_) = light_pos;
+    const_cast<bool&>(has_light_) = found_light;
+    
+    // Cache all faces from all models (computed once)
+    std::size_t total_faces = 0;
+    for (const auto& model : models_) {
+        total_faces += model.all_faces().size();
+    }
+    all_faces_.reserve(total_faces);
+    for (const auto& model : models_) {
+        all_faces_.insert(all_faces_.end(), model.all_faces().begin(), model.all_faces().end());
     }
 }
 void World::handle_event(const SDL_Event& event) noexcept {
@@ -472,12 +478,9 @@ Renderer::Renderer(DrawingWindow& window, const World& world) noexcept
       world_(world),
       z_buffer_(window.width * window.height, 0.0f),
       hdr_buffer_(window.width * window.height, ColourHDR()),
+      bvh_tri_indices_(build_bvh(world.all_faces()).first),
+      bvh_nodes_(build_bvh(world.all_faces()).second),
       frame_barrier_(std::thread::hardware_concurrency() + 1) {
-    // Build initial BVH from world models
-    const std::vector<Face>& all_faces = Model::collect_all_faces(world.models());
-    build_bvh(all_faces);
-    bvh_face_count_ = all_faces.size();
-    
     // Start worker threads
     for (unsigned int i = 0; i < std::thread::hardware_concurrency(); ++i) {
         workers_.emplace_back([this](std::stop_token) { this->worker_thread(); });
@@ -676,24 +679,8 @@ void Renderer::rasterized_render() noexcept {
     }
 }
 void Renderer::raytraced_render() noexcept {
-    const Camera& camera = world_.camera();
-    const glm::vec3& light_pos = world_.light_position();
-    FloatType light_intensity = world_.light_intensity();
-    
-    // Use static buffer to collect all faces (avoids reallocation each frame)
-    const std::vector<Face>& all_faces = Model::collect_all_faces(world_.models());
-
-    // Rebuild BVH only if the number of faces has changed
-    if (bvh_nodes_.empty() || bvh_face_count_ != all_faces.size()) {
-        build_bvh(all_faces);
-        bvh_face_count_ = all_faces.size();
-    }
-
-    // Set up frame context for worker threads
-    current_faces_ = &all_faces;
-    current_camera_ = &camera;
-    current_light_pos_ = light_pos;
-    current_light_intensity_ = light_intensity;
+    // Set up frame context for worker threads (only camera changes per frame)
+    current_camera_ = &world_.camera();
     tile_counter_.store(0, std::memory_order_relaxed);
     
     // Signal workers to start processing and wait for completion
@@ -904,9 +891,9 @@ bool Renderer::intersect_aabb(const glm::vec3& ro, const glm::vec3& rd, const AA
     FloatType t_exit = std::min(std::min(tmaxv.x, tmaxv.y), tmaxv.z);
     return t_enter <= t_exit && t_exit >= 0.0f && t_enter <= tmax;
 }
-void Renderer::build_bvh(const std::vector<Face>& faces) noexcept {
-    bvh_tri_indices_.resize(faces.size());
-    std::iota(bvh_tri_indices_.begin(), bvh_tri_indices_.end(), 0);
+std::pair<std::vector<int>, std::vector<Renderer::BVHNode>> Renderer::build_bvh(const std::vector<Face>& faces) noexcept {
+    std::vector<int> tri_indices(faces.size());
+    std::iota(tri_indices.begin(), tri_indices.end(), 0);
     struct Cent { glm::vec3 c; Renderer::AABB b; };
     std::vector<Cent> data(faces.size());
     for (std::size_t i = 0; i < faces.size(); ++i) {
@@ -914,39 +901,42 @@ void Renderer::build_bvh(const std::vector<Face>& faces) noexcept {
         glm::vec3 c = (faces[i].vertices[0] + faces[i].vertices[1] + faces[i].vertices[2]) / 3.0f;
         data[i] = Cent{c, b};
     }
-    bvh_nodes_.clear();
+    std::vector<Renderer::BVHNode> nodes;
     std::function<int(int,int)> build = [&](int start, int end) -> int {
         Renderer::AABB box{glm::vec3(std::numeric_limits<float>::infinity()), glm::vec3(-std::numeric_limits<float>::infinity())};
         Renderer::AABB cbox{box.min, box.max};
         for (int i = start; i < end; ++i) {
-            box.min = glm::min(box.min, data[bvh_tri_indices_[i]].b.min);
-            box.max = glm::max(box.max, data[bvh_tri_indices_[i]].b.max);
-            cbox.min = glm::min(cbox.min, data[bvh_tri_indices_[i]].c);
-            cbox.max = glm::max(cbox.max, data[bvh_tri_indices_[i]].c);
+            box.min = glm::min(box.min, data[tri_indices[i]].b.min);
+            box.max = glm::max(box.max, data[tri_indices[i]].b.max);
+            cbox.min = glm::min(cbox.min, data[tri_indices[i]].c);
+            cbox.max = glm::max(cbox.max, data[tri_indices[i]].c);
         }
         int count = end - start;
-        int node_index = (int)bvh_nodes_.size();
-        bvh_nodes_.push_back(BVHNode{box, -1, -1, start, count});
+        int node_index = (int)nodes.size();
+        nodes.push_back(Renderer::BVHNode{box, -1, -1, start, count});
         if (count <= 8) return node_index;
         glm::vec3 extent = cbox.max - cbox.min;
         int axis = (extent.x > extent.y && extent.x > extent.z) ? 0 : (extent.y > extent.z ? 1 : 2);
         int mid = (start + end) / 2;
-        std::nth_element(bvh_tri_indices_.begin() + start, bvh_tri_indices_.begin() + mid, bvh_tri_indices_.begin() + end,
+        std::nth_element(tri_indices.begin() + start, tri_indices.begin() + mid, tri_indices.begin() + end,
             [&](int a, int b){ return data[a].c[axis] < data[b].c[axis]; });
         int left = build(start, mid);
         int right = build(mid, end);
-        bvh_nodes_[node_index].left = left;
-        bvh_nodes_[node_index].right = right;
-        bvh_nodes_[node_index].count = 0;
+        nodes[node_index].left = left;
+        nodes[node_index].right = right;
+        nodes[node_index].count = 0;
         return node_index;
     };
     build(0, (int)faces.size());
+    return {std::move(tri_indices), std::move(nodes)};
 }
-RayTriangleIntersection Renderer::find_closest_intersection_bvh(const glm::vec3& ray_origin, const glm::vec3& ray_dir, const std::vector<Face>& faces) noexcept {
+RayTriangleIntersection Renderer::find_closest_intersection_bvh(const glm::vec3& ray_origin, const glm::vec3& ray_dir) const noexcept {
     RayTriangleIntersection closest;
     closest.distanceFromCamera = std::numeric_limits<FloatType>::infinity();
     closest.triangleIndex = static_cast<std::size_t>(-1);
     if (bvh_nodes_.empty()) return closest;
+    
+    const std::vector<Face>& faces = world_.all_faces();
     std::vector<int> stack;
     stack.reserve(64);
     stack.push_back(0);
@@ -1017,11 +1007,13 @@ bool Renderer::is_in_shadow(const glm::vec3& point, const glm::vec3& light_pos, 
     
     return false;  // Not in shadow
 }
-bool Renderer::is_in_shadow_bvh(const glm::vec3& point, const glm::vec3& light_pos, const std::vector<Face>& faces) noexcept {
+bool Renderer::is_in_shadow_bvh(const glm::vec3& point, const glm::vec3& light_pos) const noexcept {
     glm::vec3 to_light = light_pos - point;
     FloatType light_distance = glm::length(to_light);
     glm::vec3 light_dir = to_light / light_distance;
     if (bvh_nodes_.empty()) return false;
+    
+    const std::vector<Face>& faces = world_.all_faces();
     std::vector<int> stack;
     stack.reserve(64);
     stack.push_back(0);
@@ -1050,17 +1042,20 @@ bool Renderer::is_in_shadow_bvh(const glm::vec3& point, const glm::vec3& light_p
 }
 void Renderer::process_rows(int y0, int y1) noexcept {
     const Camera& camera = *current_camera_;
-    const std::vector<Face>& all_faces = *current_faces_;
+    const std::vector<Face>& all_faces = world_.all_faces();
+    const glm::vec3& light_pos = world_.light_position();
+    const FloatType light_intensity = world_.light_intensity();
+    
     for (int y = y0; y < y1; ++y) {
         for (int x = 0; x < static_cast<int>(window_.width); x++) {
             auto [ray_origin, ray_dir] = camera.generate_ray(x, y, window_.width, window_.height, aspect_ratio_);
-            RayTriangleIntersection intersection = find_closest_intersection_bvh(ray_origin, ray_dir, all_faces);
+            RayTriangleIntersection intersection = find_closest_intersection_bvh(ray_origin, ray_dir);
             if (intersection.triangleIndex != static_cast<std::size_t>(-1)) {
                 const Face& face = all_faces[intersection.triangleIndex];
-                glm::vec3 to_light_hit = current_light_pos_ - intersection.intersectionPoint;
+                glm::vec3 to_light_hit = light_pos - intersection.intersectionPoint;
                 FloatType dist_light_hit = glm::length(to_light_hit);
                 glm::vec3 to_camera_hit = camera.position_ - intersection.intersectionPoint;
-                bool in_shadow = is_in_shadow_bvh(intersection.intersectionPoint, current_light_pos_, all_faces);
+                bool in_shadow = is_in_shadow_bvh(intersection.intersectionPoint, light_pos);
                 ColourHDR hdr_colour = ColourHDR::from_srgb(intersection.colour, gamma_);
                 FloatType ambient = 0.025f;
                 FloatType lambertian = 0.0f;
@@ -1071,21 +1066,21 @@ void Renderer::process_rows(int y0, int y1) noexcept {
                         FloatType lam_v[3] = {0.0f, 0.0f, 0.0f};
                         FloatType spec_v[3] = {0.0f, 0.0f, 0.0f};
                         for (int k = 0; k < 3; ++k) {
-                            glm::vec3 to_light_v = current_light_pos_ - face.vertices[k];
+                            glm::vec3 to_light_v = light_pos - face.vertices[k];
                             FloatType dist_v = glm::length(to_light_v);
                             glm::vec3 to_camera_v = camera.position_ - face.vertices[k];
-                            lam_v[k] = compute_lambertian_lighting(face.vertex_normals[k], to_light_v, dist_v, current_light_intensity_);
+                            lam_v[k] = compute_lambertian_lighting(face.vertex_normals[k], to_light_v, dist_v, light_intensity);
                             if (lam_v[k] > 0.0f) {
-                                spec_v[k] = compute_specular_lighting(face.vertex_normals[k], to_light_v, to_camera_v, dist_v, current_light_intensity_, face.material.shininess);
+                                spec_v[k] = compute_specular_lighting(face.vertex_normals[k], to_light_v, to_camera_v, dist_v, light_intensity, face.material.shininess);
                             }
                         }
                         lambertian = w * lam_v[0] + intersection.u * lam_v[1] + intersection.v * lam_v[2];
                         specular = w * spec_v[0] + intersection.u * spec_v[1] + intersection.v * spec_v[2];
                     } else {
                         glm::vec3 n_interp = glm::normalize(w * face.vertex_normals[0] + intersection.u * face.vertex_normals[1] + intersection.v * face.vertex_normals[2]);
-                        lambertian = compute_lambertian_lighting(n_interp, to_light_hit, dist_light_hit, current_light_intensity_);
+                        lambertian = compute_lambertian_lighting(n_interp, to_light_hit, dist_light_hit, light_intensity);
                         if (lambertian > 0.0f) {
-                            specular = compute_specular_lighting(n_interp, to_light_hit, to_camera_hit, dist_light_hit, current_light_intensity_, face.material.shininess);
+                            specular = compute_specular_lighting(n_interp, to_light_hit, to_camera_hit, dist_light_hit, light_intensity, face.material.shininess);
                         }
                     }
                 }
