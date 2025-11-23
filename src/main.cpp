@@ -14,7 +14,7 @@ constexpr std::size_t HEIGHT = 540;
 int main(int argc, char *argv[]) {
     assert(argc >= 2 && "Please provide a .obj file as a command line argument.");
     
-    // Load world first (fail fast if files are missing/invalid)
+    // Load world first
     World world;
     world.load_files(std::vector<std::string>(argv + 1, argv + argc));
     

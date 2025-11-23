@@ -98,6 +98,7 @@ struct Material {
     Colour colour;
     std::shared_ptr<Texture> texture;
     FloatType shininess = 64.0f;  // Specular shininess (higher = sharper highlights)
+    bool is_mirror = false;  // True for perfect mirror reflection
     enum class Shading { Gouraud, Phong } shading = Shading::Phong;
 };
 
@@ -264,6 +265,7 @@ private:
     // Ray tracing helpers
     static RayTriangleIntersection find_closest_intersection(const glm::vec3& ray_origin, const glm::vec3& ray_dir, const std::vector<Face>& faces) noexcept;
     RayTriangleIntersection find_closest_intersection_bvh(const glm::vec3& ray_origin, const glm::vec3& ray_dir) const noexcept;
+    ColourHDR trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray_dir, int depth) const noexcept;
     static std::pair<std::vector<int>, std::vector<Renderer::BVHNode>> build_bvh(const std::vector<Face>& faces) noexcept;
     static bool intersect_aabb(const glm::vec3& ro, const glm::vec3& rd, const AABB& box, FloatType tmax) noexcept;
     static bool is_in_shadow(const glm::vec3& point, const glm::vec3& light_pos, const std::vector<Face>& faces) noexcept;

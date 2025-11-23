@@ -361,6 +361,12 @@ void Model::load_materials(std::string filename) {
             FloatType ns;
             iss >> ns;
             current_material->second.shininess = ns;
+        } else if (type == "m") {
+            // Mirror material flag
+            assert(current_material != materials_.end());
+            std::string flag;
+            iss >> flag;
+            current_material->second.is_mirror = (flag == "True" || flag == "true" || flag == "1");
         } else if (type == "map_Kd") {
             assert(current_material != materials_.end());
             std::string texture_filename;
@@ -478,9 +484,14 @@ Renderer::Renderer(DrawingWindow& window, const World& world) noexcept
       world_(world),
       z_buffer_(window.width * window.height, 0.0f),
       hdr_buffer_(window.width * window.height, ColourHDR()),
-      bvh_tri_indices_(build_bvh(world.all_faces()).first),
-      bvh_nodes_(build_bvh(world.all_faces()).second),
+      bvh_tri_indices_([]() { return std::vector<int>(); }()),
+      bvh_nodes_([]() { return std::vector<Renderer::BVHNode>(); }()),
       frame_barrier_(std::thread::hardware_concurrency() + 1) {
+    // Build BVH once and store both parts
+    auto [indices, nodes] = build_bvh(world.all_faces());
+    const_cast<std::vector<int>&>(bvh_tri_indices_) = std::move(indices);
+    const_cast<std::vector<Renderer::BVHNode>&>(bvh_nodes_) = std::move(nodes);
+    
     // Start worker threads
     for (unsigned int i = 0; i < std::thread::hardware_concurrency(); ++i) {
         workers_.emplace_back([this](std::stop_token) { this->worker_thread(); });
@@ -931,7 +942,9 @@ std::pair<std::vector<int>, std::vector<Renderer::BVHNode>> Renderer::build_bvh(
         nodes.push_back(Renderer::BVHNode{box, -1, -1, start, count});
         
         // Create leaf if too few primitives
-        if (count <= leaf_threshold) return node_index;
+        if (count <= leaf_threshold) {
+            return node_index;
+        }
         
         // Find best split using SAH
         FloatType best_cost = std::numeric_limits<FloatType>::infinity();
@@ -969,16 +982,17 @@ std::pair<std::vector<int>, std::vector<Renderer::BVHNode>> Renderer::build_bvh(
             }
             
             // Compute costs for splitting after each bucket
-            std::array<FloatType, sah_buckets - 1> costs;
             for (int split = 0; split < sah_buckets - 1; ++split) {
                 // Left partition [0, split]
                 Renderer::AABB left_box{glm::vec3(std::numeric_limits<float>::infinity()), 
                                        glm::vec3(-std::numeric_limits<float>::infinity())};
                 int left_count = 0;
                 for (int i = 0; i <= split; ++i) {
-                    left_box.min = glm::min(left_box.min, buckets[i].bounds.min);
-                    left_box.max = glm::max(left_box.max, buckets[i].bounds.max);
-                    left_count += buckets[i].count;
+                    if (buckets[i].count > 0) {
+                        left_box.min = glm::min(left_box.min, buckets[i].bounds.min);
+                        left_box.max = glm::max(left_box.max, buckets[i].bounds.max);
+                        left_count += buckets[i].count;
+                    }
                 }
                 
                 // Right partition (split, sah_buckets - 1]
@@ -986,20 +1000,20 @@ std::pair<std::vector<int>, std::vector<Renderer::BVHNode>> Renderer::build_bvh(
                                         glm::vec3(-std::numeric_limits<float>::infinity())};
                 int right_count = 0;
                 for (int i = split + 1; i < sah_buckets; ++i) {
-                    right_box.min = glm::min(right_box.min, buckets[i].bounds.min);
-                    right_box.max = glm::max(right_box.max, buckets[i].bounds.max);
-                    right_count += buckets[i].count;
+                    if (buckets[i].count > 0) {
+                        right_box.min = glm::min(right_box.min, buckets[i].bounds.min);
+                        right_box.max = glm::max(right_box.max, buckets[i].bounds.max);
+                        right_count += buckets[i].count;
+                    }
                 }
+                
+                // Skip invalid splits
+                if (left_count == 0 || right_count == 0) continue;
                 
                 // SAH cost = traversal_cost + (left_area/parent_area * left_count + right_area/parent_area * right_count) * intersection_cost
                 FloatType cost = traversal_cost;
-                if (left_count > 0) {
-                    cost += (surface_area(left_box) / parent_area) * left_count * intersection_cost;
-                }
-                if (right_count > 0) {
-                    cost += (surface_area(right_box) / parent_area) * right_count * intersection_cost;
-                }
-                costs[split] = cost;
+                cost += (surface_area(left_box) / parent_area) * left_count * intersection_cost;
+                cost += (surface_area(right_box) / parent_area) * right_count * intersection_cost;
                 
                 if (cost < best_cost) {
                     best_cost = cost;
@@ -1042,7 +1056,9 @@ std::pair<std::vector<int>, std::vector<Renderer::BVHNode>> Renderer::build_bvh(
         nodes[node_index].count = 0;
         return node_index;
     };
+    
     build(0, (int)faces.size());
+    
     return {std::move(tri_indices), std::move(nodes)};
 }
 RayTriangleIntersection Renderer::find_closest_intersection_bvh(const glm::vec3& ray_origin, const glm::vec3& ray_dir) const noexcept {
@@ -1164,48 +1180,85 @@ void Renderer::process_rows(int y0, int y1) noexcept {
     for (int y = y0; y < y1; ++y) {
         for (int x = 0; x < static_cast<int>(window_.width); x++) {
             auto [ray_origin, ray_dir] = camera.generate_ray(x, y, window_.width, window_.height, aspect_ratio_);
-            RayTriangleIntersection intersection = find_closest_intersection_bvh(ray_origin, ray_dir);
-            if (intersection.triangleIndex != static_cast<std::size_t>(-1)) {
-                const Face& face = all_faces[intersection.triangleIndex];
-                glm::vec3 to_light_hit = light_pos - intersection.intersectionPoint;
-                FloatType dist_light_hit = glm::length(to_light_hit);
-                glm::vec3 to_camera_hit = camera.position_ - intersection.intersectionPoint;
-                bool in_shadow = is_in_shadow_bvh(intersection.intersectionPoint, light_pos);
-                ColourHDR hdr_colour = ColourHDR::from_srgb(intersection.colour, gamma_);
-                FloatType ambient = 0.025f;
-                FloatType lambertian = 0.0f;
-                FloatType specular = 0.0f;
-                if (!in_shadow) {
-                    FloatType w = 1.0f - intersection.u - intersection.v;
-                    if (face.material.shading == Material::Shading::Gouraud) {
-                        FloatType lam_v[3] = {0.0f, 0.0f, 0.0f};
-                        FloatType spec_v[3] = {0.0f, 0.0f, 0.0f};
-                        for (int k = 0; k < 3; ++k) {
-                            glm::vec3 to_light_v = light_pos - face.vertices[k];
-                            FloatType dist_v = glm::length(to_light_v);
-                            glm::vec3 to_camera_v = camera.position_ - face.vertices[k];
-                            lam_v[k] = compute_lambertian_lighting(face.vertex_normals[k], to_light_v, dist_v, light_intensity);
-                            if (lam_v[k] > 0.0f) {
-                                spec_v[k] = compute_specular_lighting(face.vertex_normals[k], to_light_v, to_camera_v, dist_v, light_intensity, face.material.shininess);
-                            }
-                        }
-                        lambertian = w * lam_v[0] + intersection.u * lam_v[1] + intersection.v * lam_v[2];
-                        specular = w * spec_v[0] + intersection.u * spec_v[1] + intersection.v * spec_v[2];
-                    } else {
-                        glm::vec3 n_interp = glm::normalize(w * face.vertex_normals[0] + intersection.u * face.vertex_normals[1] + intersection.v * face.vertex_normals[2]);
-                        lambertian = compute_lambertian_lighting(n_interp, to_light_hit, dist_light_hit, light_intensity);
-                        if (lambertian > 0.0f) {
-                            specular = compute_specular_lighting(n_interp, to_light_hit, to_camera_hit, dist_light_hit, light_intensity, face.material.shininess);
-                        }
-                    }
-                }
-                FloatType diffuse_component = ambient + (1.0f - ambient) * lambertian;
-                ColourHDR final_hdr = hdr_colour * diffuse_component + ColourHDR(specular, specular, specular);
-                Colour final_colour = tonemap_and_gamma_correct(final_hdr, gamma_);
-                window_.setPixelColour(x, y, final_colour);
-            }
+            ColourHDR final_hdr = trace_ray(ray_origin, ray_dir, 0);
+            Colour final_colour = tonemap_and_gamma_correct(final_hdr, gamma_);
+            window_.setPixelColour(x, y, final_colour);
         }
     }
+}
+
+ColourHDR Renderer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray_dir, int depth) const noexcept {
+    constexpr int MAX_DEPTH = 5;  // Maximum recursion depth for reflections
+    
+    if (depth >= MAX_DEPTH) {
+        return ColourHDR(0.0f, 0.0f, 0.0f);  // Return black after max depth
+    }
+    
+    RayTriangleIntersection intersection = find_closest_intersection_bvh(ray_origin, ray_dir);
+    
+    if (intersection.triangleIndex != static_cast<std::size_t>(-1)) {
+        const std::vector<Face>& all_faces = world_.all_faces();
+        const glm::vec3& light_pos = world_.light_position();
+        const FloatType light_intensity = world_.light_intensity();
+        const Camera& camera = *current_camera_;
+        
+        const Face& face = all_faces[intersection.triangleIndex];
+        
+        // Handle mirror materials with perfect reflection
+        if (face.material.is_mirror) {
+            // Calculate reflection direction: r = d - 2(d·n)n
+            glm::vec3 reflected_dir = glm::reflect(ray_dir, intersection.normal);
+            
+            // Offset ray origin slightly along normal to avoid self-intersection
+            constexpr FloatType epsilon = 0.001f;
+            glm::vec3 offset_origin = intersection.intersectionPoint + intersection.normal * epsilon;
+            
+            // Trace reflected ray recursively
+            return trace_ray(offset_origin, reflected_dir, depth + 1);
+        }
+        
+        // Non-mirror materials: use standard lighting
+        RayTriangleIntersection old_intersection = intersection;
+        if (old_intersection.triangleIndex != static_cast<std::size_t>(-1)) {
+            glm::vec3 to_light_hit = light_pos - old_intersection.intersectionPoint;
+            FloatType dist_light_hit = glm::length(to_light_hit);
+            glm::vec3 to_camera_hit = camera.position_ - old_intersection.intersectionPoint;
+            bool in_shadow = is_in_shadow_bvh(old_intersection.intersectionPoint, light_pos);
+            ColourHDR hdr_colour = ColourHDR::from_srgb(old_intersection.colour, gamma_);
+            FloatType ambient = 0.025f;
+            FloatType lambertian = 0.0f;
+            FloatType specular = 0.0f;
+            if (!in_shadow) {
+                FloatType w = 1.0f - old_intersection.u - old_intersection.v;
+                if (face.material.shading == Material::Shading::Gouraud) {
+                    FloatType lam_v[3] = {0.0f, 0.0f, 0.0f};
+                    FloatType spec_v[3] = {0.0f, 0.0f, 0.0f};
+                    for (int k = 0; k < 3; ++k) {
+                        glm::vec3 to_light_v = light_pos - face.vertices[k];
+                        FloatType dist_v = glm::length(to_light_v);
+                        glm::vec3 to_camera_v = camera.position_ - face.vertices[k];
+                        lam_v[k] = compute_lambertian_lighting(face.vertex_normals[k], to_light_v, dist_v, light_intensity);
+                        if (lam_v[k] > 0.0f) {
+                            spec_v[k] = compute_specular_lighting(face.vertex_normals[k], to_light_v, to_camera_v, dist_v, light_intensity, face.material.shininess);
+                        }
+                    }
+                    lambertian = w * lam_v[0] + old_intersection.u * lam_v[1] + old_intersection.v * lam_v[2];
+                    specular = w * spec_v[0] + old_intersection.u * spec_v[1] + old_intersection.v * spec_v[2];
+                } else {
+                    glm::vec3 n_interp = glm::normalize(w * face.vertex_normals[0] + old_intersection.u * face.vertex_normals[1] + old_intersection.v * face.vertex_normals[2]);
+                    lambertian = compute_lambertian_lighting(n_interp, to_light_hit, dist_light_hit, light_intensity);
+                    if (lambertian > 0.0f) {
+                        specular = compute_specular_lighting(n_interp, to_light_hit, to_camera_hit, dist_light_hit, light_intensity, face.material.shininess);
+                    }
+                }
+            }
+            FloatType diffuse_component = ambient + (1.0f - ambient) * lambertian;
+            return hdr_colour * diffuse_component + ColourHDR(specular, specular, specular);
+        }
+    }
+    
+    // No intersection - return background color (black)
+    return ColourHDR(0.0f, 0.0f, 0.0f);
 }
 FloatType Renderer::compute_lambertian_lighting(const glm::vec3& normal, const glm::vec3& to_light, FloatType distance, FloatType intensity) noexcept {
     // Lambert's cosine law: I = I₀ * cos(θ) / (4πr²)
