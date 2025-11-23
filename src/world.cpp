@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <functional>
 #include <limits>
+#include <cstdlib>
+#include <random>
 
 glm::mat3 Camera::orientation() const noexcept {
     FloatType cos_pitch = std::cos(pitch_);
@@ -1171,6 +1173,70 @@ bool Renderer::is_in_shadow_bvh(const glm::vec3& point, const glm::vec3& light_p
     }
     return false;
 }
+glm::vec3 Renderer::sample_disk_stratified(int i, int j, int n, FloatType radius, const glm::vec3& center, const glm::vec3& normal) noexcept {
+    // Stratified sampling: divide the disk into n×n grid cells
+    // i, j are the grid cell indices (0 to n-1)
+    // Add random jitter within each cell for better distribution
+    
+    // Map grid cell to [0,1]×[0,1] square with random jitter
+    FloatType u = (i + static_cast<FloatType>(rand()) / RAND_MAX) / n;
+    FloatType v = (j + static_cast<FloatType>(rand()) / RAND_MAX) / n;
+    
+    // Map square to disk using concentric mapping (preserves stratification better than polar)
+    FloatType r, theta;
+    FloatType a = 2.0f * u - 1.0f;
+    FloatType b = 2.0f * v - 1.0f;
+    
+    if (a * a > b * b) {
+        r = a;
+        theta = (std::numbers::pi / 4.0f) * (b / a);
+    } else if (b != 0.0f) {
+        r = b;
+        theta = (std::numbers::pi / 2.0f) - (std::numbers::pi / 4.0f) * (a / b);
+    } else {
+        r = 0.0f;
+        theta = 0.0f;
+    }
+    
+    // Scale by radius
+    FloatType x = r * std::cos(theta) * radius;
+    FloatType y = r * std::sin(theta) * radius;
+    
+    // Build orthonormal basis around normal (normal points from shading point to light)
+    glm::vec3 w = glm::normalize(normal);
+    glm::vec3 temp = (std::abs(w.x) > 0.1f) ? glm::vec3(0.0f, 1.0f, 0.0f) : glm::vec3(1.0f, 0.0f, 0.0f);
+    glm::vec3 u_axis = glm::normalize(glm::cross(temp, w));
+    glm::vec3 v_axis = glm::cross(w, u_axis);
+    
+    // Transform disk sample to world space
+    return center + u_axis * x + v_axis * y;
+}
+
+FloatType Renderer::compute_soft_shadow(const glm::vec3& point, const glm::vec3& light_center, FloatType light_radius, int samples_per_dim) const noexcept {
+    // samples_per_dim is the number of samples per dimension (total samples = samples_per_dim²)
+    glm::vec3 to_light = light_center - point;
+    FloatType dist_to_light = glm::length(to_light);
+    glm::vec3 light_dir = to_light / dist_to_light;
+    
+    int visible_samples = 0;
+    int total_samples = samples_per_dim * samples_per_dim;
+    
+    // Stratified sampling over the disk perpendicular to the light direction
+    for (int i = 0; i < samples_per_dim; ++i) {
+        for (int j = 0; j < samples_per_dim; ++j) {
+            // Get stratified sample point on the light disk
+            glm::vec3 light_sample = sample_disk_stratified(i, j, samples_per_dim, light_radius, light_center, light_dir);
+            
+            // Check if this sample point is visible from the shading point
+            if (!is_in_shadow_bvh(point, light_sample)) {
+                visible_samples++;
+            }
+        }
+    }
+    
+    // Return the fraction of visible samples (0 = fully shadowed, 1 = fully lit)
+    return static_cast<FloatType>(visible_samples) / static_cast<FloatType>(total_samples);
+}
 void Renderer::process_rows(int y0, int y1) noexcept {
     const Camera& camera = *current_camera_;
     const std::vector<Face>& all_faces = world_.all_faces();
@@ -1223,37 +1289,45 @@ ColourHDR Renderer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray_
             glm::vec3 to_light_hit = light_pos - old_intersection.intersectionPoint;
             FloatType dist_light_hit = glm::length(to_light_hit);
             glm::vec3 to_camera_hit = camera.position_ - old_intersection.intersectionPoint;
-            bool in_shadow = is_in_shadow_bvh(old_intersection.intersectionPoint, light_pos);
+            
+            // Compute soft shadow factor using stratified sampling (6x6 = 36 samples)
+            constexpr int shadow_samples_per_dim = 6;
+            FloatType light_radius = world_.light_radius();
+            FloatType shadow_factor = compute_soft_shadow(old_intersection.intersectionPoint, light_pos, light_radius, shadow_samples_per_dim);
+            
             ColourHDR hdr_colour = ColourHDR::from_srgb(old_intersection.colour, gamma_);
             FloatType ambient = 0.025f;
             FloatType lambertian = 0.0f;
             FloatType specular = 0.0f;
-            if (!in_shadow) {
-                FloatType w = 1.0f - old_intersection.u - old_intersection.v;
-                if (face.material.shading == Material::Shading::Gouraud) {
-                    FloatType lam_v[3] = {0.0f, 0.0f, 0.0f};
-                    FloatType spec_v[3] = {0.0f, 0.0f, 0.0f};
-                    for (int k = 0; k < 3; ++k) {
-                        glm::vec3 to_light_v = light_pos - face.vertices[k];
-                        FloatType dist_v = glm::length(to_light_v);
-                        glm::vec3 to_camera_v = camera.position_ - face.vertices[k];
-                        lam_v[k] = compute_lambertian_lighting(face.vertex_normals[k], to_light_v, dist_v, light_intensity);
-                        if (lam_v[k] > 0.0f) {
-                            spec_v[k] = compute_specular_lighting(face.vertex_normals[k], to_light_v, to_camera_v, dist_v, light_intensity, face.material.shininess);
-                        }
-                    }
-                    lambertian = w * lam_v[0] + old_intersection.u * lam_v[1] + old_intersection.v * lam_v[2];
-                    specular = w * spec_v[0] + old_intersection.u * spec_v[1] + old_intersection.v * spec_v[2];
-                } else {
-                    glm::vec3 n_interp = glm::normalize(w * face.vertex_normals[0] + old_intersection.u * face.vertex_normals[1] + old_intersection.v * face.vertex_normals[2]);
-                    lambertian = compute_lambertian_lighting(n_interp, to_light_hit, dist_light_hit, light_intensity);
-                    if (lambertian > 0.0f) {
-                        specular = compute_specular_lighting(n_interp, to_light_hit, to_camera_hit, dist_light_hit, light_intensity, face.material.shininess);
+            
+            // Apply shadow_factor to diffuse and specular (0 = fully shadowed, 1 = fully lit)
+            FloatType w = 1.0f - old_intersection.u - old_intersection.v;
+            if (face.material.shading == Material::Shading::Gouraud) {
+                FloatType lam_v[3] = {0.0f, 0.0f, 0.0f};
+                FloatType spec_v[3] = {0.0f, 0.0f, 0.0f};
+                for (int k = 0; k < 3; ++k) {
+                    glm::vec3 to_light_v = light_pos - face.vertices[k];
+                    FloatType dist_v = glm::length(to_light_v);
+                    glm::vec3 to_camera_v = camera.position_ - face.vertices[k];
+                    lam_v[k] = compute_lambertian_lighting(face.vertex_normals[k], to_light_v, dist_v, light_intensity);
+                    if (lam_v[k] > 0.0f) {
+                        spec_v[k] = compute_specular_lighting(face.vertex_normals[k], to_light_v, to_camera_v, dist_v, light_intensity, face.material.shininess);
                     }
                 }
+                lambertian = w * lam_v[0] + old_intersection.u * lam_v[1] + old_intersection.v * lam_v[2];
+                specular = w * spec_v[0] + old_intersection.u * spec_v[1] + old_intersection.v * spec_v[2];
+            } else {
+                glm::vec3 n_interp = glm::normalize(w * face.vertex_normals[0] + old_intersection.u * face.vertex_normals[1] + old_intersection.v * face.vertex_normals[2]);
+                lambertian = compute_lambertian_lighting(n_interp, to_light_hit, dist_light_hit, light_intensity);
+                if (lambertian > 0.0f) {
+                    specular = compute_specular_lighting(n_interp, to_light_hit, to_camera_hit, dist_light_hit, light_intensity, face.material.shininess);
+                }
             }
-            FloatType diffuse_component = ambient + (1.0f - ambient) * lambertian;
-            return hdr_colour * diffuse_component + ColourHDR(specular, specular, specular);
+            
+            // Apply soft shadow to diffuse and specular components
+            FloatType diffuse_component = ambient + (1.0f - ambient) * lambertian * shadow_factor;
+            FloatType specular_component = specular * shadow_factor;
+            return hdr_colour * diffuse_component + ColourHDR(specular_component, specular_component, specular_component);
         }
     }
     
