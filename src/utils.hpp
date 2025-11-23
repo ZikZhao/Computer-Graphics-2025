@@ -27,21 +27,30 @@ constexpr FloatType ComputeInvZndc(std::array<FloatType, 3> bary, std::array<Flo
 template<typename T, std::size_t N>
 class InplaceVector {
 private:
-    T data_[N];
+    alignas(T) std::byte data_[N * sizeof(T)];
     std::size_t size_ = 0;
 public:
     constexpr InplaceVector() noexcept = default;
-    constexpr InplaceVector(std::initializer_list<T> init) noexcept : size_(init.size()) {
-        assert(size_ <= N);
-        std::copy(init.begin(), init.end(), std::begin(data_));
+    constexpr InplaceVector(auto&&... args) noexcept : InplaceVector() {
+        (emplace_back(std::forward<decltype(args)>(args)), ...);
     }
     constexpr void push_back(const T& value) noexcept {
         assert(size_ < N);
-        data_[size_++] = value;
+        new (&data_[size_++]) T(value);
     }
-    constexpr std::size_t size() const noexcept { return size_; }
-    constexpr T& operator[](std::size_t index) noexcept { return data_[index]; }
-    constexpr const T& operator[](std::size_t index) const noexcept { return data_[index]; }
+    constexpr void emplace_back(T&& value) noexcept {
+        assert(size_ < N);
+        new (&data_[size_++]) T(std::move(value));
+    }
+    constexpr std::size_t size() const noexcept {
+        return size_;
+    }
+    constexpr T& operator[](std::size_t index) noexcept {
+        return *reinterpret_cast<T*>(&data_[index]);
+    }
+    constexpr const T& operator[](std::size_t index) const noexcept {
+        return *reinterpret_cast<const T*>(&data_[index]);
+    }
 };
 
 // ============================================================================
