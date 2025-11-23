@@ -8,8 +8,8 @@
 #include "DrawingWindow.h"
 #include "world.hpp"
 
-#define WIDTH 1920
-#define HEIGHT 1080
+constexpr std::size_t WIDTH = 960;
+constexpr std::size_t HEIGHT = 540;
 
 int main(int argc, char *argv[]) {
     assert(argc >= 2 && "Please provide a .obj file as a command line argument.");

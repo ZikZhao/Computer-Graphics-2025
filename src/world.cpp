@@ -902,7 +902,21 @@ std::pair<std::vector<int>, std::vector<Renderer::BVHNode>> Renderer::build_bvh(
         data[i] = Cent{c, b};
     }
     std::vector<Renderer::BVHNode> nodes;
+    
+    // Helper function to compute surface area of AABB
+    auto surface_area = [](const Renderer::AABB& box) -> FloatType {
+        glm::vec3 extent = box.max - box.min;
+        return 2.0f * (extent.x * extent.y + extent.y * extent.z + extent.z * extent.x);
+    };
+    
+    // SAH constants
+    constexpr FloatType traversal_cost = 1.0f;
+    constexpr FloatType intersection_cost = 1.0f;
+    constexpr int sah_buckets = 12;
+    constexpr int leaf_threshold = 4;
+    
     std::function<int(int,int)> build = [&](int start, int end) -> int {
+        // Compute bounding box for all primitives
         Renderer::AABB box{glm::vec3(std::numeric_limits<float>::infinity()), glm::vec3(-std::numeric_limits<float>::infinity())};
         Renderer::AABB cbox{box.min, box.max};
         for (int i = start; i < end; ++i) {
@@ -911,15 +925,116 @@ std::pair<std::vector<int>, std::vector<Renderer::BVHNode>> Renderer::build_bvh(
             cbox.min = glm::min(cbox.min, data[tri_indices[i]].c);
             cbox.max = glm::max(cbox.max, data[tri_indices[i]].c);
         }
+        
         int count = end - start;
         int node_index = (int)nodes.size();
         nodes.push_back(Renderer::BVHNode{box, -1, -1, start, count});
-        if (count <= 8) return node_index;
+        
+        // Create leaf if too few primitives
+        if (count <= leaf_threshold) return node_index;
+        
+        // Find best split using SAH
+        FloatType best_cost = std::numeric_limits<FloatType>::infinity();
+        int best_axis = -1;
+        int best_split = -1;
+        
         glm::vec3 extent = cbox.max - cbox.min;
-        int axis = (extent.x > extent.y && extent.x > extent.z) ? 0 : (extent.y > extent.z ? 1 : 2);
-        int mid = (start + end) / 2;
-        std::nth_element(tri_indices.begin() + start, tri_indices.begin() + mid, tri_indices.begin() + end,
-            [&](int a, int b){ return data[a].c[axis] < data[b].c[axis]; });
+        FloatType parent_area = surface_area(box);
+        
+        // Try each axis
+        for (int axis = 0; axis < 3; ++axis) {
+            // Skip degenerate axes
+            if (extent[axis] < 1e-6f) continue;
+            
+            // Initialize buckets
+            struct Bucket {
+                int count = 0;
+                Renderer::AABB bounds{glm::vec3(std::numeric_limits<float>::infinity()), 
+                                      glm::vec3(-std::numeric_limits<float>::infinity())};
+            };
+            std::array<Bucket, sah_buckets> buckets;
+            
+            // Assign primitives to buckets
+            for (int i = start; i < end; ++i) {
+                FloatType centroid = data[tri_indices[i]].c[axis];
+                int bucket_idx = static_cast<int>(sah_buckets * 
+                    ((centroid - cbox.min[axis]) / extent[axis]));
+                bucket_idx = Clamp(bucket_idx, 0, sah_buckets - 1);
+                
+                buckets[bucket_idx].count++;
+                buckets[bucket_idx].bounds.min = glm::min(buckets[bucket_idx].bounds.min, 
+                                                          data[tri_indices[i]].b.min);
+                buckets[bucket_idx].bounds.max = glm::max(buckets[bucket_idx].bounds.max, 
+                                                          data[tri_indices[i]].b.max);
+            }
+            
+            // Compute costs for splitting after each bucket
+            std::array<FloatType, sah_buckets - 1> costs;
+            for (int split = 0; split < sah_buckets - 1; ++split) {
+                // Left partition [0, split]
+                Renderer::AABB left_box{glm::vec3(std::numeric_limits<float>::infinity()), 
+                                       glm::vec3(-std::numeric_limits<float>::infinity())};
+                int left_count = 0;
+                for (int i = 0; i <= split; ++i) {
+                    left_box.min = glm::min(left_box.min, buckets[i].bounds.min);
+                    left_box.max = glm::max(left_box.max, buckets[i].bounds.max);
+                    left_count += buckets[i].count;
+                }
+                
+                // Right partition (split, sah_buckets - 1]
+                Renderer::AABB right_box{glm::vec3(std::numeric_limits<float>::infinity()), 
+                                        glm::vec3(-std::numeric_limits<float>::infinity())};
+                int right_count = 0;
+                for (int i = split + 1; i < sah_buckets; ++i) {
+                    right_box.min = glm::min(right_box.min, buckets[i].bounds.min);
+                    right_box.max = glm::max(right_box.max, buckets[i].bounds.max);
+                    right_count += buckets[i].count;
+                }
+                
+                // SAH cost = traversal_cost + (left_area/parent_area * left_count + right_area/parent_area * right_count) * intersection_cost
+                FloatType cost = traversal_cost;
+                if (left_count > 0) {
+                    cost += (surface_area(left_box) / parent_area) * left_count * intersection_cost;
+                }
+                if (right_count > 0) {
+                    cost += (surface_area(right_box) / parent_area) * right_count * intersection_cost;
+                }
+                costs[split] = cost;
+                
+                if (cost < best_cost) {
+                    best_cost = cost;
+                    best_axis = axis;
+                    best_split = split;
+                }
+            }
+        }
+        
+        // Leaf cost (no traversal, just intersection tests)
+        FloatType leaf_cost = count * intersection_cost;
+        
+        // Create leaf if SAH suggests it's better
+        if (best_cost >= leaf_cost || best_axis == -1) {
+            return node_index;
+        }
+        
+        // Partition primitives based on best split
+        auto mid_iter = std::partition(tri_indices.begin() + start, tri_indices.begin() + end,
+            [&](int idx) {
+                FloatType centroid = data[idx].c[best_axis];
+                int bucket_idx = static_cast<int>(sah_buckets * 
+                    ((centroid - cbox.min[best_axis]) / extent[best_axis]));
+                bucket_idx = Clamp(bucket_idx, 0, sah_buckets - 1);
+                return bucket_idx <= best_split;
+            });
+        
+        int mid = static_cast<int>(mid_iter - tri_indices.begin());
+        
+        // Ensure we don't create empty partitions
+        if (mid == start || mid == end) {
+            mid = (start + end) / 2;
+        }
+        
+        // Recursively build left and right children
         int left = build(start, mid);
         int right = build(mid, end);
         nodes[node_index].left = left;
