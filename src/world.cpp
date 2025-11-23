@@ -364,12 +364,6 @@ void Model::load_materials(std::string filename) {
             FloatType ns;
             iss >> ns;
             current_material->second.shininess = ns;
-        } else if (type == "mirror") {
-            // Mirror material flag
-            assert(current_material != materials_.end());
-            std::string flag;
-            iss >> flag;
-            current_material->second.is_mirror = (flag == "True" || flag == "true" || flag == "1");
         } else if (type == "metallic") {
             // Metallic property (0.0 = non-metallic, 1.0 = fully metallic)
             assert(current_material != materials_.end());
@@ -845,8 +839,9 @@ void Renderer::wireframe_render(const Camera& camera, const Face& face) noexcept
     }
 }
 void Renderer::rasterized_render(const Camera& camera, const Face& face) noexcept {
-    // Render mirror materials as black in rasterization mode
-    if (face.material.is_mirror) {
+    // Render highly metallic materials as black in rasterization mode
+    // (metallic >= 0.99 indicates a mirror-like surface)
+    if (face.material.metallic >= 0.99f) {
         auto clipped = clip_triangle(camera, face);
         if (clipped.size() < 3) return;
         
@@ -1445,21 +1440,7 @@ ColourHDR Renderer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray_
         
         const Face& face = all_faces[intersection.triangleIndex];
         
-        // Handle mirror materials with perfect reflection
-        if (face.material.is_mirror) {
-            // Calculate reflection direction: r = d - 2(d·n)n
-            glm::vec3 reflected_dir = glm::reflect(ray_dir, intersection.normal);
-            
-            // Offset ray origin slightly along normal to avoid self-intersection
-            constexpr FloatType epsilon = 0.001f;
-            glm::vec3 offset_origin = intersection.intersectionPoint + intersection.normal * epsilon;
-            
-            // Trace reflected ray recursively
-            ColourHDR reflected_color = trace_ray(offset_origin, reflected_dir, depth + 1);
-            return reflected_color;
-        }
-        
-        // Calculate standard Phong/Gouraud lighting for all non-mirror materials
+        // Calculate standard Phong/Gouraud lighting for all materials
         // (this applies to both metallic and non-metallic materials)
         glm::vec3 to_light_hit = light_pos - intersection.intersectionPoint;
         FloatType dist_light_hit = glm::length(to_light_hit);

@@ -28,4 +28,6 @@ Kd 1.000000 1.000000 1.000000
 map_Kd texture.ppm
 
 newmtl Mirror
-mirror True
+Kd 1.000000 1.000000 1.000000
+metallic 1.0
+s 1000.0
