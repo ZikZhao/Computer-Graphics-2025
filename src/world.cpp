@@ -374,16 +374,12 @@ void Model::load_materials(std::string filename) {
             std::string name;
             iss >> name;
             assert(materials_.find(name) == materials_.end());
-            current_material = materials_.emplace(name, Colour{255, 255, 255}).first;
+            current_material = materials_.emplace(name, Material{}).first;
         } else if (type == "Kd") {
             assert(current_material != materials_.end());
             FloatType r, g, b;
             iss >> r >> g >> b;
-            current_material->second.colour = Colour{
-                static_cast<std::uint8_t>(std::clamp(r * 255.0f, 0.0f, 255.0f)),
-                static_cast<std::uint8_t>(std::clamp(g * 255.0f, 0.0f, 255.0f)),
-                static_cast<std::uint8_t>(std::clamp(b * 255.0f, 0.0f, 255.0f))
-            };
+            current_material->second.tint_color = glm::vec3(r, g, b);
         } else if (type == "Ns") {
             // Shininess/specular exponent (0-1000 range in MTL, typically 0-200)
             assert(current_material != materials_.end());
@@ -403,7 +399,8 @@ void Model::load_materials(std::string filename) {
             iss >> ior_value;
             current_material->second.ior = std::max(1.0f, ior_value);
         } else if (type == "td") {
-            // Tinting distance - distance at which material reaches full base color
+            // Transmission Depth - calibration distance for Beer's Law
+            // At this distance, transmittance equals base_color
             assert(current_material != materials_.end());
             FloatType td_value;
             iss >> td_value;
@@ -745,10 +742,16 @@ InplaceVector<ClipVertex, 9> Renderer::clip_against_plane(const InplaceVector<Cl
 }
 InplaceVector<ClipVertex, 9> Renderer::clip_triangle(const Camera& camera, const Face& face) noexcept {
     // Transform to clip space
+    // Convert tint_color to Colour for vertex color
+    Colour vertex_color{
+        static_cast<std::uint8_t>(std::clamp(face.material.tint_color.r * 255.0f, 0.0f, 255.0f)),
+        static_cast<std::uint8_t>(std::clamp(face.material.tint_color.g * 255.0f, 0.0f, 255.0f)),
+        static_cast<std::uint8_t>(std::clamp(face.material.tint_color.b * 255.0f, 0.0f, 255.0f))
+    };
     InplaceVector<ClipVertex, 9> polygon = {
-        ClipVertex{camera.world_to_clip(face.vertices[0], aspect_ratio_), face.material.colour, face.texture_coords[0]},
-        ClipVertex{camera.world_to_clip(face.vertices[1], aspect_ratio_), face.material.colour, face.texture_coords[1]},
-        ClipVertex{camera.world_to_clip(face.vertices[2], aspect_ratio_), face.material.colour, face.texture_coords[2]}
+        ClipVertex{camera.world_to_clip(face.vertices[0], aspect_ratio_), vertex_color, face.texture_coords[0]},
+        ClipVertex{camera.world_to_clip(face.vertices[1], aspect_ratio_), vertex_color, face.texture_coords[1]},
+        ClipVertex{camera.world_to_clip(face.vertices[2], aspect_ratio_), vertex_color, face.texture_coords[2]}
     };
     
     // Clip against all 6 frustum planes
@@ -797,14 +800,32 @@ void Renderer::handle_event(const SDL_Event& event) noexcept {
 }
 std::uint32_t Renderer::sample_texture(const Face& face, const glm::vec3& bary,
                                        const ScreenNdcCoord& v0, const ScreenNdcCoord& v1, const ScreenNdcCoord& v2) noexcept {
-    if (!face.material.texture) return face.material.colour;
+    glm::vec3 base_color;
     
-    // Perspective-correct interpolation: interpolate uv/w and 1/w, then divide
-    FloatType inv_w = bary.z * v0.inv_w + bary.x * v1.inv_w + bary.y * v2.inv_w;
-    FloatType u = (bary.z * v0.uv.x * v0.inv_w + bary.x * v1.uv.x * v1.inv_w + bary.y * v2.uv.x * v2.inv_w) / inv_w;
-    FloatType v = (bary.z * v0.uv.y * v0.inv_w + bary.x * v1.uv.y * v1.inv_w + bary.y * v2.uv.y * v2.inv_w) / inv_w;
+    if (face.material.texture) {
+        // Perspective-correct interpolation: interpolate uv/w and 1/w, then divide
+        FloatType inv_w = bary.z * v0.inv_w + bary.x * v1.inv_w + bary.y * v2.inv_w;
+        FloatType u = (bary.z * v0.uv.x * v0.inv_w + bary.x * v1.uv.x * v1.inv_w + bary.y * v2.uv.x * v2.inv_w) / inv_w;
+        FloatType v = (bary.z * v0.uv.y * v0.inv_w + bary.x * v1.uv.y * v1.inv_w + bary.y * v2.uv.y * v2.inv_w) / inv_w;
+        
+        Colour tex_sample = face.material.texture->sample(u, v);
+        // Apply tint_color as color filter
+        base_color = glm::vec3(
+            (tex_sample.red / 255.0f) * face.material.tint_color.r,
+            (tex_sample.green / 255.0f) * face.material.tint_color.g,
+            (tex_sample.blue / 255.0f) * face.material.tint_color.b
+        );
+    } else {
+        // No texture, use tint_color directly
+        base_color = face.material.tint_color;
+    }
     
-    return face.material.texture->sample(u, v);
+    // Convert back to Colour
+    return Colour{
+        static_cast<std::uint8_t>(std::clamp(base_color.r * 255.0f, 0.0f, 255.0f)),
+        static_cast<std::uint8_t>(std::clamp(base_color.g * 255.0f, 0.0f, 255.0f)),
+        static_cast<std::uint8_t>(std::clamp(base_color.b * 255.0f, 0.0f, 255.0f))
+    };
 }
 void Renderer::render() noexcept {
     clear();
@@ -1121,11 +1142,17 @@ RayTriangleIntersection Renderer::find_closest_intersection(const glm::vec3& ray
                                  face.texture_coords[1] * u +
                                  face.texture_coords[2] * v;
             
-            // Sample texture or use material color
+            // Sample texture with tint_color filter, or use tint_color directly
             if (face.material.texture) {
-                closest.colour = face.material.texture->sample(uv_coord.x, uv_coord.y);
+                Colour tex_sample = face.material.texture->sample(uv_coord.x, uv_coord.y);
+                // Apply tint_color as color filter
+                closest.color = glm::vec3(
+                    (tex_sample.red / 255.0f) * face.material.tint_color.r,
+                    (tex_sample.green / 255.0f) * face.material.tint_color.g,
+                    (tex_sample.blue / 255.0f) * face.material.tint_color.b
+                );
             } else {
-                closest.colour = face.material.colour;
+                closest.color = face.material.tint_color;
             }
         }
     }
@@ -1352,9 +1379,15 @@ RayTriangleIntersection Renderer::find_closest_intersection_bvh(const glm::vec3&
                     
                     glm::vec2 uv_coord = face.texture_coords[0] * w + face.texture_coords[1] * u + face.texture_coords[2] * v;
                     if (face.material.texture) {
-                        closest.colour = face.material.texture->sample(uv_coord.x, uv_coord.y);
+                        Colour tex_sample = face.material.texture->sample(uv_coord.x, uv_coord.y);
+                        // Apply tint_color as color filter
+                        closest.color = glm::vec3(
+                            (tex_sample.red / 255.0f) * face.material.tint_color.r,
+                            (tex_sample.green / 255.0f) * face.material.tint_color.g,
+                            (tex_sample.blue / 255.0f) * face.material.tint_color.b
+                        );
                     } else {
-                        closest.colour = face.material.colour;
+                        closest.color = face.material.tint_color;
                     }
                 }
             }
@@ -1394,17 +1427,29 @@ bool Renderer::is_in_shadow(const glm::vec3& point, const glm::vec3& light_pos, 
     
     return false;  // Not in shadow
 }
-bool Renderer::is_in_shadow_bvh(const glm::vec3& point, const glm::vec3& light_pos) const noexcept {
+// Compute transmittance along shadow ray, accounting for transparent materials
+glm::vec3 Renderer::compute_transmittance_bvh(const glm::vec3& point, const glm::vec3& light_pos) const noexcept {
     glm::vec3 to_light = light_pos - point;
     FloatType light_distance = glm::length(to_light);
     glm::vec3 light_dir = to_light / light_distance;
-    if (bvh_nodes_.empty()) return false;
     
+    if (bvh_nodes_.empty()) return glm::vec3(1.0f, 1.0f, 1.0f);
+    
+    glm::vec3 transmittance(1.0f, 1.0f, 1.0f);
     const std::vector<Face>& faces = world_.all_faces();
     std::vector<int> stack;
     stack.reserve(64);
     stack.push_back(0);
     constexpr FloatType min_t = 0.001f;
+    
+    // Collect all intersections along the ray
+    struct Intersection {
+        FloatType t;
+        const Face* face;
+        FloatType u, v;
+    };
+    std::vector<Intersection> intersections;
+    
     while (!stack.empty()) {
         int ni = stack.back();
         stack.pop_back();
@@ -1417,15 +1462,78 @@ bool Renderer::is_in_shadow_bvh(const glm::vec3& point, const glm::vec3& light_p
             for (int i = 0; i < n.count; ++i) {
                 int tri_index = bvh_tri_indices_[n.start + i];
                 const Face& face = faces[tri_index];
-                FloatType t,u,v;
-                bool hit = IntersectRayTriangle(point, light_dir, face.vertices[0], face.vertices[1], face.vertices[2], t,u,v);
+                FloatType t, u, v;
+                bool hit = IntersectRayTriangle(point, light_dir, face.vertices[0], face.vertices[1], face.vertices[2], t, u, v);
                 if (hit && t > min_t && t < light_distance) {
-                    return true;
+                    intersections.push_back({t, &face, u, v});
                 }
             }
         }
     }
-    return false;
+    
+    // Sort intersections by distance
+    std::sort(intersections.begin(), intersections.end(), 
+              [](const Intersection& a, const Intersection& b) { return a.t < b.t; });
+    
+    // Process intersections and compute transmittance
+    for (size_t i = 0; i < intersections.size(); ++i) {
+        const auto& isect = intersections[i];
+        const Material& mat = isect.face->material;
+        
+        // If material is opaque, light is fully blocked
+        if (mat.tw < 0.01f) {
+            return glm::vec3(0.0f, 0.0f, 0.0f);
+        }
+        
+        // For transparent materials, find exit point
+        if (i + 1 < intersections.size()) {
+            const auto& next_isect = intersections[i + 1];
+            // Assume next intersection is exit point
+            FloatType distance_in_medium = next_isect.t - isect.t;
+            
+            // Calculate sigma_a from td and tint_color
+            glm::vec3 effective_sigma_a;
+            if (glm::length(mat.sigma_a) > 0.0f) {
+                effective_sigma_a = mat.sigma_a;
+            } else if (mat.td > 0.0f) {
+                // sigma_a = -log(tint_color) / td
+                effective_sigma_a = glm::vec3(
+                    -std::log(std::max(mat.tint_color.r, 0.001f)) / mat.td,
+                    -std::log(std::max(mat.tint_color.g, 0.001f)) / mat.td,
+                    -std::log(std::max(mat.tint_color.b, 0.001f)) / mat.td
+                );
+            } else {
+                effective_sigma_a = glm::vec3(0.0f);
+            }
+            
+            // Apply Beer-Lambert: T = exp(-sigma_a * d)
+            glm::vec3 absorption = glm::vec3(
+                std::exp(-effective_sigma_a.r * distance_in_medium),
+                std::exp(-effective_sigma_a.g * distance_in_medium),
+                std::exp(-effective_sigma_a.b * distance_in_medium)
+            );
+            
+            // Note: tw (transparency weight) affects Fresnel mixing, not absorption
+            // Absorption is purely physical and depends only on sigma_a and distance
+            transmittance = transmittance * absorption;
+            
+            // Skip the exit intersection
+            ++i;
+        }
+        
+        // Early exit if transmittance is negligible
+        if (transmittance.r < 0.001f && transmittance.g < 0.001f && transmittance.b < 0.001f) {
+            return glm::vec3(0.0f, 0.0f, 0.0f);
+        }
+    }
+    
+    return transmittance;
+}
+
+bool Renderer::is_in_shadow_bvh(const glm::vec3& point, const glm::vec3& light_pos) const noexcept {
+    // Legacy function - check if any opaque geometry blocks the light
+    glm::vec3 transmittance = compute_transmittance_bvh(point, light_pos);
+    return (transmittance.r < 0.01f && transmittance.g < 0.01f && transmittance.b < 0.01f);
 }
 FloatType Renderer::halton(int index, int base) noexcept {
     FloatType result = 0.0f;
@@ -1461,35 +1569,34 @@ glm::vec3 Renderer::sample_sphere_halton(int index, FloatType radius, const glm:
 }
 
 FloatType Renderer::compute_soft_shadow(const glm::vec3& point, const glm::vec3& light_center, FloatType light_radius, int num_samples) const noexcept {
-    int visible_samples = 0;
+    FloatType visible_light = 0.0f;
     
     // Adaptive sampling with early exit
     // First phase: test a few samples to detect uniform cases
     constexpr int early_test_samples = 4;
-    int early_visible = 0;
+    FloatType early_visible = 0.0f;
     
     for (int i = 0; i < early_test_samples; ++i) {
         glm::vec3 light_sample = sample_sphere_halton(i, light_radius, light_center);
-        if (!is_in_shadow_bvh(point, light_sample)) {
-            early_visible++;
-        }
+        glm::vec3 transmittance = compute_transmittance_bvh(point, light_sample);
+        // Use average of RGB channels as visibility
+        early_visible += (transmittance.r + transmittance.g + transmittance.b) / 3.0f;
     }
     
     // Early exit for uniform lighting conditions
-    if (early_visible == 0) return 0.0f;  // Fully shadowed
-    if (early_visible == early_test_samples) return 1.0f;  // Fully lit
+    if (early_visible < 0.01f) return 0.0f;  // Fully shadowed
+    if (early_visible >= early_test_samples * 0.99f) return 1.0f;  // Fully lit
     
     // Mixed case: continue with remaining samples
-    visible_samples = early_visible;
+    visible_light = early_visible;
     for (int i = early_test_samples; i < num_samples; ++i) {
         glm::vec3 light_sample = sample_sphere_halton(i, light_radius, light_center);
-        if (!is_in_shadow_bvh(point, light_sample)) {
-            visible_samples++;
-        }
+        glm::vec3 transmittance = compute_transmittance_bvh(point, light_sample);
+        visible_light += (transmittance.r + transmittance.g + transmittance.b) / 3.0f;
     }
     
-    // Return the fraction of visible samples (0 = fully shadowed, 1 = fully lit)
-    return static_cast<FloatType>(visible_samples) / static_cast<FloatType>(num_samples);
+    // Return the fraction of visible light (0 = fully shadowed, 1 = fully lit)
+    return visible_light / static_cast<FloatType>(num_samples);
 }
 
 // Helper function to sample points on a disk (for depth of field lens aperture)
@@ -1576,7 +1683,7 @@ void Renderer::process_rows(int y0, int y1) noexcept {
                     glm::vec3 ray_dir = glm::normalize(focal_point - ray_origin);
                     
                     // Trace ray and accumulate color
-                    accumulated_color = accumulated_color + trace_ray(ray_origin, ray_dir, 0);
+                    accumulated_color = accumulated_color + trace_ray(ray_origin, ray_dir, 0, MediumState{});
                 }
                 
                 // Average the samples
@@ -1588,7 +1695,7 @@ void Renderer::process_rows(int y0, int y1) noexcept {
             } else {
                 // Standard ray tracing: single sample per pixel
                 auto [ray_origin, ray_dir] = camera.generate_ray(x, y, window_.width, window_.height, aspect_ratio_);
-                final_hdr = trace_ray(ray_origin, ray_dir, 0);
+                final_hdr = trace_ray(ray_origin, ray_dir, 0, MediumState{});
             }
             
             Colour final_colour = tonemap_and_gamma_correct(final_hdr, gamma_);
@@ -1597,7 +1704,7 @@ void Renderer::process_rows(int y0, int y1) noexcept {
     }
 }
 
-ColourHDR Renderer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray_dir, int depth) const noexcept {
+ColourHDR Renderer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray_dir, int depth, const MediumState& medium) const noexcept {
     constexpr int MAX_DEPTH = 5;  // Maximum recursion depth for reflections
     
     if (depth >= MAX_DEPTH) {
@@ -1609,6 +1716,36 @@ ColourHDR Renderer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray_
     }
     
     RayTriangleIntersection intersection = find_closest_intersection_bvh(ray_origin, ray_dir);
+    
+    // Apply medium absorption if we're inside a transparent medium
+    ColourHDR medium_absorption(1.0f, 1.0f, 1.0f);
+    FloatType distance_in_medium = 0.0f;
+    
+    if (medium.material != nullptr && intersection.triangleIndex != static_cast<std::size_t>(-1)) {
+        // We're inside a medium and hit something - calculate absorption
+        distance_in_medium = intersection.distanceFromCamera;
+        
+        // Calculate sigma_a
+        glm::vec3 effective_sigma_a;
+        if (glm::length(medium.material->sigma_a) > 0.0f) {
+            effective_sigma_a = medium.material->sigma_a;
+        } else if (medium.material->td > 0.0f) {
+            effective_sigma_a = glm::vec3(
+                -std::log(std::max(medium.material->tint_color.r, 0.001f)) / medium.material->td,
+                -std::log(std::max(medium.material->tint_color.g, 0.001f)) / medium.material->td,
+                -std::log(std::max(medium.material->tint_color.b, 0.001f)) / medium.material->td
+            );
+        } else {
+            effective_sigma_a = glm::vec3(0.0f);
+        }
+        
+        // Apply Beer-Lambert absorption
+        medium_absorption = ColourHDR(
+            std::exp(-effective_sigma_a.r * distance_in_medium),
+            std::exp(-effective_sigma_a.g * distance_in_medium),
+            std::exp(-effective_sigma_a.b * distance_in_medium)
+        );
+    }
     
     if (intersection.triangleIndex != static_cast<std::size_t>(-1)) {
         const std::vector<Face>& all_faces = world_.all_faces();
@@ -1646,10 +1783,11 @@ ColourHDR Renderer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray_
             bool total_internal_reflection = (glm::length(refracted_dir) < 0.0001f);
             
             if (total_internal_reflection) {
-                // Total internal reflection - only reflect
+                // Total internal reflection - only reflect (stays in current medium)
                 glm::vec3 reflected_dir = glm::reflect(ray_dir, normal);
                 glm::vec3 offset_origin = intersection.intersectionPoint + normal * epsilon;
-                return trace_ray(offset_origin, reflected_dir, depth + 1);
+                ColourHDR reflected = trace_ray(offset_origin, reflected_dir, depth + 1, medium);
+                return reflected * medium_absorption;
             }
             
             // Calculate Fresnel reflectance
@@ -1661,53 +1799,33 @@ ColourHDR Renderer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray_
             
             ColourHDR result_color(0.0f, 0.0f, 0.0f);
             
-            // Trace reflection ray if significant
+            // Trace reflection ray if significant (stays in current medium)
             if (reflect_weight > 0.01f) {
                 glm::vec3 reflected_dir = glm::reflect(ray_dir, normal);
                 glm::vec3 offset_origin = intersection.intersectionPoint + normal * epsilon;
-                ColourHDR reflected_color = trace_ray(offset_origin, reflected_dir, depth + 1);
+                ColourHDR reflected_color = trace_ray(offset_origin, reflected_dir, depth + 1, medium);
                 result_color = result_color + reflected_color * reflect_weight;
             }
             
             // Trace refraction ray if significant
             if (refract_weight > 0.01f) {
                 glm::vec3 offset_origin = intersection.intersectionPoint - normal * epsilon;
-                ColourHDR refracted_color = trace_ray(offset_origin, refracted_dir, depth + 1);
                 
-                // Apply Beer-Lambert absorption if exiting material
-                if (!entering && face.material.td > 0.0f) {
-                    // Calculate distance traveled through material
-                    FloatType travel_distance = intersection.distanceFromCamera;
-                    
-                    // Apply color tinting based on distance and td threshold
-                    if (travel_distance >= face.material.td) {
-                        // Beyond td: apply full base color tinting
-                        ColourHDR base_color_hdr = ColourHDR::from_srgb(intersection.colour, 2.2f);
-                        refracted_color = ColourHDR(
-                            refracted_color.red * base_color_hdr.red,
-                            refracted_color.green * base_color_hdr.green,
-                            refracted_color.blue * base_color_hdr.blue
-                        );
-                        
-                        // Apply absorption using sigma_a
-                        if (glm::length(face.material.sigma_a) > 0.0f) {
-                            refracted_color = apply_absorption(refracted_color, face.material.sigma_a, travel_distance);
-                        }
-                    } else {
-                        // Before td: linear interpolation from clear to tinted
-                        FloatType tint_factor = travel_distance / face.material.td;
-                        ColourHDR base_color_hdr = ColourHDR::from_srgb(intersection.colour, 2.2f);
-                        ColourHDR tinted_color = ColourHDR(
-                            refracted_color.red * base_color_hdr.red,
-                            refracted_color.green * base_color_hdr.green,
-                            refracted_color.blue * base_color_hdr.blue
-                        );
-                        
-                        // Blend between untinted and tinted based on distance
-                        refracted_color = refracted_color * (1.0f - tint_factor) + tinted_color * tint_factor;
-                    }
+                // Set up new medium state for refracted ray
+                MediumState new_medium;
+                if (entering) {
+                    // Entering transparent material
+                    new_medium.material = &face.material;
+                    new_medium.entry_point = intersection.intersectionPoint;
+                    new_medium.entry_distance = 0.0f;
+                } else {
+                    // Exiting transparent material, back to air
+                    new_medium.material = nullptr;
+                    new_medium.entry_point = glm::vec3(0.0f);
+                    new_medium.entry_distance = 0.0f;
                 }
                 
+                ColourHDR refracted_color = trace_ray(offset_origin, refracted_dir, depth + 1, new_medium);
                 result_color = result_color + refracted_color * refract_weight;
             }
             
@@ -1715,12 +1833,12 @@ ColourHDR Renderer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray_
             FloatType direct_weight = 1.0f - reflect_weight - refract_weight;
             if (direct_weight > 0.01f) {
                 // Calculate basic lighting for the surface
-                ColourHDR hdr_colour = ColourHDR::from_srgb(intersection.colour, gamma_);
+                ColourHDR hdr_colour = ColourHDR(intersection.color.r, intersection.color.g, intersection.color.b);
                 FloatType ambient = 0.025f;
                 result_color = result_color + hdr_colour * ambient * direct_weight;
             }
             
-            return result_color;
+            return result_color * medium_absorption;
         }
         
         // Calculate standard Phong/Gouraud lighting for all materials
@@ -1732,23 +1850,25 @@ ColourHDR Renderer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray_
         glm::vec3 to_camera_hit = -ray_dir;
         
         // Compute shadow factor (soft or hard based on setting)
-        FloatType shadow_factor;
+        ColourHDR shadow_color;
         if (soft_shadows_enabled_) {
             // Soft shadows with Halton sequence sampling (16 samples for good quality)
             constexpr int shadow_samples = 16;
             FloatType light_radius = world_.light_radius();
-            shadow_factor = compute_soft_shadow(intersection.intersectionPoint, light_pos, light_radius, shadow_samples);
+            FloatType shadow_factor = compute_soft_shadow(intersection.intersectionPoint, light_pos, light_radius, shadow_samples);
+            shadow_color = ColourHDR(shadow_factor, shadow_factor, shadow_factor);
         } else {
-            // Hard shadows (1 sample, much faster)
-            shadow_factor = is_in_shadow_bvh(intersection.intersectionPoint, light_pos) ? 0.0f : 1.0f;
+            // Hard shadows with transmittance
+            glm::vec3 transmittance = compute_transmittance_bvh(intersection.intersectionPoint, light_pos);
+            shadow_color = ColourHDR(transmittance.r, transmittance.g, transmittance.b);
         }
         
-        ColourHDR hdr_colour = ColourHDR::from_srgb(intersection.colour, gamma_);
+        ColourHDR hdr_colour = ColourHDR(intersection.color.r, intersection.color.g, intersection.color.b);
         FloatType ambient = 0.025f;
         FloatType lambertian = 0.0f;
         FloatType specular = 0.0f;
         
-        // Apply shadow_factor to diffuse and specular (0 = fully shadowed, 1 = fully lit)
+        // Apply shadow_color to diffuse and specular
         FloatType w = 1.0f - intersection.u - intersection.v;
         if (face.material.shading == Material::Shading::Flat) {
             // Flat shading: use geometric face normal (no interpolation)
@@ -1779,18 +1899,18 @@ ColourHDR Renderer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray_
             }
         }
         
-        // Apply shadow to diffuse and specular components
-        FloatType diffuse_component = ambient + (1.0f - ambient) * lambertian * shadow_factor;
-        FloatType specular_component = specular * shadow_factor;
+        // Apply shadow color to diffuse and specular components
+        ColourHDR diffuse_component = hdr_colour * (ambient + (1.0f - ambient) * lambertian) * shadow_color;
+        ColourHDR specular_component = ColourHDR(specular, specular, specular) * shadow_color;
         
         // Calculate direct lighting (Phong shading)
         ColourHDR direct_lighting;
         if (face.material.metallic > 0.0f) {
             // Metallic materials: specular highlights are colored
-            direct_lighting = hdr_colour * diffuse_component + hdr_colour * specular_component;
+            direct_lighting = diffuse_component + hdr_colour * specular_component.red;
         } else {
             // Non-metallic materials: white specular highlights
-            direct_lighting = hdr_colour * diffuse_component + ColourHDR(specular_component, specular_component, specular_component);
+            direct_lighting = diffuse_component + specular_component;
         }
         
         // If material is metallic, add environment reflection
@@ -1802,8 +1922,8 @@ ColourHDR Renderer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray_
             constexpr FloatType epsilon = 0.001f;
             glm::vec3 offset_origin = intersection.intersectionPoint + intersection.normal * epsilon;
             
-            // Trace reflected ray recursively
-            ColourHDR reflected_color = trace_ray(offset_origin, reflected_dir, depth + 1);
+            // Trace reflected ray recursively (stays in current medium)
+            ColourHDR reflected_color = trace_ray(offset_origin, reflected_dir, depth + 1, medium);
             
             // Tint reflection with material color (metals reflect colored light)
             ColourHDR metallic_reflection = ColourHDR(
@@ -1820,14 +1940,17 @@ ColourHDR Renderer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray_
         }
         
         // Non-metallic material: return direct lighting only
-        return direct_lighting;
+        return direct_lighting * medium_absorption;
     }
     
     // No intersection - return environment map color if available, otherwise black
+    ColourHDR env_color;
     if (world_.env_map().is_loaded()) {
-        return world_.env_map().sample(ray_dir);
+        env_color = world_.env_map().sample(ray_dir);
+    } else {
+        env_color = ColourHDR(0.0f, 0.0f, 0.0f);
     }
-    return ColourHDR(0.0f, 0.0f, 0.0f);
+    return env_color * medium_absorption;
 }
 FloatType Renderer::compute_lambertian_lighting(const glm::vec3& normal, const glm::vec3& to_light, FloatType distance, FloatType intensity) noexcept {
     // Lambert's cosine law: I = I₀ * cos(θ) / (4πr²)

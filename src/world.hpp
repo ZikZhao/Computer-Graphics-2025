@@ -63,6 +63,11 @@ struct ColourHDR {
         return ColourHDR(red * scalar, green * scalar, blue * scalar);
     }
     
+    // Component-wise multiplication (for color filtering)
+    constexpr ColourHDR operator*(const ColourHDR& other) const noexcept {
+        return ColourHDR(red * other.red, green * other.green, blue * other.blue);
+    }
+    
     // Add colors (for ambient + diffuse)
     constexpr ColourHDR operator+(const ColourHDR& other) const noexcept {
         return ColourHDR(red + other.red, green + other.green, blue + other.blue);
@@ -111,7 +116,7 @@ public:
 struct RayTriangleIntersection {
     glm::vec3 intersectionPoint;
     FloatType distanceFromCamera;
-    Colour colour;
+    glm::vec3 color;  // Linear RGB color (0-1 range)
     std::size_t triangleIndex;
     glm::vec3 normal;
     glm::vec3 geom_normal;
@@ -137,19 +142,14 @@ public:
 
 struct Material {
     std::shared_ptr<Texture> texture;
+    glm::vec3 tint_color = glm::vec3(1.0f, 1.0f, 1.0f);  // Color multiplier for texture (or base color if no texture)
     FloatType shininess = 64.0f;
     FloatType metallic = 0.0f;
     enum class Shading { Flat, Gouraud, Phong } shading = Shading::Flat;
-    glm::vec3 base_color = glm::vec3(1.0f, 1.0f, 1.0f);
-    Colour colour = Colour{255, 255, 255};  // Material base color (8-bit)
     FloatType ior = 1.0f;           // Index of refraction (1.0 = no refraction, 1.5 = glass)
-    FloatType td = 1.0f;            // Tinting distance threshold
+    FloatType td = 1.0f;            // Transmission Depth: The distance at which the base_color is reached
     FloatType tw = 0.0f;            // Transparency weight (0 = opaque, 1 = fully transparent)
-    glm::vec3 sigma_a = glm::vec3(0.0f, 0.0f, 0.0f);  // Absorption coefficient for Beer-Lambert
-    
-    // Constructor
-    Material() = default;
-    Material(const Colour& c) : colour(c) {}
+    glm::vec3 sigma_a = glm::vec3(0.0f, 0.0f, 0.0f);  // Absorption coefficient for Beer-Lambert (optional override)
 };
 
 // Vertex in clip space with attributes
@@ -333,14 +333,22 @@ private:
     // Per-face rendering (used by Model::draw for wireframe/rasterized)
     void wireframe_render(const Camera& camera, const Face& face) noexcept;
     void rasterized_render(const Camera& camera, const Face& face) noexcept;
+    // Medium tracking for absorption
+    struct MediumState {
+        const Material* material = nullptr;  // nullptr = air/vacuum
+        glm::vec3 entry_point = glm::vec3(0.0f);
+        FloatType entry_distance = 0.0f;
+    };
+    
     // Ray tracing helpers
     static RayTriangleIntersection find_closest_intersection(const glm::vec3& ray_origin, const glm::vec3& ray_dir, const std::vector<Face>& faces) noexcept;
     RayTriangleIntersection find_closest_intersection_bvh(const glm::vec3& ray_origin, const glm::vec3& ray_dir) const noexcept;
-    ColourHDR trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray_dir, int depth) const noexcept;
+    ColourHDR trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray_dir, int depth, const MediumState& medium) const noexcept;
     static std::pair<std::vector<int>, std::vector<Renderer::BVHNode>> build_bvh(const std::vector<Face>& faces) noexcept;
     static bool intersect_aabb(const glm::vec3& ro, const glm::vec3& rd, const AABB& box, FloatType tmax) noexcept;
     static bool is_in_shadow(const glm::vec3& point, const glm::vec3& light_pos, const std::vector<Face>& faces) noexcept;
     bool is_in_shadow_bvh(const glm::vec3& point, const glm::vec3& light_pos) const noexcept;
+    glm::vec3 compute_transmittance_bvh(const glm::vec3& point, const glm::vec3& light_pos) const noexcept;
     // Soft shadow with stratified sampling on sphere light
     FloatType compute_soft_shadow(const glm::vec3& point, const glm::vec3& light_center, FloatType light_radius, int num_samples) const noexcept;
     static glm::vec3 sample_sphere_halton(int index, FloatType radius, const glm::vec3& center) noexcept;

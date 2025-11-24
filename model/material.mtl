@@ -37,5 +37,5 @@ metallic 1.0
 newmtl LightBlueGlass
 Kd 0.7 0.95 0.98
 td 0.1
-tw 1.0
+tw 0.9
 ior 1.5
