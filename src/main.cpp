@@ -7,6 +7,7 @@
 #include <iostream>
 #include "DrawingWindow.h"
 #include "world.hpp"
+#include "renderer.hpp"
 
 constexpr std::size_t WIDTH = 960;
 constexpr std::size_t HEIGHT = 540;

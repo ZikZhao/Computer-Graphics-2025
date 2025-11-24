@@ -14,6 +14,11 @@
 cmake_minimum_required(VERSION 3.12)
 project(CG-CW)
 
+# Set default build type to Release
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build (Debug or Release)" FORCE)
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 
 # Note, we do this for glm because it's a header only library and because we shipped it with the project
@@ -26,17 +31,14 @@ include_directories(${SDL2_INCLUDE_DIRS} ${GLM_INCLUDE_DIRS})
 include_directories(libs/sdw)
 
 add_executable(CG-CW
-        # libs/sdw/CanvasPoint.cpp
-        # libs/sdw/CanvasTriangle.cpp
-        # libs/sdw/Colour.cpp
         libs/sdw/DrawingWindow.cpp
-        # libs/sdw/ModelTriangle.cpp
-        # libs/sdw/RayTriangleIntersection.cpp
-        # libs/sdw/TextureMap.cpp
-        # libs/sdw/TexturePoint.cpp
         libs/sdw/Utils.cpp
         src/main.cpp
-        src/world.cpp)
+        src/world.cpp
+        src/shader.cpp
+        src/raytracer.cpp
+        src/rasterizer.cpp
+        src/renderer.cpp)
 
 if (MSVC)
     target_compile_options(CG-CW
