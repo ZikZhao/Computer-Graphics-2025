@@ -71,4 +71,7 @@ private:
     // Tonemapping and gamma correction
     static Colour tonemap_and_gamma_correct(const ColourHDR& hdr, FloatType gamma) noexcept;
     static FloatType aces_tonemap(FloatType hdr_value) noexcept;
+    
+    // Coordinate axis visualization
+    void draw_coordinate_axes() noexcept;
 };
