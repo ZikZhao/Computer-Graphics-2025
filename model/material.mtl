@@ -4,11 +4,14 @@ Kd 1.000000 1.000000 1.000000
 newmtl Grey
 Kd 0.700000 0.700000 0.700000
 
+newmtl GreyMetallic
+metallic 1.0
+Kd 0.700000 0.700000 0.700000
+
 newmtl Red
 Kd 1.000000 0.000000 0.000000
 
-newmtl GreenMetallic
-metallic 1.0
+newmtl Green
 Kd 0.000000 1.000000 0.000000
 
 newmtl Blue
@@ -30,4 +33,9 @@ map_Kd texture.ppm
 newmtl Mirror
 Kd 1.000000 1.000000 1.000000
 metallic 1.0
-s 1000.0
+
+newmtl LightBlueGlass
+Kd 0.7 0.95 0.98
+td 0.1
+tw 1.0
+ior 1.5

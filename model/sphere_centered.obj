@@ -1,7 +1,7 @@
 mtllib material.mtl
 
 o sphere
-usemtl GreenMetallic
+usemtl GreyMetallic
 shading Phong
 v 1.770598 -2.423880 -1.270598
 v 1.500000 -2.423880 -1.382683
