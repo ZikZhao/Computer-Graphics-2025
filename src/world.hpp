@@ -113,7 +113,9 @@ struct RayTriangleIntersection {
     FloatType distanceFromCamera;
     Colour colour;
     std::size_t triangleIndex;
-    glm::vec3 normal;  // Surface normal at intersection
+    glm::vec3 normal;
+    glm::vec3 geom_normal;
+    bool front_face;
     FloatType u; // Barycentric coordinate for vertex 1
     FloatType v; // Barycentric coordinate for vertex 2
 };
@@ -134,11 +136,20 @@ public:
 };
 
 struct Material {
-    Colour colour;
     std::shared_ptr<Texture> texture;
-    FloatType shininess = 64.0f;  // Specular shininess (higher = sharper highlights)
-    FloatType metallic = 0.0f;  // Metallic property (0.0 = non-metallic, 1.0 = fully metallic)
+    FloatType shininess = 64.0f;
+    FloatType metallic = 0.0f;
     enum class Shading { Flat, Gouraud, Phong } shading = Shading::Flat;
+    glm::vec3 base_color = glm::vec3(1.0f, 1.0f, 1.0f);
+    Colour colour = Colour{255, 255, 255};  // Material base color (8-bit)
+    FloatType ior = 1.0f;           // Index of refraction (1.0 = no refraction, 1.5 = glass)
+    FloatType td = 1.0f;            // Tinting distance threshold
+    FloatType tw = 0.0f;            // Transparency weight (0 = opaque, 1 = fully transparent)
+    glm::vec3 sigma_a = glm::vec3(0.0f, 0.0f, 0.0f);  // Absorption coefficient for Beer-Lambert
+    
+    // Constructor
+    Material() = default;
+    Material(const Colour& c) : colour(c) {}
 };
 
 // Vertex in clip space with attributes
@@ -184,6 +195,8 @@ public:
     void stop_orbiting() noexcept;
     void rotate(FloatType delta_yaw, FloatType delta_pitch) noexcept;
     void handle_event(const SDL_Event& event) noexcept;
+    void update_movement() noexcept;  // Update camera position based on keyboard state
+    void update() noexcept;  // Legacy update function (calls update_movement)
     std::pair<glm::vec3, glm::vec3> generate_ray(int pixel_x, int pixel_y, int screen_width, int screen_height, double aspect_ratio) const noexcept;
 };
 
@@ -240,6 +253,7 @@ public:
     World();
     void load_files(const std::vector<std::string>& filenames);
     void handle_event(const SDL_Event& event) noexcept;
+    void update() noexcept;  // Update world state (camera movement, etc.)
     void orbiting() noexcept;
     // Accessors for Renderer
     Camera& camera() noexcept { return camera_; }
@@ -286,6 +300,12 @@ public:
         int right;
         int start;
         int count;
+    };
+    struct IorFrame {
+        FloatType ior;
+        glm::vec3 entry_point;
+        const Material* material;
+        bool has_entry;
     };
     static constexpr int TileHeight = 16;
 private:

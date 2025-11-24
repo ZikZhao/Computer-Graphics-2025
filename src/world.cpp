@@ -74,28 +74,45 @@ void Camera::rotate(FloatType delta_yaw, FloatType delta_pitch) noexcept {
     pitch_ = std::clamp(pitch_, -max_pitch, max_pitch);
 }
 
+void Camera::update_movement() noexcept {
+    constexpr FloatType move_step = 0.1f;
+    
+    const Uint8* keystate = SDL_GetKeyboardState(nullptr);
+    
+    // W/S: forward/backward along view direction
+    if (keystate[SDL_SCANCODE_W]) {
+        position_ += forward() * move_step;
+    }
+    if (keystate[SDL_SCANCODE_S]) {
+        position_ -= forward() * move_step;
+    }
+    
+    // A/D: left/right strafe
+    if (keystate[SDL_SCANCODE_A]) {
+        position_ -= right() * move_step;
+    }
+    if (keystate[SDL_SCANCODE_D]) {
+        position_ += right() * move_step;
+    }
+    
+    // Space: move up (world up, replacing old W)
+    if (keystate[SDL_SCANCODE_SPACE]) {
+        position_ += up() * move_step;
+    }
+    
+    // Left Alt: move down (world down, replacing old S)
+    if (keystate[SDL_SCANCODE_LALT] || keystate[SDL_SCANCODE_RALT]) {
+        position_ -= up() * move_step;
+    }
+}
+
+void Camera::update() noexcept {
+    update_movement();
+}
+
 void Camera::handle_event(const SDL_Event& event) noexcept {
     if (event.type == SDL_KEYDOWN) {
-        constexpr FloatType move_step = 0.1f;
         switch (event.key.keysym.sym) {
-        case SDLK_w:
-            position_ += up() * move_step;
-            break;
-        case SDLK_s:
-            position_ -= up() * move_step;
-            break;
-        case SDLK_a:
-            position_ -= right() * move_step;
-            break;
-        case SDLK_d:
-            position_ += right() * move_step;
-            break;
-        case SDLK_q:
-            position_ += forward() * move_step;
-            break;
-        case SDLK_e:
-            position_ -= forward() * move_step;
-            break;
         case SDLK_UP:
             rotate(0.0f, -glm::radians(2.0f));
             return;
@@ -379,6 +396,34 @@ void Model::load_materials(std::string filename) {
             FloatType metallic_value;
             iss >> metallic_value;
             current_material->second.metallic = std::clamp(metallic_value, 0.0f, 1.0f);
+        } else if (type == "ior") {
+            // Index of refraction (e.g., 1.5 for glass, 1.33 for water)
+            assert(current_material != materials_.end());
+            FloatType ior_value;
+            iss >> ior_value;
+            current_material->second.ior = std::max(1.0f, ior_value);
+        } else if (type == "td") {
+            // Tinting distance - distance at which material reaches full base color
+            assert(current_material != materials_.end());
+            FloatType td_value;
+            iss >> td_value;
+            current_material->second.td = std::max(0.0f, td_value);
+        } else if (type == "tw") {
+            // Transparency weight (0 = opaque, 1 = fully transparent)
+            assert(current_material != materials_.end());
+            FloatType tw_value;
+            iss >> tw_value;
+            current_material->second.tw = std::clamp(tw_value, 0.0f, 1.0f);
+        } else if (type == "sigma_a") {
+            // Absorption coefficient for Beer-Lambert law (RGB)
+            assert(current_material != materials_.end());
+            FloatType r, g, b;
+            iss >> r >> g >> b;
+            current_material->second.sigma_a = glm::vec3(
+                std::max(0.0f, r),
+                std::max(0.0f, g),
+                std::max(0.0f, b)
+            );
         } else if (type == "map_Kd") {
             assert(current_material != materials_.end());
             std::string texture_filename;
@@ -568,6 +613,11 @@ void World::handle_event(const SDL_Event& event) noexcept {
         }
     }
 }
+
+void World::update() noexcept {
+    camera_.update();
+}
+
 void World::orbiting() noexcept {
     camera_.orbiting();
 }
@@ -1465,6 +1515,28 @@ static glm::vec2 sample_disk_concentric(FloatType u1, FloatType u2) noexcept {
     return glm::vec2(r * std::cos(theta), r * std::sin(theta));
 }
 
+// Fresnel reflectance calculation using Schlick's approximation
+static FloatType fresnel_schlick(FloatType cos_theta, FloatType ior_ratio) noexcept {
+    // Schlick's approximation: F(θ) = F₀ + (1 - F₀)(1 - cos θ)⁵
+    // where F₀ = ((n₁ - n₂)/(n₁ + n₂))²
+    FloatType r0 = (1.0f - ior_ratio) / (1.0f + ior_ratio);
+    r0 = r0 * r0;
+    FloatType cos_term = 1.0f - cos_theta;
+    FloatType cos5 = cos_term * cos_term * cos_term * cos_term * cos_term;
+    return r0 + (1.0f - r0) * cos5;
+}
+
+// Beer-Lambert law for light absorption through transparent medium
+static ColourHDR apply_absorption(const ColourHDR& color, const glm::vec3& absorption_coeff, FloatType distance) noexcept {
+    // Beer-Lambert law: I = I₀ * e^(-σₐ * d)
+    // where σₐ is the absorption coefficient and d is the distance traveled
+    return ColourHDR(
+        color.red * std::exp(-absorption_coeff.r * distance),
+        color.green * std::exp(-absorption_coeff.g * distance),
+        color.blue * std::exp(-absorption_coeff.b * distance)
+    );
+}
+
 void Renderer::process_rows(int y0, int y1) noexcept {
     const Camera& camera = *current_camera_;
     const std::vector<Face>& all_faces = world_.all_faces();
@@ -1545,6 +1617,111 @@ ColourHDR Renderer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray_
         const Camera& camera = *current_camera_;
         
         const Face& face = all_faces[intersection.triangleIndex];
+        
+        // Check if material is transparent (tw > 0)
+        if (face.material.tw > 0.0f) {
+            // Transparent material with refraction
+            constexpr FloatType epsilon = 0.001f;
+            
+            // Determine if ray is entering or exiting the material
+            glm::vec3 normal = intersection.normal;
+            FloatType cos_theta_i = glm::dot(-ray_dir, normal);
+            bool entering = cos_theta_i > 0.0f;
+            
+            // Set up IOR ratio
+            FloatType ior_from = entering ? 1.0f : face.material.ior;
+            FloatType ior_to = entering ? face.material.ior : 1.0f;
+            FloatType ior_ratio = ior_from / ior_to;
+            
+            // Adjust normal direction if exiting
+            if (!entering) {
+                normal = -normal;
+                cos_theta_i = -cos_theta_i;
+            }
+            
+            // Calculate refraction direction
+            glm::vec3 refracted_dir = glm::refract(ray_dir, normal, ior_ratio);
+            
+            // Check for total internal reflection
+            bool total_internal_reflection = (glm::length(refracted_dir) < 0.0001f);
+            
+            if (total_internal_reflection) {
+                // Total internal reflection - only reflect
+                glm::vec3 reflected_dir = glm::reflect(ray_dir, normal);
+                glm::vec3 offset_origin = intersection.intersectionPoint + normal * epsilon;
+                return trace_ray(offset_origin, reflected_dir, depth + 1);
+            }
+            
+            // Calculate Fresnel reflectance
+            FloatType fresnel = fresnel_schlick(std::abs(cos_theta_i), ior_ratio);
+            
+            // Mix reflection and refraction based on Fresnel and tw (transparency weight)
+            FloatType reflect_weight = fresnel * (1.0f - face.material.tw);
+            FloatType refract_weight = (1.0f - fresnel) * face.material.tw;
+            
+            ColourHDR result_color(0.0f, 0.0f, 0.0f);
+            
+            // Trace reflection ray if significant
+            if (reflect_weight > 0.01f) {
+                glm::vec3 reflected_dir = glm::reflect(ray_dir, normal);
+                glm::vec3 offset_origin = intersection.intersectionPoint + normal * epsilon;
+                ColourHDR reflected_color = trace_ray(offset_origin, reflected_dir, depth + 1);
+                result_color = result_color + reflected_color * reflect_weight;
+            }
+            
+            // Trace refraction ray if significant
+            if (refract_weight > 0.01f) {
+                glm::vec3 offset_origin = intersection.intersectionPoint - normal * epsilon;
+                ColourHDR refracted_color = trace_ray(offset_origin, refracted_dir, depth + 1);
+                
+                // Apply Beer-Lambert absorption if exiting material
+                if (!entering && face.material.td > 0.0f) {
+                    // Calculate distance traveled through material
+                    FloatType travel_distance = intersection.distanceFromCamera;
+                    
+                    // Apply color tinting based on distance and td threshold
+                    if (travel_distance >= face.material.td) {
+                        // Beyond td: apply full base color tinting
+                        ColourHDR base_color_hdr = ColourHDR::from_srgb(intersection.colour, 2.2f);
+                        refracted_color = ColourHDR(
+                            refracted_color.red * base_color_hdr.red,
+                            refracted_color.green * base_color_hdr.green,
+                            refracted_color.blue * base_color_hdr.blue
+                        );
+                        
+                        // Apply absorption using sigma_a
+                        if (glm::length(face.material.sigma_a) > 0.0f) {
+                            refracted_color = apply_absorption(refracted_color, face.material.sigma_a, travel_distance);
+                        }
+                    } else {
+                        // Before td: linear interpolation from clear to tinted
+                        FloatType tint_factor = travel_distance / face.material.td;
+                        ColourHDR base_color_hdr = ColourHDR::from_srgb(intersection.colour, 2.2f);
+                        ColourHDR tinted_color = ColourHDR(
+                            refracted_color.red * base_color_hdr.red,
+                            refracted_color.green * base_color_hdr.green,
+                            refracted_color.blue * base_color_hdr.blue
+                        );
+                        
+                        // Blend between untinted and tinted based on distance
+                        refracted_color = refracted_color * (1.0f - tint_factor) + tinted_color * tint_factor;
+                    }
+                }
+                
+                result_color = result_color + refracted_color * refract_weight;
+            }
+            
+            // Add remaining weight to direct lighting (for partially transparent materials)
+            FloatType direct_weight = 1.0f - reflect_weight - refract_weight;
+            if (direct_weight > 0.01f) {
+                // Calculate basic lighting for the surface
+                ColourHDR hdr_colour = ColourHDR::from_srgb(intersection.colour, gamma_);
+                FloatType ambient = 0.025f;
+                result_color = result_color + hdr_colour * ambient * direct_weight;
+            }
+            
+            return result_color;
+        }
         
         // Calculate standard Phong/Gouraud lighting for all materials
         // (this applies to both metallic and non-metallic materials)
