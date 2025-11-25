@@ -150,6 +150,11 @@ void Renderer::handle_event(const SDL_Event& event) noexcept {
                 std::cout << "Photon map not ready yet, please wait..." << std::endl;
             }
             break;
+        case SDLK_v:
+            // DEBUG: Toggle caustics-only visualization mode
+            RayTracer::debug_visualize_caustics_only = !RayTracer::debug_visualize_caustics_only;
+            std::cout << "DEBUG Caustics-only mode: " << (RayTracer::debug_visualize_caustics_only ? "ON (verify Beer-Lambert color)" : "OFF") << std::endl;
+            break;
         }
     }
 }

@@ -77,20 +77,22 @@ void PhotonMap::emit_photons_to_object(const Face& target_face, int num_photons)
 
 void PhotonMap::trace_single_photon(const glm::vec3& origin, const glm::vec3& direction, 
                                     const glm::vec3& power, int depth,
-                                    const glm::vec3& medium_entry_point) {
+                                    const glm::vec3& medium_entry_point,
+                                    bool has_refracted) {
     // Stop if exceeded max bounces
     if (depth >= MAX_PHOTON_BOUNCES) {
         return;
     }
     
-    // Russian roulette after first bounce
-    if (depth > 0) {
-        FloatType survival_prob = std::min(0.95f, glm::length(power) / MIN_PHOTON_POWER);
+    // Russian roulette after second bounce to avoid premature termination
+    // This ensures most photons get at least one chance to create caustics
+    if (depth >= 2) {
+        FloatType power_magnitude = glm::length(power);
+        // Use a more lenient survival probability that doesn't penalize low-power photons as much
+        FloatType survival_prob = 0.8f + 0.15f * std::min(1.0f, power_magnitude / MIN_PHOTON_POWER);
         if (random_float() > survival_prob) {
             return;  // Photon absorbed
         }
-        // Boost power to maintain energy conservation
-        // (We don't actually boost here to avoid over-brightness)
     }
     
     // Find intersection
@@ -103,16 +105,11 @@ void PhotonMap::trace_single_photon(const glm::vec3& origin, const glm::vec3& di
     const Face* hit_face = &world_.all_faces()[hit.triangleIndex];
     const Material& mat = hit_face->material;
     
-    // Store photons on diffuse surfaces after at least one interaction with transparent object
-    bool is_diffuse = !is_transparent(mat);
-    
-    if (is_diffuse && depth > 0) {
-        // This is a caustic photon (has interacted with transparent object)
-        store_photon(Photon(hit.intersectionPoint, direction, power, hit_face));
-    }
+    // Check if surface is transparent or diffuse
+    bool is_transparent_surface = is_transparent(mat);
     
     // Continue tracing if hit transparent object
-    if (is_transparent(mat)) {
+    if (is_transparent_surface) {
         // Refraction/reflection logic
         glm::vec3 normal = hit.front_face ? hit.normal : -hit.normal;
         FloatType eta = hit.front_face ? (1.0f / mat.ior) : mat.ior;
@@ -165,6 +162,9 @@ void PhotonMap::trace_single_photon(const glm::vec3& origin, const glm::vec3& di
         FloatType reflectance = r0 + (1.0f - r0) * std::pow(1.0f - cos_theta, 5.0f);
         
         // For caustics, we primarily want refracted photons
+        bool will_refract = false;
+        bool completed_refraction = false;  // Track if photon completed entry->absorption->exit cycle
+        
         if (cannot_refract) {
             // Total internal reflection
             new_direction = glm::reflect(direction, normal);
@@ -174,16 +174,28 @@ void PhotonMap::trace_single_photon(const glm::vec3& origin, const glm::vec3& di
         } else {
             // Refract (preferred for caustics)
             new_direction = glm::refract(direction, normal, eta);
+            will_refract = true;
+            // Mark as completed refraction ONLY when exiting (after absorption)
+            if (!hit.front_face) {
+                completed_refraction = true;
+            }
         }
         
         // Continue tracing
         glm::vec3 offset = new_direction * 0.001f;  // Avoid self-intersection
-        trace_single_photon(hit.intersectionPoint + offset, new_direction, new_power, depth + 1, new_entry_point);
+        trace_single_photon(hit.intersectionPoint + offset, new_direction, new_power, depth + 1, new_entry_point, has_refracted || completed_refraction);
+    } else {
+        // Hit diffuse surface - store photon ONLY if it has refracted through glass
+        // This excludes pure mirror reflections and only captures refractive caustics
+        if (has_refracted) {
+            // This is a refractive caustic photon - power includes Beer-Lambert absorption
+            store_photon(Photon(hit.intersectionPoint, direction, power, hit_face));
+        }
     }
 }
 
 void PhotonMap::store_photon(const Photon& photon) {
-    std::lock_guard<std::mutex> lock(map_mutex_);
+    // No mutex needed: only single worker thread writes during construction
     photon_map_[photon.face].push_back(photon);
 }
 
@@ -333,6 +345,14 @@ ColourHDR PhotonMap::estimate_caustic(const Face* face, const glm::vec3& point,
     // Energy conservation: normalize by search area (not photon count!)
     FloatType search_area = std::numbers::pi * search_radius * search_radius;
     glm::vec3 radiance = accumulated_flux / search_area;
+    
+    // DEBUG: Log caustic color estimation occasionally
+    static int estimate_count = 0;
+    if (estimate_count < 5 && glm::length(radiance) > 0.0001f) {
+        std::cout << "Caustic estimate #" << estimate_count << ": photons=" << photons.size()
+                  << ", radiance=(" << radiance.x << ", " << radiance.y << ", " << radiance.z << ")\n";
+        estimate_count++;
+    }
     
     return ColourHDR(radiance.x, radiance.y, radiance.z);
 }

@@ -58,6 +58,9 @@ public:
     // Check if photon map is ready
     bool is_photon_map_ready() const noexcept { return photon_map_ && photon_map_->is_ready(); }
     
+    // Debug: visualize only caustics (temporary for verification)
+    static bool debug_visualize_caustics_only;
+    
 private:
     // Ray tracing core (no longer contains material logic)
     ColourHDR trace_ray(const glm::vec3& ro, const glm::vec3& rd, int depth, 

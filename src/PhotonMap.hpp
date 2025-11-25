@@ -24,7 +24,7 @@ struct Photon {
 class PhotonMap {
 public:
     // Configuration
-    static constexpr int PHOTONS_PER_LIGHT = 20000;     // Number of photons to emit from light source
+    static constexpr int PHOTONS_PER_LIGHT = 500000;     // Number of photons to emit from light source
     static constexpr int MAX_PHOTON_BOUNCES = 5;        // Maximum number of bounces per photon
     static constexpr FloatType MIN_PHOTON_POWER = 0.01f; // Minimum power threshold for Russian roulette
     
@@ -37,7 +37,6 @@ private:
     // Threading
     std::jthread worker_thread_;
     std::atomic<bool> is_ready_{false};
-    std::mutex map_mutex_;  // Protects photon_map_ during construction
     
 public:
     explicit PhotonMap(const World& world);
@@ -66,7 +65,8 @@ private:
     // Trace a single photon through the scene
     void trace_single_photon(const glm::vec3& origin, const glm::vec3& direction, 
                              const glm::vec3& power, int depth, 
-                             const glm::vec3& medium_entry_point = glm::vec3(0.0f));
+                             const glm::vec3& medium_entry_point = glm::vec3(0.0f),
+                             bool has_refracted = false);
     
     // Store a photon in the map
     void store_photon(const Photon& photon);

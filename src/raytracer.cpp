@@ -7,6 +7,9 @@
 #include <numbers>
 #include <iostream>
 
+// DEBUG: Set to true to only show caustics (black background)
+bool RayTracer::debug_visualize_caustics_only = false;
+
 RayTracer::RayTracer(const World& world)
     : world_(world),
       bvh_tri_indices_([]() { return std::vector<int>(); }()),
@@ -187,6 +190,11 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
     }
     
     if (intersection.triangleIndex == static_cast<std::size_t>(-1)) {
+        // DEBUG MODE: return black for background
+        if (debug_visualize_caustics_only) {
+            return ColourHDR(0.0f, 0.0f, 0.0f);
+        }
+        
         ColourHDR env_color;
         if (world_.env_map().is_loaded()) {
             env_color = world_.env_map().sample(ray_dir);
@@ -354,8 +362,26 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
         FloatType search_radius = 0.12f;  // Tighter radius for sharper caustics
         caustics_contribution = photon_map_->estimate_caustic(&face, intersection.intersectionPoint, intersection.normal, search_radius);
         
+        // DEBUG MODE: Show only caustics RAW COLOR (no material modulation) for verification
+        if (debug_visualize_caustics_only) {
+            // Boost by 40x and show raw photon color (before material modulation)
+            return caustics_contribution * 40.0f;
+        }
+        
+        // Modulate caustics by surface albedo (diffuse color) to get final color
+        caustics_contribution = ColourHDR(
+            caustics_contribution.red * hdr_colour.red,
+            caustics_contribution.green * hdr_colour.green,
+            caustics_contribution.blue * hdr_colour.blue
+        );
+        
         // Scale down to 12.5% to reduce brightness
         caustics_contribution = caustics_contribution * 0.025f;
+    }
+    
+    // DEBUG MODE: Non-caustic surfaces return black
+    if (debug_visualize_caustics_only) {
+        return ColourHDR(0.0f, 0.0f, 0.0f);
     }
     
     return (direct_lighting + caustics_contribution) * medium_absorption;
