@@ -78,7 +78,7 @@ void PhotonMap::emit_photons_to_object(const Face& target_face, int num_photons)
 void PhotonMap::trace_single_photon(const glm::vec3& origin, const glm::vec3& direction, 
                                     const glm::vec3& power, int depth,
                                     const glm::vec3& medium_entry_point,
-                                    bool ever_inside_medium) {
+                                    bool interacted_with_transparent) {
     
     // Stop if exceeded max bounces
     if (depth >= MAX_PHOTON_BOUNCES) {
@@ -111,6 +111,8 @@ void PhotonMap::trace_single_photon(const glm::vec3& origin, const glm::vec3& di
     
     // Continue tracing if hit transparent object
     if (is_transparent_surface) {
+        // Mark that this photon has interacted with a transparent surface
+        interacted_with_transparent = true;
         // Determine if photon is currently inside or outside the medium
         bool currently_inside = glm::length(medium_entry_point) > 0.0f;
         
@@ -132,7 +134,6 @@ void PhotonMap::trace_single_photon(const glm::vec3& origin, const glm::vec3& di
         glm::vec3 new_direction;
         glm::vec3 new_power = power;
         glm::vec3 new_entry_point = medium_entry_point;
-        bool will_enter_or_stay_inside = false;
         
         // Apply Beer-Lambert absorption if photon was traveling inside medium
         if (currently_inside) {
@@ -167,14 +168,12 @@ void PhotonMap::trace_single_photon(const glm::vec3& origin, const glm::vec3& di
             new_direction = glm::reflect(direction, normal);
             // Stay inside, update entry point for next segment
             new_entry_point = hit.intersectionPoint;
-            will_enter_or_stay_inside = true;
         } else if (random_float() < reflectance * 0.5f) {
             // Fresnel reflection (reduced probability for caustics)
             new_direction = glm::reflect(direction, normal);
             // If reflecting from outside, stay outside; if from inside, stay inside
             if (currently_inside) {
                 new_entry_point = hit.intersectionPoint;
-                will_enter_or_stay_inside = true;
             } else {
                 new_entry_point = glm::vec3(0.0f);  // Outside
             }
@@ -183,19 +182,17 @@ void PhotonMap::trace_single_photon(const glm::vec3& origin, const glm::vec3& di
             if (hit.front_face) {
                 // Entering medium
                 new_entry_point = hit.intersectionPoint;
-                will_enter_or_stay_inside = true;
             } else {
                 // Exiting medium
                 new_entry_point = glm::vec3(0.0f);
-                will_enter_or_stay_inside = false;
             }
             new_direction = glm::refract(direction, normal, eta);
         }
         
-        // Continue tracing - mark as having been inside if currently inside or entering
+        // Continue tracing
         glm::vec3 offset = new_direction * 0.001f;
         trace_single_photon(hit.intersectionPoint + offset, new_direction, new_power, depth + 1, 
-                           new_entry_point, ever_inside_medium || will_enter_or_stay_inside);
+                           new_entry_point, interacted_with_transparent);
     } else {
         // Hit diffuse surface
         glm::vec3 final_power = power;
@@ -229,10 +226,12 @@ void PhotonMap::trace_single_photon(const glm::vec3& origin, const glm::vec3& di
             }
         }
         
-        // Store photon if it ever traveled inside the medium
-        // This captures both refractive caustics and internal reflections (with absorption)
-        // but excludes pure external mirror reflections (white light)
-        if (ever_inside_medium) {
+        // Store photon if it has interacted with any transparent surface
+        // This captures:
+        // - Refractive caustics (with Beer-Lambert absorption if traveled through medium)
+        // - External reflections from glass (white light for ceiling caustics)
+        // - Internal reflections (with absorption)
+        if (interacted_with_transparent) {
             store_photon(Photon(hit.intersectionPoint, direction, final_power, hit_face));
         }
     }
