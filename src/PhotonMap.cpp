@@ -78,7 +78,8 @@ void PhotonMap::emit_photons_to_object(const Face& target_face, int num_photons)
 void PhotonMap::trace_single_photon(const glm::vec3& origin, const glm::vec3& direction, 
                                     const glm::vec3& power, int depth,
                                     const glm::vec3& medium_entry_point,
-                                    bool has_refracted) {
+                                    bool ever_inside_medium) {
+    
     // Stop if exceeded max bounces
     if (depth >= MAX_PHOTON_BOUNCES) {
         return;
@@ -110,22 +111,31 @@ void PhotonMap::trace_single_photon(const glm::vec3& origin, const glm::vec3& di
     
     // Continue tracing if hit transparent object
     if (is_transparent_surface) {
+        // Determine if photon is currently inside or outside the medium
+        bool currently_inside = glm::length(medium_entry_point) > 0.0f;
+        
         // Refraction/reflection logic
         glm::vec3 normal = hit.front_face ? hit.normal : -hit.normal;
         FloatType eta = hit.front_face ? (1.0f / mat.ior) : mat.ior;
         
-        // Compute refraction
+        // Compute refraction parameters
         FloatType cos_theta = std::min(glm::dot(-direction, normal), 1.0f);
         FloatType sin_theta = std::sqrt(1.0f - cos_theta * cos_theta);
-        
         bool cannot_refract = eta * sin_theta > 1.0f;
+        
+        // Fresnel (Schlick's approximation)
+        FloatType r0 = (1.0f - eta) / (1.0f + eta);
+        r0 = r0 * r0;
+        FloatType reflectance = r0 + (1.0f - r0) * std::pow(1.0f - cos_theta, 5.0f);
+        
+        // Prepare for next ray
         glm::vec3 new_direction;
         glm::vec3 new_power = power;
         glm::vec3 new_entry_point = medium_entry_point;
+        bool will_enter_or_stay_inside = false;
         
-        // Beer-Lambert absorption: attenuate by material color during transmission
-        if (!hit.front_face) {
-            // Photon is exiting the medium, apply absorption based on distance traveled inside
+        // Apply Beer-Lambert absorption if photon was traveling inside medium
+        if (currently_inside) {
             FloatType travel_dist = glm::length(hit.intersectionPoint - medium_entry_point);
             
             if (travel_dist > 0.0f && mat.td > 0.0f) {
@@ -149,47 +159,81 @@ void PhotonMap::trace_single_photon(const glm::vec3& origin, const glm::vec3& di
                     power.z * std::exp(-effective_sigma_a.z * travel_dist)
                 );
             }
-            // Reset entry point when exiting
-            new_entry_point = glm::vec3(0.0f);
-        } else {
-            // Photon is entering the medium, record entry point
-            new_entry_point = hit.intersectionPoint;
         }
         
-        // Fresnel (Schlick's approximation)
-        FloatType r0 = (1.0f - eta) / (1.0f + eta);
-        r0 = r0 * r0;
-        FloatType reflectance = r0 + (1.0f - r0) * std::pow(1.0f - cos_theta, 5.0f);
-        
-        // For caustics, we primarily want refracted photons
-        bool will_refract = false;
-        bool completed_refraction = false;  // Track if photon completed entry->absorption->exit cycle
-        
+        // Decide refraction vs reflection
         if (cannot_refract) {
-            // Total internal reflection
+            // Total internal reflection (only happens inside medium)
             new_direction = glm::reflect(direction, normal);
+            // Stay inside, update entry point for next segment
+            new_entry_point = hit.intersectionPoint;
+            will_enter_or_stay_inside = true;
         } else if (random_float() < reflectance * 0.5f) {
-            // Reduce reflection probability to focus on refractive caustics
+            // Fresnel reflection (reduced probability for caustics)
             new_direction = glm::reflect(direction, normal);
+            // If reflecting from outside, stay outside; if from inside, stay inside
+            if (currently_inside) {
+                new_entry_point = hit.intersectionPoint;
+                will_enter_or_stay_inside = true;
+            } else {
+                new_entry_point = glm::vec3(0.0f);  // Outside
+            }
         } else {
-            // Refract (preferred for caustics)
+            // Refraction
+            if (hit.front_face) {
+                // Entering medium
+                new_entry_point = hit.intersectionPoint;
+                will_enter_or_stay_inside = true;
+            } else {
+                // Exiting medium
+                new_entry_point = glm::vec3(0.0f);
+                will_enter_or_stay_inside = false;
+            }
             new_direction = glm::refract(direction, normal, eta);
-            will_refract = true;
-            // Mark as completed refraction ONLY when exiting (after absorption)
-            if (!hit.front_face) {
-                completed_refraction = true;
+        }
+        
+        // Continue tracing - mark as having been inside if currently inside or entering
+        glm::vec3 offset = new_direction * 0.001f;
+        trace_single_photon(hit.intersectionPoint + offset, new_direction, new_power, depth + 1, 
+                           new_entry_point, ever_inside_medium || will_enter_or_stay_inside);
+    } else {
+        // Hit diffuse surface
+        glm::vec3 final_power = power;
+        
+        // Apply absorption if photon is currently inside medium
+        bool currently_inside = glm::length(medium_entry_point) > 0.0f;
+        if (currently_inside) {
+            FloatType travel_dist = glm::length(hit.intersectionPoint - medium_entry_point);
+            
+            const Face* last_transparent_face = nullptr;
+            for (const auto& face : world_.all_faces()) {
+                if (is_transparent(face.material)) {
+                    last_transparent_face = &face;
+                    break;
+                }
+            }
+            
+            if (last_transparent_face) {
+                const Material& mat = last_transparent_face->material;
+                glm::vec3 effective_sigma_a = glm::vec3(
+                    -std::log(std::max(mat.base_color.r, 0.001f)) / mat.td,
+                    -std::log(std::max(mat.base_color.g, 0.001f)) / mat.td,
+                    -std::log(std::max(mat.base_color.b, 0.001f)) / mat.td
+                );
+                
+                final_power = glm::vec3(
+                    power.x * std::exp(-effective_sigma_a.x * travel_dist),
+                    power.y * std::exp(-effective_sigma_a.y * travel_dist),
+                    power.z * std::exp(-effective_sigma_a.z * travel_dist)
+                );
             }
         }
         
-        // Continue tracing
-        glm::vec3 offset = new_direction * 0.001f;  // Avoid self-intersection
-        trace_single_photon(hit.intersectionPoint + offset, new_direction, new_power, depth + 1, new_entry_point, has_refracted || completed_refraction);
-    } else {
-        // Hit diffuse surface - store photon ONLY if it has refracted through glass
-        // This excludes pure mirror reflections and only captures refractive caustics
-        if (has_refracted) {
-            // This is a refractive caustic photon - power includes Beer-Lambert absorption
-            store_photon(Photon(hit.intersectionPoint, direction, power, hit_face));
+        // Store photon if it ever traveled inside the medium
+        // This captures both refractive caustics and internal reflections (with absorption)
+        // but excludes pure external mirror reflections (white light)
+        if (ever_inside_medium) {
+            store_photon(Photon(hit.intersectionPoint, direction, final_power, hit_face));
         }
     }
 }
@@ -345,14 +389,6 @@ ColourHDR PhotonMap::estimate_caustic(const Face* face, const glm::vec3& point,
     // Energy conservation: normalize by search area (not photon count!)
     FloatType search_area = std::numbers::pi * search_radius * search_radius;
     glm::vec3 radiance = accumulated_flux / search_area;
-    
-    // DEBUG: Log caustic color estimation occasionally
-    static int estimate_count = 0;
-    if (estimate_count < 5 && glm::length(radiance) > 0.0001f) {
-        std::cout << "Caustic estimate #" << estimate_count << ": photons=" << photons.size()
-                  << ", radiance=(" << radiance.x << ", " << radiance.y << ", " << radiance.z << ")\n";
-        estimate_count++;
-    }
     
     return ColourHDR(radiance.x, radiance.y, radiance.z);
 }
