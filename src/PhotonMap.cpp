@@ -76,7 +76,8 @@ void PhotonMap::emit_photons_to_object(const Face& target_face, int num_photons)
 }
 
 void PhotonMap::trace_single_photon(const glm::vec3& origin, const glm::vec3& direction, 
-                                    const glm::vec3& power, int depth) {
+                                    const glm::vec3& power, int depth,
+                                    const glm::vec3& medium_entry_point) {
     // Stop if exceeded max bounces
     if (depth >= MAX_PHOTON_BOUNCES) {
         return;
@@ -112,7 +113,7 @@ void PhotonMap::trace_single_photon(const glm::vec3& origin, const glm::vec3& di
     
     // Continue tracing if hit transparent object
     if (is_transparent(mat)) {
-        // Simple refraction/reflection logic
+        // Refraction/reflection logic
         glm::vec3 normal = hit.front_face ? hit.normal : -hit.normal;
         FloatType eta = hit.front_face ? (1.0f / mat.ior) : mat.ior;
         
@@ -122,8 +123,41 @@ void PhotonMap::trace_single_photon(const glm::vec3& origin, const glm::vec3& di
         
         bool cannot_refract = eta * sin_theta > 1.0f;
         glm::vec3 new_direction;
-        // Apply mild attenuation through transparent material
-        glm::vec3 new_power = power * 0.95f;
+        glm::vec3 new_power = power;
+        glm::vec3 new_entry_point = medium_entry_point;
+        
+        // Beer-Lambert absorption: attenuate by material color during transmission
+        if (!hit.front_face) {
+            // Photon is exiting the medium, apply absorption based on distance traveled inside
+            FloatType travel_dist = glm::length(hit.intersectionPoint - medium_entry_point);
+            
+            if (travel_dist > 0.0f && mat.td > 0.0f) {
+                glm::vec3 effective_sigma_a;
+                
+                if (glm::length(mat.sigma_a) > 0.0f) {
+                    effective_sigma_a = mat.sigma_a;
+                } else {
+                    // Derive absorption from tint color and transmission depth
+                    effective_sigma_a = glm::vec3(
+                        -std::log(std::max(mat.base_color.r, 0.001f)) / mat.td,
+                        -std::log(std::max(mat.base_color.g, 0.001f)) / mat.td,
+                        -std::log(std::max(mat.base_color.b, 0.001f)) / mat.td
+                    );
+                }
+                
+                // Apply Beer-Lambert law: I = I0 * exp(-sigma_a * distance)
+                new_power = glm::vec3(
+                    power.x * std::exp(-effective_sigma_a.x * travel_dist),
+                    power.y * std::exp(-effective_sigma_a.y * travel_dist),
+                    power.z * std::exp(-effective_sigma_a.z * travel_dist)
+                );
+            }
+            // Reset entry point when exiting
+            new_entry_point = glm::vec3(0.0f);
+        } else {
+            // Photon is entering the medium, record entry point
+            new_entry_point = hit.intersectionPoint;
+        }
         
         // Fresnel (Schlick's approximation)
         FloatType r0 = (1.0f - eta) / (1.0f + eta);
@@ -144,7 +178,7 @@ void PhotonMap::trace_single_photon(const glm::vec3& origin, const glm::vec3& di
         
         // Continue tracing
         glm::vec3 offset = new_direction * 0.001f;  // Avoid self-intersection
-        trace_single_photon(hit.intersectionPoint + offset, new_direction, new_power, depth + 1);
+        trace_single_photon(hit.intersectionPoint + offset, new_direction, new_power, depth + 1, new_entry_point);
     }
 }
 
@@ -270,27 +304,35 @@ ColourHDR PhotonMap::estimate_caustic(const Face* face, const glm::vec3& point,
         return ColourHDR(0.0f, 0.0f, 0.0f);
     }
     
-    // Accumulate photon contributions with cone filter
-    glm::vec3 radiance(0.0f);
-    FloatType total_weight = 0.0f;
+    // Cone filtering with energy conservation
+    glm::vec3 accumulated_flux(0.0f);
+    constexpr FloatType k = 1.1f;  // Cone filter parameter for smooth falloff
     
     for (const auto& photon : photons) {
-        // Calculate distance-based weight (cone filter)
+        // Leakage check: ensure photon is on the correct side of surface
+        // Photon direction points toward surface, normal points away
+        FloatType alignment = glm::dot(photon.direction, normal);
+        if (alignment > 0.0f) {
+            // Photon hit from backface, skip to prevent light leaking
+            continue;
+        }
+        
+        // Calculate distance-based cone filter weight
         glm::vec3 diff = photon.position - point;
         FloatType dist = glm::length(diff);
-        FloatType weight = 1.0f - (dist / search_radius);  // Linear falloff
-        weight = std::max(0.0f, weight);
+        FloatType weight = 1.0f - (dist / (k * search_radius));
+        weight = std::max(0.0f, weight);  // Clamp to [0, 1]
         
-        // Simple Lambert BRDF: max(0, dot(N, L)) / pi
-        FloatType cos_theta = std::max(0.0f, glm::dot(normal, -photon.direction));
-        radiance += photon.power * (cos_theta * weight);
-        total_weight += weight;
+        // BRDF: Lambertian diffuse (cos_theta / pi already in power)
+        FloatType cos_theta = std::max(0.0f, -alignment);  // -dot because direction points in
+        
+        // Accumulate weighted photon contribution
+        accumulated_flux += photon.power * (cos_theta * weight);
     }
     
-    // Normalize by total weight to avoid over-brightness
-    if (total_weight > 0.0f) {
-        radiance /= total_weight;
-    }
+    // Energy conservation: normalize by search area (not photon count!)
+    FloatType search_area = std::numbers::pi * search_radius * search_radius;
+    glm::vec3 radiance = accumulated_flux / search_area;
     
     return ColourHDR(radiance.x, radiance.y, radiance.z);
 }

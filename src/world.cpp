@@ -362,7 +362,7 @@ void Model::load_materials(std::string filename) {
             assert(current_material != materials_.end());
             FloatType r, g, b;
             iss >> r >> g >> b;
-            current_material->second.tint_color = glm::vec3(r, g, b);
+            current_material->second.base_color = glm::vec3(r, g, b);
         } else if (type == "Ns") {
             assert(current_material != materials_.end());
             FloatType ns;

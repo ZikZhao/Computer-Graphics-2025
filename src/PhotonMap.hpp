@@ -65,7 +65,8 @@ private:
     
     // Trace a single photon through the scene
     void trace_single_photon(const glm::vec3& origin, const glm::vec3& direction, 
-                             const glm::vec3& power, int depth);
+                             const glm::vec3& power, int depth, 
+                             const glm::vec3& medium_entry_point = glm::vec3(0.0f));
     
     // Store a photon in the map
     void store_photon(const Photon& photon);

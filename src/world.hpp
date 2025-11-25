@@ -142,7 +142,7 @@ public:
 
 struct Material {
     std::shared_ptr<Texture> texture;
-    glm::vec3 tint_color = glm::vec3(1.0f, 1.0f, 1.0f);  // Color multiplier for texture (or base color if no texture)
+    glm::vec3 base_color = glm::vec3(1.0f, 1.0f, 1.0f);  // Color multiplier for texture (or base color if no texture)
     FloatType shininess = 64.0f;
     FloatType metallic = 0.0f;
     enum class Shading { Flat, Gouraud, Phong } shading = Shading::Flat;

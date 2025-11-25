@@ -1,4 +1,5 @@
 #include "raytracer.hpp"
+#include "PhotonMap.hpp"
 #include <numeric>
 #include <algorithm>
 #include <functional>
@@ -132,12 +133,12 @@ HitRecord RayTracer::hit(const glm::vec3& ro, const glm::vec3& rd) const noexcep
                     if (face.material.texture) {
                         Colour tex_sample = face.material.texture->sample(uv_coord.x, uv_coord.y);
                         closest.color = glm::vec3(
-                            (tex_sample.red / 255.0f) * face.material.tint_color.r,
-                            (tex_sample.green / 255.0f) * face.material.tint_color.g,
-                            (tex_sample.blue / 255.0f) * face.material.tint_color.b
+                            (tex_sample.red / 255.0f) * face.material.base_color.r,
+                            (tex_sample.green / 255.0f) * face.material.base_color.g,
+                            (tex_sample.blue / 255.0f) * face.material.base_color.b
                         );
                     } else {
-                        closest.color = face.material.tint_color;
+                        closest.color = face.material.base_color;
                     }
                 }
             }
@@ -170,9 +171,9 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
             effective_sigma_a = medium.material->sigma_a;
         } else if (medium.material->td > 0.0f) {
             effective_sigma_a = glm::vec3(
-                -std::log(std::max(medium.material->tint_color.r, 0.001f)) / medium.material->td,
-                -std::log(std::max(medium.material->tint_color.g, 0.001f)) / medium.material->td,
-                -std::log(std::max(medium.material->tint_color.b, 0.001f)) / medium.material->td
+                -std::log(std::max(medium.material->base_color.r, 0.001f)) / medium.material->td,
+                -std::log(std::max(medium.material->base_color.g, 0.001f)) / medium.material->td,
+                -std::log(std::max(medium.material->base_color.b, 0.001f)) / medium.material->td
             );
         } else {
             effective_sigma_a = glm::vec3(0.0f);
@@ -350,10 +351,11 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
     ColourHDR caustics_contribution(0.0f, 0.0f, 0.0f);
     if (use_caustics && photon_map_ && photon_map_->is_ready()) {
         // Estimate caustic radiance at this point
-        FloatType search_radius = 0.15f;  // Smaller radius for tighter caustics
+        FloatType search_radius = 0.12f;  // Tighter radius for sharper caustics
         caustics_contribution = photon_map_->estimate_caustic(&face, intersection.intersectionPoint, intersection.normal, search_radius);
-        // Scale down caustics contribution to blend naturally with direct lighting
-        caustics_contribution = caustics_contribution * 1.5f;
+        
+        // Scale down to 12.5% to reduce brightness
+        caustics_contribution = caustics_contribution * 0.025f;
     }
     
     return (direct_lighting + caustics_contribution) * medium_absorption;
@@ -422,9 +424,9 @@ glm::vec3 RayTracer::compute_transmittance_bvh(const glm::vec3& point, const glm
                 effective_sigma_a = mat.sigma_a;
             } else if (mat.td > 0.0f) {
                 effective_sigma_a = glm::vec3(
-                    -std::log(std::max(mat.tint_color.r, 0.001f)) / mat.td,
-                    -std::log(std::max(mat.tint_color.g, 0.001f)) / mat.td,
-                    -std::log(std::max(mat.tint_color.b, 0.001f)) / mat.td
+                    -std::log(std::max(mat.base_color.r, 0.001f)) / mat.td,
+                    -std::log(std::max(mat.base_color.g, 0.001f)) / mat.td,
+                    -std::log(std::max(mat.base_color.b, 0.001f)) / mat.td
                 );
             } else {
                 effective_sigma_a = glm::vec3(0.0f);
@@ -584,7 +586,7 @@ std::pair<std::vector<int>, std::vector<RayTracer::BVHNode>> RayTracer::build_bv
     constexpr int sah_buckets = 12;
     constexpr int leaf_threshold = 4;
     
-    std::function<int(int,int)> build = [&](int start, int end) -> int {
+    std::function<int(int, int)> build = [&](int start, int end) -> int {
         RayTracer::AABB box{glm::vec3(std::numeric_limits<float>::infinity()), glm::vec3(-std::numeric_limits<float>::infinity())};
         RayTracer::AABB cbox{box.min, box.max};
         for (int i = start; i < end; ++i) {

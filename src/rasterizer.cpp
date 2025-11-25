@@ -134,9 +134,9 @@ InplaceVector<ClipVertex, 9> Rasterizer::clip_against_plane(const InplaceVector<
 
 InplaceVector<ClipVertex, 9> Rasterizer::clip_triangle(const Camera& camera, const Face& face, double aspect_ratio) noexcept {
     Colour vertex_color{
-        static_cast<std::uint8_t>(std::clamp(face.material.tint_color.r * 255.0f, 0.0f, 255.0f)),
-        static_cast<std::uint8_t>(std::clamp(face.material.tint_color.g * 255.0f, 0.0f, 255.0f)),
-        static_cast<std::uint8_t>(std::clamp(face.material.tint_color.b * 255.0f, 0.0f, 255.0f))
+        static_cast<std::uint8_t>(std::clamp(face.material.base_color.r * 255.0f, 0.0f, 255.0f)),
+        static_cast<std::uint8_t>(std::clamp(face.material.base_color.g * 255.0f, 0.0f, 255.0f)),
+        static_cast<std::uint8_t>(std::clamp(face.material.base_color.b * 255.0f, 0.0f, 255.0f))
     };
     
     InplaceVector<ClipVertex, 9> polygon = {
@@ -176,12 +176,12 @@ std::uint32_t Rasterizer::sample_texture(const Face& face, const glm::vec3& bary
         
         Colour tex_sample = face.material.texture->sample(u, v);
         base_color = glm::vec3(
-            (tex_sample.red / 255.0f) * face.material.tint_color.r,
-            (tex_sample.green / 255.0f) * face.material.tint_color.g,
-            (tex_sample.blue / 255.0f) * face.material.tint_color.b
+            (tex_sample.red / 255.0f) * face.material.base_color.r,
+            (tex_sample.green / 255.0f) * face.material.base_color.g,
+            (tex_sample.blue / 255.0f) * face.material.base_color.b
         );
     } else {
-        base_color = face.material.tint_color;
+        base_color = face.material.base_color;
     }
     
     return Colour{
