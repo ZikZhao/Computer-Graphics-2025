@@ -6,7 +6,8 @@ Window::Window(int w, int h, bool fullscreen) noexcept
     
     // Initialize SDL
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
-        throw std::runtime_error(std::string("Could not initialise SDL: ") + SDL_GetError());
+        std::cerr << "Could not initialise SDL: " << SDL_GetError() << std::endl;
+        std::terminate();
     }
     
     // Create window
@@ -16,7 +17,8 @@ Window::Window(int w, int h, bool fullscreen) noexcept
     int anywhere = SDL_WINDOWPOS_UNDEFINED;
     window = SDL_CreateWindow("COMS30020", anywhere, anywhere, width, height, flags);
     if (!window) {
-        throw std::runtime_error(std::string("Could not set video mode: ") + SDL_GetError());
+        std::cerr << "Could not set video mode: " << SDL_GetError() << std::endl;
+        std::terminate();
     }
     
     // Create renderer (software rendering for compatibility)
@@ -24,7 +26,8 @@ Window::Window(int w, int h, bool fullscreen) noexcept
     // Alternative: SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC for hardware acceleration
     renderer = SDL_CreateRenderer(window, -1, flags);
     if (!renderer) {
-        throw std::runtime_error(std::string("Could not create renderer: ") + SDL_GetError());
+        std::cerr << "Could not create renderer: " << SDL_GetError() << std::endl;
+        std::terminate();
     }
     
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
@@ -34,7 +37,8 @@ Window::Window(int w, int h, bool fullscreen) noexcept
     int pixel_format = SDL_PIXELFORMAT_ARGB8888;
     texture = SDL_CreateTexture(renderer, pixel_format, SDL_TEXTUREACCESS_STATIC, width, height);
     if (!texture) {
-        throw std::runtime_error(std::string("Could not allocate texture: ") + SDL_GetError());
+        std::cerr << "Could not allocate texture: " << SDL_GetError() << std::endl;
+        std::terminate();
     }
 }
 
@@ -97,10 +101,12 @@ bool Window::process_events() {
         }
         if (event.type == SDL_MOUSEMOTION) {
             mouse_motion_this_frame = true;
-            mouse_xrel = event.motion.xrel;
-            mouse_yrel = event.motion.yrel;
+            mouse_xrel += event.motion.xrel;
+            mouse_yrel += event.motion.yrel;
         }
     }
+    process_key_bindings();
+    process_mouse_bindings();
     return true;
 }
 
@@ -112,10 +118,7 @@ void Window::update_keyboard_state() {
     }
 }
 
-void Window::update() {
-    process_key_bindings();
-    process_mouse_bindings();
-}
+ 
 
 void Window::process_key_bindings() {
     for (const auto& binding : key_bindings) {
@@ -238,26 +241,23 @@ void Window::process_mouse_bindings() {
     mouse_yrel = 0;
 }
 
-void Window::render() {
+void Window::update() {
     SDL_UpdateTexture(texture, nullptr, pixel_buffer.data(), width * sizeof(uint32_t));
     SDL_RenderClear(renderer);
     SDL_RenderCopy(renderer, texture, nullptr, nullptr);
     SDL_RenderPresent(renderer);
+    clear_pixels();
 }
 
-void Window::set_pixel_colour(size_t x, size_t y, uint32_t colour) noexcept {
-    if (x >= width || y >= height) {
-        std::cout << x << "," << y << " not on visible screen area" << std::endl;
-    } else {
-        pixel_buffer[y * width + x] = colour;
-    }
+std::uint32_t& Window::operator[](const std::pair<int, int>& xy) noexcept {
+    std::size_t x = static_cast<std::size_t>(xy.first);
+    std::size_t y = static_cast<std::size_t>(xy.second);
+    return pixel_buffer[y * width + x];
 }
 
-uint32_t Window::get_pixel_colour(size_t x, size_t y) const noexcept {
-    if (x >= width || y >= height) {
-        std::cout << x << "," << y << " not on visible screen area" << std::endl;
-        return 0;
-    }
+std::uint32_t Window::operator[](const std::pair<int, int>& xy) const noexcept {
+    std::size_t x = static_cast<std::size_t>(xy.first);
+    std::size_t y = static_cast<std::size_t>(xy.second);
     return pixel_buffer[y * width + x];
 }
 
@@ -296,7 +296,7 @@ void Window::save_bmp(const std::string& filename) const {
     SDL_FreeSurface(surface);
 }
 
-bool Window::is_key_pressed(SDL_Scancode key) const {
+bool Window::is_key_down(SDL_Scancode key) const {
     return keys_this_frame[key] != 0;
 }
 

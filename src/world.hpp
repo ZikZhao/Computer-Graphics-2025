@@ -180,7 +180,7 @@ public:
     glm::vec3 orbit_target_ = { 0.0f, 0.0f, 0.0f };
     bool is_orbiting_ = false;
     FloatType orbit_radius_ = 0.0f;
-    FloatType mouse_sensitivity_ = 0.003f;
+    FloatType mouse_sensitivity_ = 0.002f;
     bool is_dragging_ = false;
     bool first_drag_motion_ = false;  // Flag to skip first motion event after drag starts
     Camera() noexcept = default;

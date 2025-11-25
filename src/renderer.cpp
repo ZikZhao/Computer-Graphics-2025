@@ -102,7 +102,7 @@ void Renderer::process_rows(int y0, int y1) noexcept {
             }
             
             Colour final_colour = tonemap_and_gamma_correct(final_hdr, gamma_);
-            window_.set_pixel_colour(x, y, final_colour);
+            window_[{x, y}] = final_colour;
         }
     }
 }
@@ -219,7 +219,7 @@ void Renderer::draw_coordinate_axes() noexcept {
         while (true) {
             if (x0 >= 0 && x0 < static_cast<int>(window_.get_width()) && 
                 y0 >= 0 && y0 < static_cast<int>(window_.get_height())) {
-                window_.set_pixel_colour(x0, y0, color);
+                window_[{x0, y0}] = color;
             }
             
             if (x0 == x1 && y0 == y1) break;

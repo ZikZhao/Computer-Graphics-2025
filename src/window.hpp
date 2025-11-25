@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include "SDL.h"
+#include "world.hpp"
 
 class Window {
 public:
@@ -84,14 +85,13 @@ public:
     void register_mouse(Uint8 button, Trigger trigger, MouseHandler handler);
     
     // Main loop methods
-    bool process_events(); // Returns false if should quit
-    void update();         // Process event bindings based on current keyboard state
-    void render();
+    bool process_events(); // Returns false if should quit; also dispatches bindings
+    void update();         // Present the frame and clear buffer for next frame (end of loop)
     
     // Pixel manipulation
-    void set_pixel_colour(size_t x, size_t y, uint32_t colour) noexcept;
-    uint32_t get_pixel_colour(size_t x, size_t y) const noexcept;
     void clear_pixels() noexcept;
+    std::uint32_t& operator[](const std::pair<int,int>& xy) noexcept;
+    std::uint32_t operator[](const std::pair<int,int>& xy) const noexcept;
     const std::vector<uint32_t>& get_pixel_buffer() const noexcept;
     
     // File operations
@@ -103,7 +103,7 @@ public:
     size_t get_height() const noexcept { return height; }
     
     // Keyboard state queries
-    bool is_key_pressed(SDL_Scancode key) const;
+    bool is_key_down(SDL_Scancode key) const;
     bool is_key_just_pressed(SDL_Scancode key) const;
     bool is_key_just_released(SDL_Scancode key) const;
 };

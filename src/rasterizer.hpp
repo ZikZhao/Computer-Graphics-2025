@@ -37,8 +37,8 @@ private:
     InplaceVector<ClipVertex, 9> clip_triangle(const Camera& camera, const Face& face, double aspect_ratio) noexcept;
     
     // Texture sampling with perspective correction
-    static std::uint32_t sample_texture(const Face& face, const glm::vec3& bary, 
-                                        const ScreenNdcCoord& v0, const ScreenNdcCoord& v1, const ScreenNdcCoord& v2) noexcept;
+    static Colour sample_texture(const Face& face, const glm::vec3& bary, 
+                                 const ScreenNdcCoord& v0, const ScreenNdcCoord& v1, const ScreenNdcCoord& v2) noexcept;
     
     // NDC to screen conversion
     ScreenNdcCoord ndc_to_screen(const glm::vec3& ndc, const glm::vec2& uv, FloatType w) const noexcept;

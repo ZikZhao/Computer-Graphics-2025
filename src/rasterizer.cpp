@@ -166,8 +166,8 @@ InplaceVector<ClipVertex, 9> Rasterizer::clip_triangle(const Camera& camera, con
     return polygon;
 }
 
-std::uint32_t Rasterizer::sample_texture(const Face& face, const glm::vec3& bary,
-                                         const ScreenNdcCoord& v0, const ScreenNdcCoord& v1, const ScreenNdcCoord& v2) noexcept {
+Colour Rasterizer::sample_texture(const Face& face, const glm::vec3& bary,
+                                  const ScreenNdcCoord& v0, const ScreenNdcCoord& v1, const ScreenNdcCoord& v2) noexcept {
     glm::vec3 base_color;
     
     if (face.material.texture) {
@@ -202,7 +202,7 @@ void Rasterizer::wireframe_render(const Camera& camera, const Face& face, Window
         screen_verts.push_back(ndc_to_screen(ndc, clipped[i].uv, clipped[i].position_clip.w));
     }
     
-    std::uint32_t colour = clipped[0].colour;
+    Colour colour = clipped[0].colour;
     
     for (size_t i = 0; i < screen_verts.size(); i++) {
         ScreenNdcCoord from = screen_verts[i];
@@ -221,7 +221,7 @@ void Rasterizer::wireframe_render(const Camera& camera, const Face& face, Window
                 FloatType& depth = z_buffer_[y * width_ + x];
                 if (inv_z > depth) {
                     depth = inv_z;
-                    window.set_pixel_colour(x, y, colour);
+                    window[{static_cast<int>(x), static_cast<int>(y)}] = colour;
                 }
             }
         } else {
@@ -237,7 +237,7 @@ void Rasterizer::wireframe_render(const Camera& camera, const Face& face, Window
                 FloatType& depth = z_buffer_[y * width_ + x];
                 if (inv_z > depth) {
                     depth = inv_z;
-                    window.set_pixel_colour(x, y, colour);
+                    window[{static_cast<int>(x), static_cast<int>(y)}] = colour;
                 }
             }
         }
@@ -285,13 +285,13 @@ void Rasterizer::rasterized_render(const Camera& camera, const Face& face, Windo
                     { v0.x, v0.y }, { v1.x, v1.y }, { v2.x, v2.y }, { x_center, y_center });
                 
                 if (bary.x >= 0.0f && bary.y >= 0.0f && bary.z >= 0.0f) {
-                    std::uint32_t colour = sample_texture(face, bary, v0, v1, v2);
+                    Colour colour = sample_texture(face, bary, v0, v1, v2);
                     FloatType inv_z = ComputeInvZndc(std::array<FloatType, 3>{bary.z, bary.x, bary.y}, 
                                                      std::array<FloatType, 3>{v0.z_ndc, v1.z_ndc, v2.z_ndc});
                     FloatType& depth = z_buffer_[y * width_ + x];
                     if (inv_z > depth) {
                         depth = inv_z;
-                        window.set_pixel_colour(x, y, colour);
+                        window[{static_cast<int>(x), static_cast<int>(y)}] = colour;
                     }
                 }
             }
@@ -311,13 +311,13 @@ void Rasterizer::rasterized_render(const Camera& camera, const Face& face, Windo
                     { v0.x, v0.y }, { v1.x, v1.y }, { v2.x, v2.y }, { x_center, y_center });
                 
                 if (bary.x >= 0.0f && bary.y >= 0.0f && bary.z >= 0.0f) {
-                    std::uint32_t colour = sample_texture(face, bary, v0, v1, v2);
+                    Colour colour = sample_texture(face, bary, v0, v1, v2);
                     FloatType inv_z = ComputeInvZndc(std::array<FloatType, 3>{bary.z, bary.x, bary.y}, 
                                                      std::array<FloatType, 3>{v0.z_ndc, v1.z_ndc, v2.z_ndc});
                     FloatType& depth = z_buffer_[y * width_ + x];
                     if (inv_z > depth) {
                         depth = inv_z;
-                        window.set_pixel_colour(x, y, colour);
+                        window[{static_cast<int>(x), static_cast<int>(y)}] = colour;
                     }
                 }
             }

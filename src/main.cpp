@@ -120,15 +120,13 @@ int main(int argc, char *argv[]) {
             break; // Exit main loop if window should close
         }
         
-        // Update window input state and process event bindings
-        window.update();
+        // Input callbacks already dispatched within process_events()
         
         // Render frame
-        window.clear_pixels();
         world.update();
         world.orbiting();
         renderer.render();
-        window.render();
+        window.update();
         
         // Capture frame if recording
         if (video_recorder.isRecording()) {
