@@ -72,7 +72,8 @@
             "stop_token": "cpp",
             "thread": "cpp",
             "barrier": "cpp",
-            "mutex": "cpp"
+            "mutex": "cpp",
+            "unordered_set": "cpp"
         }
     },
     "tasks": {

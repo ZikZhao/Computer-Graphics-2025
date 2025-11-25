@@ -15,8 +15,15 @@ Renderer::Renderer(Window& window, const World& world)
     
     // Start worker threads
     for (unsigned int i = 0; i < std::thread::hardware_concurrency(); ++i) {
-        workers_.emplace_back([this](std::stop_token) { this->worker_thread(); });
+        workers_.emplace_back([this](std::stop_token st) { this->worker_thread(st); });
     }
+}
+
+Renderer::~Renderer() {
+    for (auto& w : workers_) {
+        w.request_stop();
+    }
+    frame_barrier_.arrive_and_wait();
 }
 
 void Renderer::clear() noexcept {
@@ -100,10 +107,11 @@ void Renderer::process_rows(int y0, int y1) noexcept {
     }
 }
 
-void Renderer::worker_thread() noexcept {
+void Renderer::worker_thread(std::stop_token st) noexcept {
     while (true) {
         // Wait for frame start signal
         frame_barrier_.arrive_and_wait();
+        if (st.stop_requested()) break;
         
         // Process tiles until all are done
         const int num_tiles = (window_.get_height() + tile_height - 1) / tile_height;
@@ -114,10 +122,12 @@ void Renderer::worker_thread() noexcept {
             int y0 = tile_idx * tile_height;
             int y1 = std::min(y0 + tile_height, static_cast<int>(window_.get_height()));
             process_rows(y0, y1);
+            if (st.stop_requested()) break;
         }
         
         // Signal frame completion
         frame_barrier_.arrive_and_wait();
+        if (st.stop_requested()) break;
     }
 }
 

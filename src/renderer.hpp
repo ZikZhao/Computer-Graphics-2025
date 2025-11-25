@@ -7,6 +7,7 @@
 #include <barrier>
 #include <atomic>
 #include <thread>
+#include <stop_token>
 
 // Forward declaration
 class Window;
@@ -51,7 +52,7 @@ private:
     
 public:
     Renderer(Window& window, const World& world);
-    ~Renderer() = default;
+    ~Renderer();
     
     void render() noexcept;
     
@@ -65,7 +66,7 @@ private:
     void depth_of_field_render() noexcept;
     
     // Worker thread function
-    void worker_thread() noexcept;
+    void worker_thread(std::stop_token st) noexcept;
     void process_rows(int y0, int y1) noexcept;
     
     // Tonemapping and gamma correction
