@@ -359,8 +359,7 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
     ColourHDR caustics_contribution(0.0f, 0.0f, 0.0f);
     if (use_caustics && photon_map_ && photon_map_->is_ready()) {
         // Estimate caustic radiance at this point
-        FloatType search_radius = 0.12f;  // Tighter radius for sharper caustics
-        caustics_contribution = photon_map_->estimate_caustic(&face, intersection.intersectionPoint, intersection.normal, search_radius);
+        caustics_contribution = photon_map_->estimate_caustic(&face, intersection.intersectionPoint, intersection.normal, PhotonMap::CAUSTIC_SEARCH_RADIUS);
         
         // DEBUG MODE: Show only caustics RAW COLOR (no material modulation) for verification
         if (debug_visualize_caustics_only) {

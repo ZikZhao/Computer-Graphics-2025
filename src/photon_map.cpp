@@ -93,18 +93,6 @@ void PhotonMap::trace_single_photon(const glm::vec3& origin, const glm::vec3& di
     }
     
     const auto& hit = hit_opt.value();
-    
-    // Russian roulette after second bounce to avoid premature termination
-    // This ensures most photons get at least one chance to create caustics
-    if (depth >= 2) {
-        FloatType power_magnitude = glm::length(power);
-        // Use a more lenient survival probability that doesn't penalize low-power photons as much
-        FloatType survival_prob = 0.8f + 0.15f * std::min(1.0f, power_magnitude / MIN_PHOTON_POWER);
-        if (random_float() > survival_prob) {
-            return;  // Photon absorbed
-        }
-    }
-    
     const Face* hit_face = &world_.all_faces()[hit.triangleIndex];
     const Material& mat = hit_face->material;
     
@@ -162,6 +150,20 @@ void PhotonMap::trace_single_photon(const glm::vec3& origin, const glm::vec3& di
                     power.z * std::exp(-effective_sigma_a.z * travel_dist)
                 );
             }
+        }
+        
+        // Russian roulette after first bounce (with energy compensation for unbiased estimation)
+        if (depth >= 1) {
+            FloatType power_magnitude = glm::length(new_power);
+            // Survival probability based on photon power
+            FloatType survival_prob = std::min(0.95f, std::max(0.1f, power_magnitude / MIN_PHOTON_POWER));
+            FloatType rr = random_float();
+            if (rr > survival_prob) {
+                return;  // Photon absorbed
+            }
+            // Energy compensation: boost surviving photon power to maintain expected value
+            // E[new_power] = survival_prob * (new_power / survival_prob) + (1 - survival_prob) * 0 = new_power
+            new_power /= survival_prob;
         }
         
         // Decide refraction vs reflection

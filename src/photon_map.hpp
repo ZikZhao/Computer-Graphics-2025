@@ -36,10 +36,11 @@ struct GridCellHash {
 class PhotonMap {
 public:
     // Configuration
-    static constexpr int PHOTONS_PER_LIGHT = 500000;     // Number of photons to emit from light source
+    static constexpr int PHOTONS_PER_LIGHT = 100000;     // Number of photons to emit from light source
     static constexpr int MAX_PHOTON_BOUNCES = 5;        // Maximum number of bounces per photon
     static constexpr FloatType MIN_PHOTON_POWER = 0.01f; // Minimum power threshold for Russian roulette
-    static constexpr FloatType GRID_CELL_SIZE = 0.2f;    // Size of each grid cell for spatial hashing
+    static constexpr FloatType CAUSTIC_SEARCH_RADIUS = 0.12f;  // Search radius for caustic photon gathering
+    static constexpr FloatType GRID_CELL_SIZE = CAUSTIC_SEARCH_RADIUS;  // Grid cell size = search radius for exact 27-cell coverage
     
 private:
     const World& world_;
