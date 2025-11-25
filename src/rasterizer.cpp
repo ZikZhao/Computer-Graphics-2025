@@ -244,88 +244,8 @@ void Rasterizer::wireframe_render(const Camera& camera, const Face& face, Drawin
 }
 
 void Rasterizer::rasterized_render(const Camera& camera, const Face& face, DrawingWindow& window, double aspect_ratio) noexcept {
-    // Render highly metallic materials as black
-    if (face.material.metallic >= 0.99f) {
-        auto clipped = clip_triangle(camera, face, aspect_ratio);
-        if (clipped.size() < 3) return;
-        
-        InplaceVector<ScreenNdcCoord, 9> screen_verts;
-        for (size_t i = 0; i < clipped.size(); i++) {
-            glm::vec3 ndc = camera.clip_to_ndc(clipped[i].position_clip);
-            screen_verts.push_back(ndc_to_screen(ndc, clipped[i].uv, clipped[i].position_clip.w));
-        }
-        
-        constexpr std::uint32_t black = Colour{0, 0, 0};
-        for (size_t i = 1; i + 1 < clipped.size(); i++) {
-            ScreenNdcCoord v0 = screen_verts[0];
-            ScreenNdcCoord v1 = screen_verts[i];
-            ScreenNdcCoord v2 = screen_verts[i + 1];
-            
-            if (v0.y > v1.y) std::swap(v0, v1);
-            if (v0.y > v2.y) std::swap(v0, v2);
-            if (v1.y > v2.y) std::swap(v1, v2);
-
-            std::int64_t from_y = std::max<std::int64_t>(static_cast<std::int64_t>(std::ceil(v0.y)), 0);
-            std::int64_t mid_y = std::min<std::int64_t>(static_cast<std::int64_t>(std::ceil(v1.y)), static_cast<std::int64_t>(height_ - 1));
-            std::int64_t to_y = std::min<std::int64_t>(static_cast<std::int64_t>(std::ceil(v2.y)), static_cast<std::int64_t>(height_ - 1));
-
-            FloatType inv_slope_v0v1 = (v1.y - v0.y) == 0 ? 0 : (v1.x - v0.x) / (v1.y - v0.y);
-            FloatType inv_slope_v0v2 = (v2.y - v0.y) == 0 ? 0 : (v2.x - v0.x) / (v2.y - v0.y);
-            FloatType inv_slope_v1v2 = (v2.y - v1.y) == 0 ? 0 : (v2.x - v1.x) / (v2.y - v1.y);
-
-            for (std::int64_t y = from_y; y < mid_y; y++) {
-                FloatType y_center = static_cast<FloatType>(y) + 0.5f;
-                FloatType x01 = inv_slope_v0v1 * (y_center - v0.y) + v0.x;
-                FloatType x02 = inv_slope_v0v2 * (y_center - v0.y) + v0.x;
-                std::int64_t start_x = std::max<std::int64_t>(static_cast<std::int64_t>(std::floor(std::min(x01, x02))), 0);
-                std::int64_t end_x = std::min<std::int64_t>(static_cast<std::int64_t>(std::ceil(std::max(x01, x02))), static_cast<std::int64_t>(width_ - 1));
-                
-                for (std::int64_t x = start_x; x <= end_x; x++) {
-                    FloatType x_center = static_cast<FloatType>(x) + 0.5f;
-                    glm::vec3 bary = convertToBarycentricCoordinates(
-                        { v0.x, v0.y }, { v1.x, v1.y }, { v2.x, v2.y }, { x_center, y_center });
-                    
-                    if (bary.x >= 0.0f && bary.y >= 0.0f && bary.z >= 0.0f) {
-                        FloatType inv_z = ComputeInvZndc(std::array<FloatType, 3>{bary.z, bary.x, bary.y}, 
-                                                         std::array<FloatType, 3>{v0.z_ndc, v1.z_ndc, v2.z_ndc});
-                        FloatType& depth = z_buffer_[y * width_ + x];
-                        if (inv_z > depth) {
-                            depth = inv_z;
-                            window.setPixelColour(x, y, black);
-                        }
-                    }
-                }
-            }
-
-            for (std::int64_t y = mid_y; y <= to_y; y++) {
-                FloatType y_center = static_cast<FloatType>(y) + 0.5f;
-                FloatType x12 = inv_slope_v1v2 * (y_center - v1.y) + v1.x;
-                FloatType x02 = inv_slope_v0v2 * (y_center - v0.y) + v0.x;
-                std::int64_t start_x = std::max<std::int64_t>(static_cast<std::int64_t>(std::floor(std::min(x12, x02))), 0);
-                std::int64_t end_x = std::min<std::int64_t>(static_cast<std::int64_t>(std::ceil(std::max(x12, x02))), static_cast<std::int64_t>(width_ - 1));
-                
-                for (std::int64_t x = start_x; x <= end_x; x++) {
-                    FloatType x_center = static_cast<FloatType>(x) + 0.5f;
-                    glm::vec3 bary = convertToBarycentricCoordinates(
-                        { v0.x, v0.y }, { v1.x, v1.y }, { v2.x, v2.y }, { x_center, y_center });
-                    
-                    if (bary.x >= 0.0f && bary.y >= 0.0f && bary.z >= 0.0f) {
-                        FloatType inv_z = ComputeInvZndc(std::array<FloatType, 3>{bary.z, bary.x, bary.y}, 
-                                                         std::array<FloatType, 3>{v0.z_ndc, v1.z_ndc, v2.z_ndc});
-                        FloatType& depth = z_buffer_[y * width_ + x];
-                        if (inv_z > depth) {
-                            depth = inv_z;
-                            window.setPixelColour(x, y, black);
-                        }
-                    }
-                }
-            }
-        }
-        return;
-    }
-    
     auto clipped = clip_triangle(camera, face, aspect_ratio);
-    if (clipped.size() < 3) return;
+    if (clipped.size() < 3) { return; }
     
     InplaceVector<ScreenNdcCoord, 9> screen_verts;
     for (size_t i = 0; i < clipped.size(); i++) {
@@ -401,5 +321,6 @@ void Rasterizer::rasterized_render(const Camera& camera, const Face& face, Drawi
                 }
             }
         }
+        
     }
 }
