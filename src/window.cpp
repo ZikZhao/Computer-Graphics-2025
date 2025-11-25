@@ -43,6 +43,7 @@ Window::~Window() {
     if (renderer) SDL_DestroyRenderer(renderer);
     if (window) SDL_DestroyWindow(window);
     SDL_Quit();
+    exit(0);
 }
 
 void Window::register_key(const std::unordered_set<SDL_Scancode>& keys, Trigger trigger, KeyHandler handler) {
@@ -296,7 +297,7 @@ void Window::save_bmp(const std::string& filename) const {
     SDL_FreeSurface(surface);
 }
 
-bool Window::is_key_down(SDL_Scancode key) const {
+bool Window::is_key_pressed(SDL_Scancode key) const {
     return keys_this_frame[key] != 0;
 }
 

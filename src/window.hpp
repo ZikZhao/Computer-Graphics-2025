@@ -103,8 +103,7 @@ public:
     size_t get_height() const noexcept { return height; }
     
     // Keyboard state queries
-    bool is_key_down(SDL_Scancode key) const;
+    bool is_key_pressed(SDL_Scancode key) const;
     bool is_key_just_pressed(SDL_Scancode key) const;
     bool is_key_just_released(SDL_Scancode key) const;
-    
 };

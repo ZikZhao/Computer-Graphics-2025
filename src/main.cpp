@@ -28,10 +28,10 @@ int main(int argc, char *argv[]) {
 
     // Centralized input callbacks
     constexpr FloatType move_step = 0.1f;
-    window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_W, SDL_SCANCODE_S, SDL_SCANCODE_A, SDL_SCANCODE_D,
-                           SDL_SCANCODE_SPACE, SDL_SCANCODE_C},
-                          Window::Trigger::ANY_PRESSED_NO_MODIFIER,
-        [&world](const Window::KeyState& ks) {
+    window.register_key(
+        {SDL_SCANCODE_W, SDL_SCANCODE_S, SDL_SCANCODE_A, SDL_SCANCODE_D, SDL_SCANCODE_SPACE, SDL_SCANCODE_C},
+        Window::Trigger::ANY_PRESSED_NO_MODIFIER,
+        [&](const Window::KeyState& ks) {
             FloatType fwd = (ks[SDL_SCANCODE_W] ? 1.0f : 0.0f) - (ks[SDL_SCANCODE_S] ? 1.0f : 0.0f);
             FloatType right = (ks[SDL_SCANCODE_D] ? 1.0f : 0.0f) - (ks[SDL_SCANCODE_A] ? 1.0f : 0.0f);
             FloatType up = (ks[SDL_SCANCODE_SPACE] ? 1.0f : 0.0f) - (ks[SDL_SCANCODE_C] ? 1.0f : 0.0f);
@@ -40,17 +40,8 @@ int main(int argc, char *argv[]) {
             }
         });
 
-    window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_UP}, Window::Trigger::ANY_JUST_PRESSED,
-        [&world](const Window::KeyState&) { world.camera_.rotate(0.0f, -glm::radians(2.0f)); });
-    window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_DOWN}, Window::Trigger::ANY_JUST_PRESSED,
-        [&world](const Window::KeyState&) { world.camera_.rotate(0.0f, glm::radians(2.0f)); });
-    window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_LEFT}, Window::Trigger::ANY_JUST_PRESSED,
-        [&world](const Window::KeyState&) { world.camera_.rotate(-glm::radians(2.0f), 0.0f); });
-    window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_RIGHT}, Window::Trigger::ANY_JUST_PRESSED,
-        [&world](const Window::KeyState&) { world.camera_.rotate(glm::radians(2.0f), 0.0f); });
-
-    window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_O}, Window::Trigger::ANY_JUST_PRESSED,
-        [&world](const Window::KeyState&) {
+    window.register_key({SDL_SCANCODE_O}, Window::Trigger::ANY_JUST_PRESSED,
+        [&](const Window::KeyState&) {
             if (!world.camera_.is_orbiting_) {
                 world.camera_.start_orbiting(world.camera_.orbit_target_);
             } else {
@@ -58,21 +49,22 @@ int main(int argc, char *argv[]) {
             }
         });
 
-    window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_1}, Window::Trigger::ANY_JUST_PRESSED,
-        [&renderer](const Window::KeyState&) { renderer.mode_ = Renderer::Wireframe; });
-    window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_2}, Window::Trigger::ANY_JUST_PRESSED,
-        [&renderer](const Window::KeyState&) { renderer.mode_ = Renderer::Rasterized; });
-    window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_3}, Window::Trigger::ANY_JUST_PRESSED,
-        [&renderer](const Window::KeyState&) { renderer.mode_ = Renderer::Raytraced; });
-    window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_4}, Window::Trigger::ANY_JUST_PRESSED,
-        [&renderer](const Window::KeyState&) { renderer.mode_ = Renderer::DepthOfField; });
+    window.register_key(
+        {SDL_SCANCODE_1, SDL_SCANCODE_2, SDL_SCANCODE_3, SDL_SCANCODE_4},
+        Window::Trigger::ANY_JUST_PRESSED,
+        [&](const Window::KeyState& ks) {
+            if (ks[SDL_SCANCODE_1]) renderer.mode_ = Renderer::Wireframe;
+            else if (ks[SDL_SCANCODE_2]) renderer.mode_ = Renderer::Rasterized;
+            else if (ks[SDL_SCANCODE_3]) renderer.mode_ = Renderer::Raytraced;
+            else if (ks[SDL_SCANCODE_4]) renderer.mode_ = Renderer::DepthOfField;
+        });
 
-    window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_G}, Window::Trigger::ANY_JUST_PRESSED,
-        [&renderer](const Window::KeyState&) { renderer.gamma_ = (renderer.gamma_ == 2.2f) ? 1.0f : 2.2f; });
-    window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_H}, Window::Trigger::ANY_JUST_PRESSED,
-        [&renderer](const Window::KeyState&) { renderer.soft_shadows_enabled_ = !renderer.soft_shadows_enabled_; });
-    window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_P}, Window::Trigger::ANY_JUST_PRESSED,
-        [&renderer](const Window::KeyState&) {
+    window.register_key({SDL_SCANCODE_G}, Window::Trigger::ANY_JUST_PRESSED,
+        [&](const Window::KeyState&) { renderer.gamma_ = (renderer.gamma_ == 2.2f) ? 1.0f : 2.2f; });
+    window.register_key({SDL_SCANCODE_H}, Window::Trigger::ANY_JUST_PRESSED,
+        [&](const Window::KeyState&) { renderer.soft_shadows_enabled_ = !renderer.soft_shadows_enabled_; });
+    window.register_key({SDL_SCANCODE_P}, Window::Trigger::ANY_JUST_PRESSED,
+        [&](const Window::KeyState&) {
             if (renderer.raytracer_->is_photon_map_ready()) {
                 renderer.caustics_enabled_ = !renderer.caustics_enabled_;
                 std::cout << "Caustics (photon mapping): "
@@ -81,8 +73,8 @@ int main(int argc, char *argv[]) {
                 std::cout << "Photon map not ready yet, please wait..." << std::endl;
             }
         });
-    window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_V}, Window::Trigger::ANY_JUST_PRESSED,
-        [](const Window::KeyState&) {
+    window.register_key({SDL_SCANCODE_V}, Window::Trigger::ANY_JUST_PRESSED,
+        [&](const Window::KeyState&) {
             RayTracer::debug_visualize_caustics_only = !RayTracer::debug_visualize_caustics_only;
             std::cout << "DEBUG Caustics-only mode: "
                       << (RayTracer::debug_visualize_caustics_only ? "ON (verify Beer-Lambert color)" : "OFF")
@@ -90,33 +82,29 @@ int main(int argc, char *argv[]) {
         });
     
     // Screenshot Save (Ctrl+S)
-    window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_LCTRL, SDL_SCANCODE_S}, Window::Trigger::ALL_JUST_PRESSED,
-        [&window](const Window::KeyState& ks) {
-            if (!ks[SDL_SCANCODE_LSHIFT] && !ks[SDL_SCANCODE_RSHIFT]) {
-                window.save_ppm("screenshot.ppm");
-                window.save_bmp("screenshot.bmp");
-                std::cout << "Screenshot saved as screenshot.ppm and screenshot.bmp" << std::endl;
-            }
+    window.register_key({SDL_SCANCODE_LCTRL, SDL_SCANCODE_S}, Window::Trigger::ALL_JUST_PRESSED,
+        [&](const Window::KeyState& ks) {
+            window.save_ppm("screenshot.ppm");
+            window.save_bmp("screenshot.bmp");
+            std::cout << "Screenshot saved as screenshot.ppm and screenshot.bmp" << std::endl;
         });
     
-    window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_RCTRL, SDL_SCANCODE_S}, Window::Trigger::ALL_JUST_PRESSED,
-        [&window](const Window::KeyState& ks) {
-            if (!ks[SDL_SCANCODE_LSHIFT] && !ks[SDL_SCANCODE_RSHIFT]) {
-                window.save_ppm("screenshot.ppm");
-                window.save_bmp("screenshot.bmp");
-                std::cout << "Screenshot saved as screenshot.ppm and screenshot.bmp" << std::endl;
-            }
+    window.register_key({SDL_SCANCODE_RCTRL, SDL_SCANCODE_S}, Window::Trigger::ALL_JUST_PRESSED,
+        [&](const Window::KeyState& ks) {
+            window.save_ppm("screenshot.ppm");
+            window.save_bmp("screenshot.bmp");
+            std::cout << "Screenshot saved as screenshot.ppm and screenshot.bmp" << std::endl;
         });
     
     // Video Recording Toggle (Ctrl+Shift+S)
-    window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_LCTRL, SDL_SCANCODE_LSHIFT, SDL_SCANCODE_S}, Window::Trigger::ALL_JUST_PRESSED,
-        [&video_recorder](const auto&) { video_recorder.toggleRecording(); });
+    window.register_key({SDL_SCANCODE_LCTRL, SDL_SCANCODE_LSHIFT, SDL_SCANCODE_S}, Window::Trigger::ALL_JUST_PRESSED,
+        [&](const auto&) { video_recorder.toggleRecording(); });
     
-    window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_RCTRL, SDL_SCANCODE_RSHIFT, SDL_SCANCODE_S}, Window::Trigger::ALL_JUST_PRESSED,
-        [&video_recorder](const auto&) { video_recorder.toggleRecording(); });
+    window.register_key({SDL_SCANCODE_RCTRL, SDL_SCANCODE_RSHIFT, SDL_SCANCODE_S}, Window::Trigger::ALL_JUST_PRESSED,
+        [&](const auto&) { video_recorder.toggleRecording(); });
 
     window.register_mouse(SDL_BUTTON_LEFT, Window::Trigger::ANY_PRESSED,
-        [&world](int xrel, int yrel) {
+        [&](int xrel, int yrel) {
             if (xrel == 0 && yrel == 0) return;
             FloatType dx = -static_cast<FloatType>(xrel) * world.camera_.mouse_sensitivity_;
             FloatType dy = static_cast<FloatType>(yrel) * world.camera_.mouse_sensitivity_;
