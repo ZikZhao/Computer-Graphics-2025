@@ -253,12 +253,19 @@ void Model::load_file(std::string filename) {
             FloatType u, v;
             iss >> u >> v;
             texture_coords_.emplace_back(u, v);
+        } else if (type == "vn") {
+            FloatType x, y, z;
+            iss >> x >> y >> z;
+            vertex_normals_.emplace_back(glm::normalize(glm::vec3(x, y, z)));
         } else if (type == "f") {
             assert(current_obj != objects_.end());
             glm::vec3 vertice[3];
             std::uint8_t tex_indices[3];
             glm::vec2 tex_coords[3];
             int vi_idx[3];
+            int normal_indices[3];
+            bool has_normals = false;
+            
             for (int i = 0; i < 3; i++) {
                 int vertex_index;
                 char slash;
@@ -267,7 +274,9 @@ void Model::load_file(std::string filename) {
                 vi_idx[i] = vertex_index - 1;
                 tex_indices[i] = 0;
                 tex_coords[i] = glm::vec2(0.0f, 0.0f);
+                normal_indices[i] = -1;
                 
+                // Check for texture coordinate
                 if (int c = iss.peek(); c >= '0' && c <= '9') {
                     int tex_idx;
                     iss >> tex_idx;
@@ -278,7 +287,19 @@ void Model::load_file(std::string filename) {
                         tex_coords[i] = glm::vec2(0.0f, 0.0f);
                     }
                 }
+                
+                // Check for normal index (after second slash)
+                if (iss.peek() == '/') {
+                    iss >> slash;  // consume the second slash
+                    if (int c = iss.peek(); c >= '0' && c <= '9') {
+                        int normal_idx;
+                        iss >> normal_idx;
+                        normal_indices[i] = normal_idx - 1;
+                        has_normals = true;
+                    }
+                }
             }
+            
             Face new_face{
                 { vertice[0], vertice[1], vertice[2] },
                 { tex_indices[0], tex_indices[1], tex_indices[2] },
@@ -288,6 +309,16 @@ void Model::load_file(std::string filename) {
                 { glm::vec3(0.0f), glm::vec3(0.0f), glm::vec3(0.0f) },
                 glm::vec3(0.0f)
             };
+            
+            // If normals were provided in the file, use them
+            if (has_normals) {
+                for (int i = 0; i < 3; i++) {
+                    if (normal_indices[i] >= 0 && static_cast<size_t>(normal_indices[i]) < vertex_normals_.size()) {
+                        new_face.vertex_normals[i] = vertex_normals_[normal_indices[i]];
+                    }
+                }
+            }
+            
             current_obj->faces.emplace_back(std::move(new_face));
         }
     }
@@ -299,33 +330,51 @@ void Model::load_file(std::string filename) {
         }
     }
     
-    // Compute vertex normals
+    // Compute vertex normals only for faces that don't have them from the file
     std::vector<glm::vec3> accum_normals(vertices_.size(), glm::vec3(0.0f));
     for (auto& obj : objects_) {
         for (auto& f : obj.faces) {
-            glm::vec3 n = f.face_normal;
-            glm::vec3 e0 = f.vertices[1] - f.vertices[0];
-            glm::vec3 e1 = f.vertices[2] - f.vertices[0];
-            FloatType area2 = glm::length(glm::cross(e0, e1));
-            glm::vec3 weighted = n * area2;
+            // Check if this face needs computed normals
+            bool needs_computed = false;
             for (int k = 0; k < 3; ++k) {
-                int idx = f.vertex_indices[k];
-                if (idx >= 0 && static_cast<std::size_t>(idx) < accum_normals.size()) {
-                    accum_normals[idx] += weighted;
+                if (glm::length(f.vertex_normals[k]) < 0.001f) {
+                    needs_computed = true;
+                    break;
+                }
+            }
+            
+            if (needs_computed) {
+                glm::vec3 n = f.face_normal;
+                glm::vec3 e0 = f.vertices[1] - f.vertices[0];
+                glm::vec3 e1 = f.vertices[2] - f.vertices[0];
+                FloatType area2 = glm::length(glm::cross(e0, e1));
+                glm::vec3 weighted = n * area2;
+                for (int k = 0; k < 3; ++k) {
+                    int idx = f.vertex_indices[k];
+                    if (idx >= 0 && static_cast<std::size_t>(idx) < accum_normals.size()) {
+                        accum_normals[idx] += weighted;
+                    }
                 }
             }
         }
     }
+    
+    // Normalize accumulated normals
     for (auto& acc : accum_normals) {
         if (glm::length(acc) > 0.0f) acc = glm::normalize(acc);
     }
+    
+    // Apply computed normals to faces that need them
     for (auto& obj : objects_) {
         for (auto& f : obj.faces) {
             for (int k = 0; k < 3; ++k) {
-                int idx = f.vertex_indices[k];
-                f.vertex_normals[k] = (idx >= 0 && static_cast<std::size_t>(idx) < accum_normals.size()) 
-                    ? accum_normals[idx] 
-                    : CalculateNormal(f.vertices[0], f.vertices[1], f.vertices[2]);
+                // Only set if not already set from file
+                if (glm::length(f.vertex_normals[k]) < 0.001f) {
+                    int idx = f.vertex_indices[k];
+                    f.vertex_normals[k] = (idx >= 0 && static_cast<std::size_t>(idx) < accum_normals.size()) 
+                        ? accum_normals[idx] 
+                        : CalculateNormal(f.vertices[0], f.vertices[1], f.vertices[2]);
+                }
             }
         }
     }

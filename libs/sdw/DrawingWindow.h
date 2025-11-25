@@ -28,6 +28,7 @@ public:
 	void setPixelColour(size_t x, size_t y, uint32_t colour) noexcept;
 	uint32_t getPixelColour(size_t x, size_t y) noexcept;
 	void clearPixels() noexcept;
+	const std::vector<uint32_t>& getPixelBuffer() const noexcept;
 };
 
 void printMessageAndQuit(const std::string &message, const char *error) noexcept;

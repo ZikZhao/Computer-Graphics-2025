@@ -7,11 +7,7 @@ PhotonMap::PhotonMap(const World& world)
     : world_(world) 
 {
     // Launch worker thread to trace photons asynchronously
-    worker_thread_ = std::jthread([this](std::stop_token stop_tok) {
-        if (!stop_tok.stop_requested()) {
-            trace_photons();
-        }
-    });
+    worker_thread_ = std::jthread([this]() { trace_photons(); });
 }
 
 void PhotonMap::trace_photons() {

@@ -223,6 +223,7 @@ private:
     std::map<std::string, Material> materials_;
     std::vector<glm::vec3> vertices_;
     std::vector<glm::vec2> texture_coords_;  // vt coordinates from OBJ
+    std::vector<glm::vec3> vertex_normals_;  // vn normals from OBJ
     bool has_light_ = false;
     glm::vec3 light_position_ = glm::vec3(0.0f, 0.0f, 0.0f);
 public:

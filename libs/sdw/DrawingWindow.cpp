@@ -93,6 +93,10 @@ void DrawingWindow::clearPixels() noexcept {
 	std::fill(pixelBuffer.begin(), pixelBuffer.end(), 0);
 }
 
+const std::vector<uint32_t>& DrawingWindow::getPixelBuffer() const noexcept {
+	return pixelBuffer;
+}
+
 void printMessageAndQuit(const std::string &message, const char *error) noexcept {
 	if (error == nullptr) {
 		std::cout << message << std::endl;

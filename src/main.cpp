@@ -8,6 +8,7 @@
 #include "DrawingWindow.h"
 #include "world.hpp"
 #include "renderer.hpp"
+#include "utils.hpp"
 
 constexpr std::size_t WIDTH = 960;
 constexpr std::size_t HEIGHT = 540;
@@ -22,11 +23,13 @@ int main(int argc, char *argv[]) {
     // Initialize window after successful world loading
     DrawingWindow window = DrawingWindow(WIDTH, HEIGHT, false);
     Renderer renderer(window, world);
+    VideoRecorder videoRecorder(window);
 
     SDL_Event event;
     std::size_t last_print_time = std::chrono::system_clock::now().time_since_epoch().count();
     std::size_t fps = 0;
     bool ctrl_s_pressed_last_frame = false;
+    bool ctrl_shift_s_pressed_last_frame = false;
     
     while (true) {
         // Poll and handle events
@@ -46,8 +49,18 @@ int main(int argc, char *argv[]) {
         // Check for Ctrl+S combination (poll keyboard state)
         const Uint8* keystate = SDL_GetKeyboardState(nullptr);
         bool ctrl_pressed = keystate[SDL_SCANCODE_LCTRL] || keystate[SDL_SCANCODE_RCTRL];
+        bool shift_pressed = keystate[SDL_SCANCODE_LSHIFT] || keystate[SDL_SCANCODE_RSHIFT];
         bool s_pressed = keystate[SDL_SCANCODE_S];
-        bool ctrl_s_pressed = ctrl_pressed && s_pressed;
+        
+        // Check for Ctrl+Shift+S (video recording toggle)
+        bool ctrl_shift_s_pressed = ctrl_pressed && shift_pressed && s_pressed;
+        if (ctrl_shift_s_pressed && !ctrl_shift_s_pressed_last_frame) {
+            videoRecorder.toggleRecording();
+        }
+        ctrl_shift_s_pressed_last_frame = ctrl_shift_s_pressed;
+        
+        // Check for Ctrl+S (screenshot save) - only if not recording shortcut
+        bool ctrl_s_pressed = ctrl_pressed && s_pressed && !shift_pressed;
         
         // Save screenshot on rising edge (when Ctrl+S becomes pressed)
         if (ctrl_s_pressed && !ctrl_s_pressed_last_frame) {
@@ -62,6 +75,11 @@ int main(int argc, char *argv[]) {
         world.orbiting();
         renderer.render();
         window.renderFrame();
+        
+        // Capture frame if recording
+        if (videoRecorder.isRecording()) {
+            videoRecorder.captureFrame();
+        }
         
         fps++;
         std::size_t now = std::chrono::system_clock::now().time_since_epoch().count();
