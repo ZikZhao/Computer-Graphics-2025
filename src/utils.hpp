@@ -184,8 +184,8 @@ public:
     static inline const std::string Y4M_FILENAME = "recording.y4m";
     static inline const std::string MP4_FILENAME = "recording.mp4";
     
-    VideoRecorder(const std::vector<uint32_t>& pixelBuffer, size_t width, size_t height)
-        : pixelBuffer(pixelBuffer), recording(false), frameCount(0), width(width), height(height) {
+    VideoRecorder(const std::vector<uint32_t>& pixel_buffer, size_t width, size_t height)
+        : pixel_buffer(pixel_buffer), recording(false), frame_count(0), width(width), height(height) {
     }
     
     ~VideoRecorder() = default;
@@ -204,7 +204,7 @@ public:
         }
         
         recording = true;
-        frameCount = 0;
+        frame_count = 0;
         writeHeader();
         std::cout << "Started recording to " << Y4M_FILENAME << std::endl;
     }
@@ -217,11 +217,11 @@ public:
         recording = false;
         file_stream.close();
         
-        std::cout << "Stopped recording. Captured " << frameCount << " frames." << std::endl;
+        std::cout << "Stopped recording. Captured " << frame_count << " frames." << std::endl;
         std::cout << "Converting to MP4..." << std::endl;
         
         // Start conversion in jthread - it will automatically join in destructor
-        conversionThread = std::jthread([this]() {
+        conversion_thread = std::jthread([this]() {
             convertToMP4();
         });
     }
@@ -241,18 +241,18 @@ public:
         }
         
         writeFrame();
-        frameCount++;
+        frame_count++;
     }
     
     // Check if currently recording
     bool isRecording() const noexcept { return recording; }
     
 private:
-    const std::vector<uint32_t>& pixelBuffer;
+    const std::vector<uint32_t>& pixel_buffer;
     std::ofstream file_stream;
-    std::jthread conversionThread;
+    std::jthread conversion_thread;
     bool recording;
-    int frameCount;
+    int frame_count;
     size_t width;
     size_t height;
     
@@ -276,7 +276,7 @@ private:
         // Convert RGB to YUV for each pixel
         for (size_t i = 0; i < height; i++) {
             for (size_t j = 0; j < width; j++) {
-                uint32_t pixel = pixelBuffer[i * width + j];
+                uint32_t pixel = pixel_buffer[i * width + j];
                 
                 // Extract RGB components
                 uint8_t r = (pixel >> 16) & 0xFF;

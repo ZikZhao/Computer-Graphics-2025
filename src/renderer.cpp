@@ -1,17 +1,17 @@
 #include "renderer.hpp"
-#include "DrawingWindow.h"
+#include "window.hpp"
 #include <algorithm>
 #include <iostream>
 
-Renderer::Renderer(DrawingWindow& window, const World& world)
+Renderer::Renderer(Window& window, const World& world)
     : window_(window),
       world_(world),
-      hdr_buffer_(window.width * window.height, ColourHDR()),
+      hdr_buffer_(window.get_width() * window.get_height(), ColourHDR()),
       frame_barrier_(std::thread::hardware_concurrency() + 1) {
     
     // Create sub-engines
     raytracer_ = std::make_unique<RayTracer>(world);
-    rasterizer_ = std::make_unique<Rasterizer>(window.width, window.height);
+    rasterizer_ = std::make_unique<Rasterizer>(window.get_width(), window.get_height());
     
     // Start worker threads
     for (unsigned int i = 0; i < std::thread::hardware_concurrency(); ++i) {
@@ -21,12 +21,12 @@ Renderer::Renderer(DrawingWindow& window, const World& world)
 
 void Renderer::clear() noexcept {
     rasterizer_->clear();
-    hdr_buffer_.assign(window_.width * window_.height, ColourHDR());
+    hdr_buffer_.assign(window_.get_width() * window_.get_height(), ColourHDR());
 }
 
 void Renderer::render() noexcept {
     clear();
-    aspect_ratio_ = static_cast<double>(window_.width) / window_.height;
+    aspect_ratio_ = static_cast<double>(window_.get_width()) / window_.get_height();
     
     switch (mode_) {
     case Wireframe:
@@ -78,24 +78,24 @@ void Renderer::process_rows(int y0, int y1) noexcept {
     const bool is_dof = (mode_ == DepthOfField);
     
     for (int y = y0; y < y1; ++y) {
-        for (int x = 0; x < static_cast<int>(window_.width); x++) {
+        for (int x = 0; x < static_cast<int>(window_.get_width()); x++) {
             ColourHDR final_hdr;
             
             if (is_dof) {
                 final_hdr = raytracer_->render_pixel_dof(
-                    camera, x, y, window_.width, window_.height,
+                    camera, x, y, window_.get_width(), window_.get_height(),
                     focal_distance_, aperture_size_, dof_samples_,
                     soft_shadows_enabled_, world_.light_intensity(), caustics_enabled_
                 );
             } else {
                 final_hdr = raytracer_->render_pixel(
-                    camera, x, y, window_.width, window_.height,
+                    camera, x, y, window_.get_width(), window_.get_height(),
                     soft_shadows_enabled_, world_.light_intensity(), caustics_enabled_
                 );
             }
             
             Colour final_colour = tonemap_and_gamma_correct(final_hdr, gamma_);
-            window_.setPixelColour(x, y, final_colour);
+            window_.set_pixel_colour(x, y, final_colour);
         }
     }
 }
@@ -106,13 +106,13 @@ void Renderer::worker_thread() noexcept {
         frame_barrier_.arrive_and_wait();
         
         // Process tiles until all are done
-        const int num_tiles = (window_.height + TileHeight - 1) / TileHeight;
+        const int num_tiles = (window_.get_height() + tile_height - 1) / tile_height;
         while (true) {
             int tile_idx = tile_counter_.fetch_add(1, std::memory_order_relaxed);
             if (tile_idx >= num_tiles) break;
             
-            int y0 = tile_idx * TileHeight;
-            int y1 = std::min(y0 + TileHeight, static_cast<int>(window_.height));
+            int y0 = tile_idx * tile_height;
+            int y1 = std::min(y0 + tile_height, static_cast<int>(window_.get_height()));
             process_rows(y0, y1);
         }
         
@@ -121,43 +121,6 @@ void Renderer::worker_thread() noexcept {
     }
 }
 
-void Renderer::handle_event(const SDL_Event& event) noexcept {
-    if (event.type == SDL_KEYDOWN) {
-        switch (event.key.keysym.sym) {
-        case SDLK_1:
-            mode_ = Wireframe;
-            break;
-        case SDLK_2:
-            mode_ = Rasterized;
-            break;
-        case SDLK_3:
-            mode_ = Raytraced;
-            break;
-        case SDLK_4:
-            mode_ = DepthOfField;
-            break;
-        case SDLK_g:
-            gamma_ = (gamma_ == 2.2f) ? 1.0f : 2.2f;
-            break;
-        case SDLK_h:
-            soft_shadows_enabled_ = !soft_shadows_enabled_;
-            break;
-        case SDLK_p:
-            if (raytracer_->is_photon_map_ready()) {
-                caustics_enabled_ = !caustics_enabled_;
-                std::cout << "Caustics (photon mapping): " << (caustics_enabled_ ? "ENABLED" : "DISABLED") << std::endl;
-            } else {
-                std::cout << "Photon map not ready yet, please wait..." << std::endl;
-            }
-            break;
-        case SDLK_v:
-            // DEBUG: Toggle caustics-only visualization mode
-            RayTracer::debug_visualize_caustics_only = !RayTracer::debug_visualize_caustics_only;
-            std::cout << "DEBUG Caustics-only mode: " << (RayTracer::debug_visualize_caustics_only ? "ON (verify Beer-Lambert color)" : "OFF") << std::endl;
-            break;
-        }
-    }
-}
 
 FloatType Renderer::aces_tonemap(FloatType hdr_value) noexcept {
     const FloatType a = 2.51f;
@@ -244,9 +207,9 @@ void Renderer::draw_coordinate_axes() noexcept {
         int err = dx - dy;
         
         while (true) {
-            if (x0 >= 0 && x0 < static_cast<int>(window_.width) && 
-                y0 >= 0 && y0 < static_cast<int>(window_.height)) {
-                window_.setPixelColour(x0, y0, color);
+            if (x0 >= 0 && x0 < static_cast<int>(window_.get_width()) && 
+                y0 >= 0 && y0 < static_cast<int>(window_.get_height())) {
+                window_.set_pixel_colour(x0, y0, color);
             }
             
             if (x0 == x1 && y0 == y1) break;

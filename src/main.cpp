@@ -5,9 +5,10 @@
 #include <stdexcept>
 #include <memory>
 #include <iostream>
-#include "DrawingWindow.h"
+#include "window.hpp"
 #include "world.hpp"
 #include "renderer.hpp"
+#include "raytracer.hpp"
 #include "utils.hpp"
 
 constexpr std::size_t WIDTH = 960;
@@ -21,72 +22,142 @@ int main(int argc, char *argv[]) {
     world.load_files(std::vector<std::string>(argv + 1, argv + argc));
     
     // Initialize window after successful world loading
-    DrawingWindow window = DrawingWindow(WIDTH, HEIGHT, false);
+    Window window(WIDTH, HEIGHT, false);
     Renderer renderer(window, world);
-    VideoRecorder videoRecorder(window.getPixelBuffer(), WIDTH, HEIGHT);
+    VideoRecorder video_recorder(window.get_pixel_buffer(), WIDTH, HEIGHT);
 
-    SDL_Event event;
+    // Centralized input callbacks
+    constexpr FloatType move_step = 0.1f;
+    window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_W, SDL_SCANCODE_S, SDL_SCANCODE_A, SDL_SCANCODE_D,
+                           SDL_SCANCODE_SPACE, SDL_SCANCODE_C},
+                          Window::Trigger::ANY_PRESSED_NO_MODIFIER,
+        [&world](const Window::KeyState& ks) {
+            FloatType fwd = (ks[SDL_SCANCODE_W] ? 1.0f : 0.0f) - (ks[SDL_SCANCODE_S] ? 1.0f : 0.0f);
+            FloatType right = (ks[SDL_SCANCODE_D] ? 1.0f : 0.0f) - (ks[SDL_SCANCODE_A] ? 1.0f : 0.0f);
+            FloatType up = (ks[SDL_SCANCODE_SPACE] ? 1.0f : 0.0f) - (ks[SDL_SCANCODE_C] ? 1.0f : 0.0f);
+            if (fwd != 0.0f || right != 0.0f || up != 0.0f) {
+                world.camera_.move(fwd * move_step, right * move_step, up * move_step);
+            }
+        });
+
+    window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_UP}, Window::Trigger::ANY_JUST_PRESSED,
+        [&world](const auto&) { world.camera_.rotate(0.0f, -glm::radians(2.0f)); });
+    window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_DOWN}, Window::Trigger::ANY_JUST_PRESSED,
+        [&world](const auto&) { world.camera_.rotate(0.0f, glm::radians(2.0f)); });
+    window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_LEFT}, Window::Trigger::ANY_JUST_PRESSED,
+        [&world](const auto&) { world.camera_.rotate(-glm::radians(2.0f), 0.0f); });
+    window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_RIGHT}, Window::Trigger::ANY_JUST_PRESSED,
+        [&world](const auto&) { world.camera_.rotate(glm::radians(2.0f), 0.0f); });
+
+    window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_O}, Window::Trigger::ANY_JUST_PRESSED,
+        [&world](const auto&) {
+            if (!world.camera_.is_orbiting_) {
+                world.camera_.start_orbiting(world.camera_.orbit_target_);
+            } else {
+                world.camera_.stop_orbiting();
+            }
+        });
+
+    window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_1}, Window::Trigger::ANY_JUST_PRESSED,
+        [&renderer](const auto&) { renderer.mode_ = Renderer::Wireframe; });
+    window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_2}, Window::Trigger::ANY_JUST_PRESSED,
+        [&renderer](const auto&) { renderer.mode_ = Renderer::Rasterized; });
+    window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_3}, Window::Trigger::ANY_JUST_PRESSED,
+        [&renderer](const auto&) { renderer.mode_ = Renderer::Raytraced; });
+    window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_4}, Window::Trigger::ANY_JUST_PRESSED,
+        [&renderer](const auto&) { renderer.mode_ = Renderer::DepthOfField; });
+
+    window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_G}, Window::Trigger::ANY_JUST_PRESSED,
+        [&renderer](const auto&) { renderer.gamma_ = (renderer.gamma_ == 2.2f) ? 1.0f : 2.2f; });
+    window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_H}, Window::Trigger::ANY_JUST_PRESSED,
+        [&renderer](const auto&) { renderer.soft_shadows_enabled_ = !renderer.soft_shadows_enabled_; });
+    window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_P}, Window::Trigger::ANY_JUST_PRESSED,
+        [&renderer](const auto&) {
+            if (renderer.raytracer_->is_photon_map_ready()) {
+                renderer.caustics_enabled_ = !renderer.caustics_enabled_;
+                std::cout << "Caustics (photon mapping): "
+                          << (renderer.caustics_enabled_ ? "ENABLED" : "DISABLED") << std::endl;
+            } else {
+                std::cout << "Photon map not ready yet, please wait..." << std::endl;
+            }
+        });
+    window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_V}, Window::Trigger::ANY_JUST_PRESSED,
+        [](const auto&) {
+            RayTracer::debug_visualize_caustics_only = !RayTracer::debug_visualize_caustics_only;
+            std::cout << "DEBUG Caustics-only mode: "
+                      << (RayTracer::debug_visualize_caustics_only ? "ON (verify Beer-Lambert color)" : "OFF")
+                      << std::endl;
+        });
+    
+    // Screenshot Save (Ctrl+S)
+    window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_LCTRL, SDL_SCANCODE_S}, Window::Trigger::ALL_JUST_PRESSED,
+        [&window](const Window::KeyState& ks) {
+            if (!ks[SDL_SCANCODE_LSHIFT] && !ks[SDL_SCANCODE_RSHIFT]) {
+                window.save_ppm("screenshot.ppm");
+                window.save_bmp("screenshot.bmp");
+                std::cout << "Screenshot saved as screenshot.ppm and screenshot.bmp" << std::endl;
+            }
+        });
+    
+    window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_RCTRL, SDL_SCANCODE_S}, Window::Trigger::ALL_JUST_PRESSED,
+        [&window](const Window::KeyState& ks) {
+            if (!ks[SDL_SCANCODE_LSHIFT] && !ks[SDL_SCANCODE_RSHIFT]) {
+                window.save_ppm("screenshot.ppm");
+                window.save_bmp("screenshot.bmp");
+                std::cout << "Screenshot saved as screenshot.ppm and screenshot.bmp" << std::endl;
+            }
+        });
+    
+    // Video Recording Toggle (Ctrl+Shift+S)
+    window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_LCTRL, SDL_SCANCODE_LSHIFT, SDL_SCANCODE_S}, Window::Trigger::ALL_JUST_PRESSED,
+        [&video_recorder](const auto&) { video_recorder.toggleRecording(); });
+    
+    window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_RCTRL, SDL_SCANCODE_RSHIFT, SDL_SCANCODE_S}, Window::Trigger::ALL_JUST_PRESSED,
+        [&video_recorder](const auto&) { video_recorder.toggleRecording(); });
+
+    window.register_mouse(SDL_BUTTON_LEFT, Window::Trigger::ANY_PRESSED,
+        [&world](int xrel, int yrel) {
+            if (xrel == 0 && yrel == 0) return;
+            FloatType dx = -static_cast<FloatType>(xrel) * world.camera_.mouse_sensitivity_;
+            FloatType dy = static_cast<FloatType>(yrel) * world.camera_.mouse_sensitivity_;
+            world.camera_.rotate(dx, dy);
+        });
+
     std::size_t last_print_time = std::chrono::system_clock::now().time_since_epoch().count();
     std::size_t fps = 0;
-    bool ctrl_s_pressed_last_frame = false;
-    bool ctrl_shift_s_pressed_last_frame = false;
     
     while (true) {
-        // Poll and handle events
-        while (SDL_PollEvent(&event)) {
-            // Handle window close events
-            if (event.type == SDL_QUIT ||
-                (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE) ||
-                (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE)) {
-                window.exitCleanly();
-                return 0;
-            }
-            // Dispatch to world and renderer
-            world.handle_event(event);
-            renderer.handle_event(event);
+        // Process window events (handles quit, escape, etc.)
+        if (!window.process_events()) {
+            break; // Exit main loop if window should close
         }
         
-        // Check for Ctrl+S combination (poll keyboard state)
-        const Uint8* keystate = SDL_GetKeyboardState(nullptr);
-        bool ctrl_pressed = keystate[SDL_SCANCODE_LCTRL] || keystate[SDL_SCANCODE_RCTRL];
-        bool shift_pressed = keystate[SDL_SCANCODE_LSHIFT] || keystate[SDL_SCANCODE_RSHIFT];
-        bool s_pressed = keystate[SDL_SCANCODE_S];
+        // Update window input state and process event bindings
+        window.update();
         
-        // Check for Ctrl+Shift+S (video recording toggle)
-        bool ctrl_shift_s_pressed = ctrl_pressed && shift_pressed && s_pressed;
-        if (ctrl_shift_s_pressed && !ctrl_shift_s_pressed_last_frame) {
-            videoRecorder.toggleRecording();
-        }
-        ctrl_shift_s_pressed_last_frame = ctrl_shift_s_pressed;
-        
-        // Check for Ctrl+S (screenshot save) - only if not recording shortcut
-        bool ctrl_s_pressed = ctrl_pressed && s_pressed && !shift_pressed;
-        
-        // Save screenshot on rising edge (when Ctrl+S becomes pressed)
-        if (ctrl_s_pressed && !ctrl_s_pressed_last_frame) {
-            window.savePPM("screenshot.ppm");
-            window.saveBMP("screenshot.bmp");
-            std::cout << "Screenshot saved as screenshot.ppm and screenshot.bmp" << std::endl;
-        }
-        ctrl_s_pressed_last_frame = ctrl_s_pressed;
-        
-        window.clearPixels();
+        // Render frame
+        window.clear_pixels();
         world.update();
         world.orbiting();
         renderer.render();
-        window.renderFrame();
+        window.render();
         
         // Capture frame if recording
-        if (videoRecorder.isRecording()) {
-            videoRecorder.captureFrame();
+        if (video_recorder.isRecording()) {
+            video_recorder.captureFrame();
         }
         
+        // FPS counter
         fps++;
         std::size_t now = std::chrono::system_clock::now().time_since_epoch().count();
         if (now - last_print_time >= 1000000000) { // 1 second in nanoseconds
-            std::cout << "FPS: " << std::fixed << std::setprecision(1) << static_cast<double>(fps / ((now - last_print_time) / 1000000000.0)) << std::endl;
+            std::cout << "FPS: " << std::fixed << std::setprecision(1) 
+                      << static_cast<double>(fps / ((now - last_print_time) / 1000000000.0)) << std::endl;
             fps = 0;
             last_print_time = now;
         }
     }
+    
+    window.exit_cleanly();
+    return 0;
 }

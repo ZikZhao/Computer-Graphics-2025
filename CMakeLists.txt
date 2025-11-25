@@ -34,6 +34,7 @@ add_executable(CG-CW
         libs/sdw/DrawingWindow.cpp
         libs/sdw/Utils.cpp
         src/main.cpp
+        src/window.cpp
         src/world.cpp
         src/shader.cpp
         src/raytracer.cpp

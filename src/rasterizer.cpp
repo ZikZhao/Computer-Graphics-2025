@@ -1,4 +1,5 @@
 #include "rasterizer.hpp"
+#include "window.hpp"
 #include <algorithm>
 
 Rasterizer::Rasterizer(int width, int height)
@@ -21,14 +22,14 @@ FloatType Rasterizer::get_depth(int x, int y) const noexcept {
 }
 
 void Rasterizer::draw_model_wireframe(const Camera& camera, const std::vector<Face>& faces, 
-                                      DrawingWindow& window, double aspect_ratio) noexcept {
+                                      Window& window, double aspect_ratio) noexcept {
     for (const auto& face : faces) {
         wireframe_render(camera, face, window, aspect_ratio);
     }
 }
 
 void Rasterizer::draw_model_rasterized(const Camera& camera, const std::vector<Face>& faces,
-                                       DrawingWindow& window, double aspect_ratio) noexcept {
+                                       Window& window, double aspect_ratio) noexcept {
     for (const auto& face : faces) {
         rasterized_render(camera, face, window, aspect_ratio);
     }
@@ -191,7 +192,7 @@ std::uint32_t Rasterizer::sample_texture(const Face& face, const glm::vec3& bary
     };
 }
 
-void Rasterizer::wireframe_render(const Camera& camera, const Face& face, DrawingWindow& window, double aspect_ratio) noexcept {
+void Rasterizer::wireframe_render(const Camera& camera, const Face& face, Window& window, double aspect_ratio) noexcept {
     auto clipped = clip_triangle(camera, face, aspect_ratio);
     if (clipped.size() < 3) return;
     
@@ -220,7 +221,7 @@ void Rasterizer::wireframe_render(const Camera& camera, const Face& face, Drawin
                 FloatType& depth = z_buffer_[y * width_ + x];
                 if (inv_z > depth) {
                     depth = inv_z;
-                    window.setPixelColour(x, y, colour);
+                    window.set_pixel_colour(x, y, colour);
                 }
             }
         } else {
@@ -236,14 +237,14 @@ void Rasterizer::wireframe_render(const Camera& camera, const Face& face, Drawin
                 FloatType& depth = z_buffer_[y * width_ + x];
                 if (inv_z > depth) {
                     depth = inv_z;
-                    window.setPixelColour(x, y, colour);
+                    window.set_pixel_colour(x, y, colour);
                 }
             }
         }
     }
 }
 
-void Rasterizer::rasterized_render(const Camera& camera, const Face& face, DrawingWindow& window, double aspect_ratio) noexcept {
+void Rasterizer::rasterized_render(const Camera& camera, const Face& face, Window& window, double aspect_ratio) noexcept {
     auto clipped = clip_triangle(camera, face, aspect_ratio);
     if (clipped.size() < 3) { return; }
     
@@ -290,7 +291,7 @@ void Rasterizer::rasterized_render(const Camera& camera, const Face& face, Drawi
                     FloatType& depth = z_buffer_[y * width_ + x];
                     if (inv_z > depth) {
                         depth = inv_z;
-                        window.setPixelColour(x, y, colour);
+                        window.set_pixel_colour(x, y, colour);
                     }
                 }
             }
@@ -316,7 +317,7 @@ void Rasterizer::rasterized_render(const Camera& camera, const Face& face, Drawi
                     FloatType& depth = z_buffer_[y * width_ + x];
                     if (inv_z > depth) {
                         depth = inv_z;
-                        window.setPixelColour(x, y, colour);
+                        window.set_pixel_colour(x, y, colour);
                     }
                 }
             }

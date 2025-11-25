@@ -2,6 +2,8 @@
 #include "world.hpp"
 #include <vector>
 
+class Window;
+
 class Rasterizer {
 public:
     Rasterizer(int width, int height);
@@ -11,9 +13,9 @@ public:
     
     // Render a single model
     void draw_model_wireframe(const Camera& camera, const std::vector<Face>& faces, 
-                              DrawingWindow& window, double aspect_ratio) noexcept;
+                              Window& window, double aspect_ratio) noexcept;
     void draw_model_rasterized(const Camera& camera, const std::vector<Face>& faces,
-                               DrawingWindow& window, double aspect_ratio) noexcept;
+                               Window& window, double aspect_ratio) noexcept;
     
     // Get depth for debugging
     FloatType get_depth(int x, int y) const noexcept;
@@ -24,8 +26,8 @@ private:
     std::vector<FloatType> z_buffer_;
     
     // Per-face rendering helpers
-    void wireframe_render(const Camera& camera, const Face& face, DrawingWindow& window, double aspect_ratio) noexcept;
-    void rasterized_render(const Camera& camera, const Face& face, DrawingWindow& window, double aspect_ratio) noexcept;
+    void wireframe_render(const Camera& camera, const Face& face, Window& window, double aspect_ratio) noexcept;
+    void rasterized_render(const Camera& camera, const Face& face, Window& window, double aspect_ratio) noexcept;
     
     // Clipping logic
     static bool inside_plane(const glm::vec4& v, ClipPlane plane) noexcept;

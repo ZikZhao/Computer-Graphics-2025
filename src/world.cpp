@@ -1,4 +1,5 @@
 #include "world.hpp"
+#include "window.hpp"
 #include <numeric>
 #include <algorithm>
 #include <functional>
@@ -80,6 +81,12 @@ void Camera::rotate(FloatType delta_yaw, FloatType delta_pitch) noexcept {
     pitch_ = std::clamp(pitch_, -max_pitch, max_pitch);
 }
 
+void Camera::move(FloatType forward_delta, FloatType right_delta, FloatType up_delta) noexcept {
+    position_ += forward() * forward_delta;
+    position_ += right() * right_delta;
+    position_ += up() * up_delta;
+}
+
 void Camera::update_movement() noexcept {
     constexpr FloatType move_step = 0.1f;
     
@@ -109,54 +116,7 @@ void Camera::update() noexcept {
     update_movement();
 }
 
-void Camera::handle_event(const SDL_Event& event) noexcept {
-    if (event.type == SDL_KEYDOWN) {
-        switch (event.key.keysym.sym) {
-        case SDLK_UP:
-            rotate(0.0f, -glm::radians(2.0f));
-            return;
-        case SDLK_DOWN:
-            rotate(0.0f, glm::radians(2.0f));
-            return;
-        case SDLK_LEFT:
-            rotate(-glm::radians(2.0f), 0.0f);
-            return;
-        case SDLK_RIGHT:
-            rotate(glm::radians(2.0f), 0.0f);
-            return;
-        case SDLK_o:
-            if (!is_orbiting_) {
-                start_orbiting(orbit_target_);
-            } else {
-                stop_orbiting();
-            }
-            return;
-        }
-    } else if (event.type == SDL_MOUSEBUTTONDOWN) {
-        if (event.button.button == SDL_BUTTON_LEFT) {
-            if (is_orbiting_) {
-                stop_orbiting();
-            }
-            is_dragging_ = true;
-            first_drag_motion_ = true;
-        }
-    } else if (event.type == SDL_MOUSEBUTTONUP) {
-        if (event.button.button == SDL_BUTTON_LEFT) {
-            is_dragging_ = false;
-            first_drag_motion_ = false;
-        }
-    } else if (event.type == SDL_MOUSEMOTION) {
-        if (is_dragging_) {
-            if (first_drag_motion_) {
-                first_drag_motion_ = false;
-            } else {
-                FloatType delta_yaw = -static_cast<FloatType>(event.motion.xrel) * mouse_sensitivity_;
-                FloatType delta_pitch = static_cast<FloatType>(event.motion.yrel) * mouse_sensitivity_;
-                rotate(delta_yaw, delta_pitch);
-            }
-        }
-    }
-}
+// Input callbacks are registered centrally in main; World no longer registers to Window
 
 glm::vec4 Camera::world_to_clip(const glm::vec3& vertex, double aspect_ratio) const noexcept {
     glm::vec3 view_vector = vertex - position_;
@@ -603,24 +563,9 @@ void World::load_files(const std::vector<std::string>& filenames) {
     }
 }
 
-void World::handle_event(const SDL_Event& event) noexcept {
-    camera_.handle_event(event);
-    
-    if (event.type == SDL_KEYDOWN) {
-        switch (event.key.keysym.sym) {
-        case SDLK_EQUALS:
-        case SDLK_PLUS:
-            light_intensity_ += 1.0f;
-            break;
-        case SDLK_MINUS:
-            light_intensity_ = std::max(0.1f, light_intensity_ - 1.0f);
-            break;
-        }
-    }
-}
+// Legacy SDL event hooks removed; input is handled via keystate callbacks
 
 void World::update() noexcept {
-    camera_.update();
 }
 
 void World::orbiting() noexcept {

@@ -13,7 +13,7 @@
 #include <barrier>
 #include <atomic>
 #include <thread>
-#include "DrawingWindow.h"
+#include <SDL.h>
 #include "utils.hpp"
 
 // Clipping planes for frustum
@@ -194,7 +194,7 @@ public:
     void orbiting() noexcept;
     void stop_orbiting() noexcept;
     void rotate(FloatType delta_yaw, FloatType delta_pitch) noexcept;
-    void handle_event(const SDL_Event& event) noexcept;
+    void move(FloatType forward_delta, FloatType right_delta, FloatType up_delta) noexcept;
     void update_movement() noexcept;  // Update camera position based on keyboard state
     void update() noexcept;  // Legacy update function (calls update_movement)
     std::pair<glm::vec3, glm::vec3> generate_ray(int pixel_x, int pixel_y, int screen_width, int screen_height, double aspect_ratio) const noexcept;
@@ -244,16 +244,16 @@ class World {
 private:
     std::vector<Model> models_;
     std::vector<Face> all_faces_;  // Cached flattened faces from all models
-    Camera camera_;
     const glm::vec3 light_position_;  // Immutable after loading
     const bool has_light_;
     FloatType light_intensity_ = 100.0f;  // Adjustable light intensity constant
     static constexpr FloatType light_radius_ = 0.05f;  // Sphere light radius for soft shadows
     EnvironmentMap env_map_;  // HDR environment map
 public:
+    Camera camera_;  // Now public for direct access
+    
     World();
     void load_files(const std::vector<std::string>& filenames);
-    void handle_event(const SDL_Event& event) noexcept;
     void update() noexcept;  // Update world state (camera movement, etc.)
     void orbiting() noexcept;
     // Accessors for Renderer
