@@ -1,5 +1,5 @@
 #include "raytracer.hpp"
-#include "PhotonMap.hpp"
+#include "photon_map.hpp"
 #include <numeric>
 #include <algorithm>
 #include <functional>

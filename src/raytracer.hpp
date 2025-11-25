@@ -1,7 +1,7 @@
 #pragma once
 #include "world.hpp"
 #include "shader.hpp"
-#include "PhotonMap.hpp"
+#include "photon_map.hpp"
 #include <memory>
 #include <vector>
 

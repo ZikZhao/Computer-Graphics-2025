@@ -1,4 +1,4 @@
-#include "PhotonMap.hpp"
+#include "photon_map.hpp"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
