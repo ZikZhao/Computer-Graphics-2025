@@ -240,6 +240,10 @@ void PhotonMap::trace_single_photon(const glm::vec3& origin, const glm::vec3& di
 void PhotonMap::store_photon(const Photon& photon) {
     // No mutex needed: only single worker thread writes during construction
     photon_map_[photon.face].push_back(photon);
+    
+    // Also store in spatial grid for fast lookup
+    GridCell cell = get_grid_cell(photon.position);
+    spatial_grid_[cell].push_back(photon);
 }
 
 std::optional<RayTriangleIntersection> PhotonMap::find_intersection(
@@ -330,17 +334,42 @@ std::vector<Photon> PhotonMap::query_photons(const Face* face, const glm::vec3& 
                                               FloatType radius) const {
     std::vector<Photon> result;
     
-    auto it = photon_map_.find(face);
-    if (it == photon_map_.end()) {
-        return result;  // No photons on this face
-    }
+    // Use spatial hash grid for efficient photon lookup
+    // Compute which grid cell the query point is in
+    GridCell center_cell = get_grid_cell(point);
+    auto [cx, cy, cz] = center_cell;
+    
+    // Determine how many cells we need to search in each direction
+    // Add 1 to ensure we cover all photons within radius
+    int cell_range = static_cast<int>(std::ceil(radius / GRID_CELL_SIZE)) + 1;
     
     FloatType radius_sq = radius * radius;
-    for (const auto& photon : it->second) {
-        glm::vec3 diff = photon.position - point;
-        FloatType dist_sq = glm::dot(diff, diff);
-        if (dist_sq < radius_sq) {
-            result.push_back(photon);
+    
+    // Search all neighboring cells (27 cells for immediate neighbors, more if radius is large)
+    for (int dx = -cell_range; dx <= cell_range; ++dx) {
+        for (int dy = -cell_range; dy <= cell_range; ++dy) {
+            for (int dz = -cell_range; dz <= cell_range; ++dz) {
+                GridCell neighbor_cell = std::make_tuple(cx + dx, cy + dy, cz + dz);
+                
+                auto it = spatial_grid_.find(neighbor_cell);
+                if (it == spatial_grid_.end()) {
+                    continue;  // No photons in this cell
+                }
+                
+                // Check all photons in this cell
+                for (const auto& photon : it->second) {
+                    // Only include photons on the same face
+                    if (photon.face != face) {
+                        continue;
+                    }
+                    
+                    glm::vec3 diff = photon.position - point;
+                    FloatType dist_sq = glm::dot(diff, diff);
+                    if (dist_sq < radius_sq) {
+                        result.push_back(photon);
+                    }
+                }
+            }
         }
     }
     
@@ -405,7 +434,7 @@ std::size_t PhotonMap::total_photons() const noexcept {
 // ============================================================================
 
 glm::vec3 PhotonMap::random_unit_vector() noexcept {
-    thread_local static std::mt19937 rng(std::random_device{}());
+    thread_local std::mt19937 rng(std::random_device{}());
     std::uniform_real_distribution<FloatType> dist(-1.0f, 1.0f);
     while (true) {
         glm::vec3 v(dist(rng), dist(rng), dist(rng));
@@ -417,7 +446,7 @@ glm::vec3 PhotonMap::random_unit_vector() noexcept {
 }
 
 glm::vec3 PhotonMap::random_in_cone(const glm::vec3& direction, FloatType cone_angle) noexcept {
-    thread_local static std::mt19937 rng(std::random_device{}());
+    thread_local std::mt19937 rng(std::random_device{}());
     // Generate random direction within cone around given direction
     std::uniform_real_distribution<FloatType> dist(0.0f, 1.0f);
     
@@ -438,7 +467,14 @@ glm::vec3 PhotonMap::random_in_cone(const glm::vec3& direction, FloatType cone_a
 }
 
 FloatType PhotonMap::random_float(FloatType min, FloatType max) noexcept {
-    thread_local static std::mt19937 rng(std::random_device{}());
+    thread_local std::mt19937 rng(std::random_device{}());
     std::uniform_real_distribution<FloatType> dist(min, max);
     return dist(rng);
+}
+
+PhotonMap::GridCell PhotonMap::get_grid_cell(const glm::vec3& position) noexcept {
+    int x = static_cast<int>(std::floor(position.x / GRID_CELL_SIZE));
+    int y = static_cast<int>(std::floor(position.y / GRID_CELL_SIZE));
+    int z = static_cast<int>(std::floor(position.z / GRID_CELL_SIZE));
+    return std::make_tuple(x, y, z);
 }

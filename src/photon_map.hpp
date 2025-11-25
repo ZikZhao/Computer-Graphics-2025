@@ -3,6 +3,7 @@
 #include "shader.hpp"
 #include <thread>
 #include <map>
+#include <unordered_map>
 #include <vector>
 #include <random>
 #include <mutex>
@@ -20,6 +21,16 @@ struct Photon {
         : position(pos), direction(dir), power(pwr), face(f) {}
 };
 
+// Hash function for 3D grid coordinates
+struct GridCellHash {
+    std::size_t operator()(const std::tuple<int, int, int>& cell) const noexcept {
+        auto h1 = std::hash<int>{}(std::get<0>(cell));
+        auto h2 = std::hash<int>{}(std::get<1>(cell));
+        auto h3 = std::hash<int>{}(std::get<2>(cell));
+        return h1 ^ (h2 << 1) ^ (h3 << 2);
+    }
+};
+
 // PhotonMap class for caustics computation
 class PhotonMap {
 public:
@@ -27,12 +38,18 @@ public:
     static constexpr int PHOTONS_PER_LIGHT = 500000;     // Number of photons to emit from light source
     static constexpr int MAX_PHOTON_BOUNCES = 5;        // Maximum number of bounces per photon
     static constexpr FloatType MIN_PHOTON_POWER = 0.01f; // Minimum power threshold for Russian roulette
+    static constexpr FloatType GRID_CELL_SIZE = 0.2f;    // Size of each grid cell for spatial hashing
     
 private:
     const World& world_;
     
     // Photon storage: map from Face pointer to vector of photons hitting that face
     std::map<const Face*, std::vector<Photon>> photon_map_;
+    
+    // Spatial hash grid: maps grid cell coordinates to photons in that cell
+    // Key is (x_cell, y_cell, z_cell) tuple
+    using GridCell = std::tuple<int, int, int>;
+    std::unordered_map<GridCell, std::vector<Photon>, GridCellHash> spatial_grid_;
     
     // Threading
     std::jthread worker_thread_;
@@ -70,6 +87,9 @@ private:
     
     // Store a photon in the map
     void store_photon(const Photon& photon);
+    
+    // Compute grid cell coordinates for a 3D position
+    static GridCell get_grid_cell(const glm::vec3& position) noexcept;
     
     // Check if material is transparent (refractive)
     static bool is_transparent(const Material& mat) noexcept {
