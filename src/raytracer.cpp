@@ -332,14 +332,16 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
         }
     }
     
-    ColourHDR diffuse_component = hdr_colour * (ambient + (1.0f - ambient) * lambertian) * shadow_color;
+    // Separate ambient (not affected by shadows) and direct lighting (affected by shadows)
+    ColourHDR ambient_component = hdr_colour * ambient;
+    ColourHDR diffuse_component = hdr_colour * lambertian * shadow_color;
     ColourHDR specular_component = ColourHDR(specular, specular, specular) * shadow_color;
     
     ColourHDR direct_lighting;
     if (face.material.metallic > 0.0f) {
-        direct_lighting = diffuse_component + hdr_colour * specular_component.red;
+        direct_lighting = ambient_component + diffuse_component + hdr_colour * specular_component.red;
     } else {
-        direct_lighting = diffuse_component + specular_component;
+        direct_lighting = ambient_component + diffuse_component + specular_component;
     }
     
     if (face.material.metallic > 0.0f) {
