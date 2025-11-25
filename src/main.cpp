@@ -41,16 +41,16 @@ int main(int argc, char *argv[]) {
         });
 
     window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_UP}, Window::Trigger::ANY_JUST_PRESSED,
-        [&world](const auto&) { world.camera_.rotate(0.0f, -glm::radians(2.0f)); });
+        [&world](const Window::KeyState&) { world.camera_.rotate(0.0f, -glm::radians(2.0f)); });
     window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_DOWN}, Window::Trigger::ANY_JUST_PRESSED,
-        [&world](const auto&) { world.camera_.rotate(0.0f, glm::radians(2.0f)); });
+        [&world](const Window::KeyState&) { world.camera_.rotate(0.0f, glm::radians(2.0f)); });
     window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_LEFT}, Window::Trigger::ANY_JUST_PRESSED,
-        [&world](const auto&) { world.camera_.rotate(-glm::radians(2.0f), 0.0f); });
+        [&world](const Window::KeyState&) { world.camera_.rotate(-glm::radians(2.0f), 0.0f); });
     window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_RIGHT}, Window::Trigger::ANY_JUST_PRESSED,
-        [&world](const auto&) { world.camera_.rotate(glm::radians(2.0f), 0.0f); });
+        [&world](const Window::KeyState&) { world.camera_.rotate(glm::radians(2.0f), 0.0f); });
 
     window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_O}, Window::Trigger::ANY_JUST_PRESSED,
-        [&world](const auto&) {
+        [&world](const Window::KeyState&) {
             if (!world.camera_.is_orbiting_) {
                 world.camera_.start_orbiting(world.camera_.orbit_target_);
             } else {
@@ -59,20 +59,20 @@ int main(int argc, char *argv[]) {
         });
 
     window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_1}, Window::Trigger::ANY_JUST_PRESSED,
-        [&renderer](const auto&) { renderer.mode_ = Renderer::Wireframe; });
+        [&renderer](const Window::KeyState&) { renderer.mode_ = Renderer::Wireframe; });
     window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_2}, Window::Trigger::ANY_JUST_PRESSED,
-        [&renderer](const auto&) { renderer.mode_ = Renderer::Rasterized; });
+        [&renderer](const Window::KeyState&) { renderer.mode_ = Renderer::Rasterized; });
     window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_3}, Window::Trigger::ANY_JUST_PRESSED,
-        [&renderer](const auto&) { renderer.mode_ = Renderer::Raytraced; });
+        [&renderer](const Window::KeyState&) { renderer.mode_ = Renderer::Raytraced; });
     window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_4}, Window::Trigger::ANY_JUST_PRESSED,
-        [&renderer](const auto&) { renderer.mode_ = Renderer::DepthOfField; });
+        [&renderer](const Window::KeyState&) { renderer.mode_ = Renderer::DepthOfField; });
 
     window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_G}, Window::Trigger::ANY_JUST_PRESSED,
-        [&renderer](const auto&) { renderer.gamma_ = (renderer.gamma_ == 2.2f) ? 1.0f : 2.2f; });
+        [&renderer](const Window::KeyState&) { renderer.gamma_ = (renderer.gamma_ == 2.2f) ? 1.0f : 2.2f; });
     window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_H}, Window::Trigger::ANY_JUST_PRESSED,
-        [&renderer](const auto&) { renderer.soft_shadows_enabled_ = !renderer.soft_shadows_enabled_; });
+        [&renderer](const Window::KeyState&) { renderer.soft_shadows_enabled_ = !renderer.soft_shadows_enabled_; });
     window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_P}, Window::Trigger::ANY_JUST_PRESSED,
-        [&renderer](const auto&) {
+        [&renderer](const Window::KeyState&) {
             if (renderer.raytracer_->is_photon_map_ready()) {
                 renderer.caustics_enabled_ = !renderer.caustics_enabled_;
                 std::cout << "Caustics (photon mapping): "
@@ -82,7 +82,7 @@ int main(int argc, char *argv[]) {
             }
         });
     window.register_key(std::unordered_set<SDL_Scancode>{SDL_SCANCODE_V}, Window::Trigger::ANY_JUST_PRESSED,
-        [](const auto&) {
+        [](const Window::KeyState&) {
             RayTracer::debug_visualize_caustics_only = !RayTracer::debug_visualize_caustics_only;
             std::cout << "DEBUG Caustics-only mode: "
                       << (RayTracer::debug_visualize_caustics_only ? "ON (verify Beer-Lambert color)" : "OFF")
@@ -158,6 +158,5 @@ int main(int argc, char *argv[]) {
         }
     }
     
-    window.exit_cleanly();
     return 0;
 }

@@ -46,8 +46,8 @@ private:
     std::unordered_set<Uint8> mouse_buttons_this_frame;
     std::unordered_set<Uint8> mouse_buttons_last_frame;
     std::unordered_set<Uint8> mouse_buttons_updated_this_frame;
-    int mouse_xrel_sum = 0;
-    int mouse_yrel_sum = 0;
+    int mouse_xrel = 0;
+    int mouse_yrel = 0;
     bool mouse_motion_this_frame = false;
     
     // Event handling
@@ -79,12 +79,6 @@ public:
     Window(int w, int h, bool fullscreen = false) noexcept;
     ~Window();
     
-    // Disable copy, enable move
-    Window(const Window&) = delete;
-    Window& operator=(const Window&) = delete;
-    Window(Window&&) noexcept = default;
-    Window& operator=(Window&&) noexcept = default;
-    
     // Event registration
     void register_key(const std::unordered_set<SDL_Scancode>& keys, Trigger trigger, KeyHandler handler);
     void register_mouse(Uint8 button, Trigger trigger, MouseHandler handler);
@@ -113,8 +107,4 @@ public:
     bool is_key_just_pressed(SDL_Scancode key) const;
     bool is_key_just_released(SDL_Scancode key) const;
     
-    // Clean exit
-    void exit_cleanly() noexcept;
 };
-
-void printMessageAndQuit(const std::string& message, const char* error = nullptr) noexcept;

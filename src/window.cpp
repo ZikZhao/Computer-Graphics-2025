@@ -6,7 +6,7 @@ Window::Window(int w, int h, bool fullscreen) noexcept
     
     // Initialize SDL
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
-        printMessageAndQuit("Could not initialise SDL: ", SDL_GetError());
+        throw std::runtime_error(std::string("Could not initialise SDL: ") + SDL_GetError());
     }
     
     // Create window
@@ -16,7 +16,7 @@ Window::Window(int w, int h, bool fullscreen) noexcept
     int anywhere = SDL_WINDOWPOS_UNDEFINED;
     window = SDL_CreateWindow("COMS30020", anywhere, anywhere, width, height, flags);
     if (!window) {
-        printMessageAndQuit("Could not set video mode: ", SDL_GetError());
+        throw std::runtime_error(std::string("Could not set video mode: ") + SDL_GetError());
     }
     
     // Create renderer (software rendering for compatibility)
@@ -24,7 +24,7 @@ Window::Window(int w, int h, bool fullscreen) noexcept
     // Alternative: SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC for hardware acceleration
     renderer = SDL_CreateRenderer(window, -1, flags);
     if (!renderer) {
-        printMessageAndQuit("Could not create renderer: ", SDL_GetError());
+        throw std::runtime_error(std::string("Could not create renderer: ") + SDL_GetError());
     }
     
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
@@ -34,7 +34,7 @@ Window::Window(int w, int h, bool fullscreen) noexcept
     int pixel_format = SDL_PIXELFORMAT_ARGB8888;
     texture = SDL_CreateTexture(renderer, pixel_format, SDL_TEXTUREACCESS_STATIC, width, height);
     if (!texture) {
-        printMessageAndQuit("Could not allocate texture: ", SDL_GetError());
+        throw std::runtime_error(std::string("Could not allocate texture: ") + SDL_GetError());
     }
 }
 
@@ -60,8 +60,8 @@ bool Window::process_events() {
     mouse_buttons_last_frame = mouse_buttons_this_frame;
     mouse_buttons_updated_this_frame.clear();
     mouse_motion_this_frame = false;
-    mouse_xrel_sum = 0;
-    mouse_yrel_sum = 0;
+    mouse_xrel = 0;
+    mouse_yrel = 0;
     while (SDL_PollEvent(&event)) {
         if (event.type == SDL_QUIT ||
             (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE) ||
@@ -86,19 +86,19 @@ bool Window::process_events() {
             Uint8 b = event.button.button;
             mouse_buttons_this_frame.insert(b);
             mouse_buttons_updated_this_frame.insert(b);
+            for (auto& mb : mouse_bindings) {
+                if (mb.button == b) mb.first_motion = true;
+            }
         }
         if (event.type == SDL_MOUSEBUTTONUP) {
             Uint8 b = event.button.button;
             mouse_buttons_this_frame.erase(b);
             mouse_buttons_updated_this_frame.insert(b);
-            for (auto& mb : mouse_bindings) {
-                if (mb.button == b) mb.first_motion = true;
-            }
         }
         if (event.type == SDL_MOUSEMOTION) {
             mouse_motion_this_frame = true;
-            mouse_xrel_sum += event.motion.xrel;
-            mouse_yrel_sum += event.motion.yrel;
+            mouse_xrel = event.motion.xrel;
+            mouse_yrel = event.motion.yrel;
         }
     }
     return true;
@@ -225,7 +225,7 @@ void Window::process_mouse_bindings() {
                         binding.handler(0, 0);
                         binding.first_motion = false;
                     } else if (mouse_motion_this_frame) {
-                        binding.handler(mouse_xrel_sum, mouse_yrel_sum);
+                        binding.handler(mouse_xrel, mouse_yrel);
                     }
                 }
                 break;
@@ -234,8 +234,8 @@ void Window::process_mouse_bindings() {
         }
     }
     mouse_motion_this_frame = false;
-    mouse_xrel_sum = 0;
-    mouse_yrel_sum = 0;
+    mouse_xrel = 0;
+    mouse_yrel = 0;
 }
 
 void Window::render() {
@@ -308,8 +308,4 @@ bool Window::is_key_just_released(SDL_Scancode key) const {
     return keys_updated_this_frame.count(key) && !keys_this_frame[key];
 }
 
-void Window::exit_cleanly() noexcept {
-    printMessageAndQuit("Exiting");
-}
-
-// printMessageAndQuit is provided by libs/sdw/DrawingWindow.cpp
+ 
