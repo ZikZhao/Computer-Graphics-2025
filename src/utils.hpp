@@ -2,6 +2,8 @@
 #include <glm/glm.hpp>
 #include <array>
 #include <algorithm>
+#include <cmath>
+#include <numbers>
 #include "Utils.h"
 
 using FloatType = decltype(std::declval<glm::vec3>().x);
@@ -108,4 +110,59 @@ inline bool IntersectRayTriangle(
     out_v = v;
     
     return t > EPSILON;
+}
+
+// ============================================================================
+// Low-Discrepancy Sampling (Halton Sequence)
+// ============================================================================
+
+inline FloatType halton(int index, int base) noexcept {
+    FloatType result = 0.0f;
+    FloatType f = 1.0f / base;
+    int i = index;
+    while (i > 0) {
+        result += f * (i % base);
+        i = i / base;
+        f = f / base;
+    }
+    return result;
+}
+
+inline glm::vec3 sample_sphere_halton(int index, FloatType radius, const glm::vec3& center) noexcept {
+    FloatType u = halton(index, 2);
+    FloatType v = halton(index, 3);
+    
+    FloatType theta = 2.0f * std::numbers::pi * u;
+    FloatType phi = std::acos(2.0f * v - 1.0f);
+    
+    FloatType sin_phi = std::sin(phi);
+    FloatType x = radius * sin_phi * std::cos(theta);
+    FloatType y = radius * sin_phi * std::sin(theta);
+    FloatType z = radius * std::cos(phi);
+    
+    return center + glm::vec3(x, y, z);
+}
+
+inline glm::vec3 sample_unit_vector_halton(int index) noexcept {
+    return sample_sphere_halton(index, 1.0f, glm::vec3(0.0f));
+}
+
+inline glm::vec3 sample_cone_halton(int index, const glm::vec3& direction, FloatType cone_angle) noexcept {
+    FloatType u1 = halton(index, 2);
+    FloatType u2 = halton(index, 3);
+    
+    FloatType cos_angle = std::cos(cone_angle);
+    FloatType z = cos_angle + (1.0f - cos_angle) * u1;
+    FloatType phi = 2.0f * std::numbers::pi * u2;
+    
+    FloatType sin_theta = std::sqrt(1.0f - z * z);
+    glm::vec3 sample_dir(sin_theta * std::cos(phi), sin_theta * std::sin(phi), z);
+    
+    // Build orthonormal basis around direction
+    glm::vec3 up = std::abs(direction.y) < 0.999f ? glm::vec3(0.0f, 1.0f, 0.0f) : glm::vec3(1.0f, 0.0f, 0.0f);
+    glm::vec3 right = glm::normalize(glm::cross(up, direction));
+    glm::vec3 forward = glm::cross(direction, right);
+    
+    // Transform sample to world space
+    return glm::normalize(sample_dir.x * right + sample_dir.y * forward + sample_dir.z * direction);
 }

@@ -70,7 +70,8 @@ void PhotonMap::emit_photons_to_object(const Face& target_face, int num_photons)
     glm::vec3 photon_power(world_.light_intensity() * 0.1f / static_cast<FloatType>(num_photons));
     
     for (int i = 0; i < num_photons; ++i) {
-        glm::vec3 direction = random_in_cone(to_face, cone_angle);
+        // Use Halton sequence for stratified sampling instead of random
+        glm::vec3 direction = sample_cone_halton(i, to_face, cone_angle);
         trace_single_photon(light_pos, direction, photon_power, 0);
     }
 }
@@ -85,6 +86,14 @@ void PhotonMap::trace_single_photon(const glm::vec3& origin, const glm::vec3& di
         return;
     }
     
+    // Find intersection
+    auto hit_opt = find_intersection(origin, direction);
+    if (!hit_opt.has_value()) {
+        return;  // Photon escaped scene
+    }
+    
+    const auto& hit = hit_opt.value();
+    
     // Russian roulette after second bounce to avoid premature termination
     // This ensures most photons get at least one chance to create caustics
     if (depth >= 2) {
@@ -96,13 +105,6 @@ void PhotonMap::trace_single_photon(const glm::vec3& origin, const glm::vec3& di
         }
     }
     
-    // Find intersection
-    auto hit_opt = find_intersection(origin, direction);
-    if (!hit_opt.has_value()) {
-        return;  // Photon escaped scene
-    }
-    
-    const auto& hit = hit_opt.value();
     const Face* hit_face = &world_.all_faces()[hit.triangleIndex];
     const Material& mat = hit_face->material;
     
@@ -427,43 +429,6 @@ std::size_t PhotonMap::total_photons() const noexcept {
         count += photons.size();
     }
     return count;
-}
-
-// ============================================================================
-// Random Sampling Utilities
-// ============================================================================
-
-glm::vec3 PhotonMap::random_unit_vector() noexcept {
-    thread_local std::mt19937 rng(std::random_device{}());
-    std::uniform_real_distribution<FloatType> dist(-1.0f, 1.0f);
-    while (true) {
-        glm::vec3 v(dist(rng), dist(rng), dist(rng));
-        FloatType len_sq = glm::dot(v, v);
-        if (len_sq > 0.0001f && len_sq <= 1.0f) {
-            return v / std::sqrt(len_sq);
-        }
-    }
-}
-
-glm::vec3 PhotonMap::random_in_cone(const glm::vec3& direction, FloatType cone_angle) noexcept {
-    thread_local std::mt19937 rng(std::random_device{}());
-    // Generate random direction within cone around given direction
-    std::uniform_real_distribution<FloatType> dist(0.0f, 1.0f);
-    
-    FloatType cos_angle = std::cos(cone_angle);
-    FloatType z = cos_angle + (1.0f - cos_angle) * dist(rng);
-    FloatType phi = 2.0f * std::numbers::pi * dist(rng);
-    
-    FloatType sin_theta = std::sqrt(1.0f - z * z);
-    glm::vec3 sample_dir(sin_theta * std::cos(phi), sin_theta * std::sin(phi), z);
-    
-    // Build orthonormal basis around direction
-    glm::vec3 up = std::abs(direction.y) < 0.999f ? glm::vec3(0.0f, 1.0f, 0.0f) : glm::vec3(1.0f, 0.0f, 0.0f);
-    glm::vec3 right = glm::normalize(glm::cross(up, direction));
-    glm::vec3 forward = glm::cross(direction, right);
-    
-    // Transform sample to world space
-    return glm::normalize(sample_dir.x * right + sample_dir.y * forward + sample_dir.z * direction);
 }
 
 FloatType PhotonMap::random_float(FloatType min, FloatType max) noexcept {

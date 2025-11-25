@@ -1,6 +1,7 @@
 #pragma once
 #include "world.hpp"
 #include "shader.hpp"
+#include "utils.hpp"
 #include <thread>
 #include <map>
 #include <unordered_map>
@@ -104,8 +105,6 @@ private:
     std::optional<RayTriangleIntersection> find_intersection(
         const glm::vec3& ro, const glm::vec3& rd) const noexcept;
     
-    // Random sampling utilities
-    static glm::vec3 random_unit_vector() noexcept;
-    static glm::vec3 random_in_cone(const glm::vec3& direction, FloatType cone_angle) noexcept;
+    // Random number generation for stochastic decisions
     static FloatType random_float(FloatType min = 0.0f, FloatType max = 1.0f) noexcept;
 };
