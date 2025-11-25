@@ -23,7 +23,7 @@ int main(int argc, char *argv[]) {
     // Initialize window after successful world loading
     DrawingWindow window = DrawingWindow(WIDTH, HEIGHT, false);
     Renderer renderer(window, world);
-    VideoRecorder videoRecorder(window);
+    VideoRecorder videoRecorder(window.getPixelBuffer(), WIDTH, HEIGHT);
 
     SDL_Event event;
     std::size_t last_print_time = std::chrono::system_clock::now().time_since_epoch().count();
