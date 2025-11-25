@@ -1,6 +1,7 @@
 #pragma once
 #include "world.hpp"
 #include "shader.hpp"
+#include "PhotonMap.hpp"
 #include <memory>
 #include <vector>
 
@@ -39,22 +40,28 @@ private:
     std::unique_ptr<Shader> shader_metal_;
     std::unique_ptr<Shader> shader_dielectric_;
     
+    // Photon map for caustics
+    std::unique_ptr<PhotonMap> photon_map_;
+    
 public:
     explicit RayTracer(const World& world);
     
     // Core rendering entry point
     ColourHDR render_pixel(const Camera& cam, int x, int y, int width, int height, 
-                           bool soft_shadows, FloatType light_intensity) const noexcept;
+                           bool soft_shadows, FloatType light_intensity, bool use_caustics = false) const noexcept;
     
     // Depth of field rendering
     ColourHDR render_pixel_dof(const Camera& cam, int x, int y, int width, int height,
                                FloatType focal_distance, FloatType aperture_size, int samples,
-                               bool soft_shadows, FloatType light_intensity) const noexcept;
+                               bool soft_shadows, FloatType light_intensity, bool use_caustics = false) const noexcept;
+    
+    // Check if photon map is ready
+    bool is_photon_map_ready() const noexcept { return photon_map_ && photon_map_->is_ready(); }
     
 private:
     // Ray tracing core (no longer contains material logic)
     ColourHDR trace_ray(const glm::vec3& ro, const glm::vec3& rd, int depth, 
-                        const MediumState& medium, bool soft_shadows, FloatType light_intensity) const noexcept;
+                        const MediumState& medium, bool soft_shadows, FloatType light_intensity, bool use_caustics) const noexcept;
     
     // BVH intersection
     HitRecord hit(const glm::vec3& ro, const glm::vec3& rd) const noexcept;

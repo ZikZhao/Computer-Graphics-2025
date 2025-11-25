@@ -23,6 +23,7 @@ public:
     Mode mode_ = Raytraced;
     FloatType gamma_ = 2.2f;
     bool soft_shadows_enabled_ = false;
+    bool caustics_enabled_ = false;  // Photon mapping for caustics
     
     // Depth of field parameters
     FloatType focal_distance_ = 8.0f;

@@ -4,6 +4,7 @@
 #include <functional>
 #include <limits>
 #include <numbers>
+#include <iostream>
 
 RayTracer::RayTracer(const World& world)
     : world_(world),
@@ -18,13 +19,18 @@ RayTracer::RayTracer(const World& world)
     shader_lambertian_ = std::make_unique<LambertianShader>();
     shader_metal_ = std::make_unique<MetalShader>();
     shader_dielectric_ = std::make_unique<DielectricShader>();
+    
+    // Initialize photon map (starts background thread automatically)
+    std::cout << "RayTracer: Initializing photon map for caustics..." << std::endl;
+    photon_map_ = std::make_unique<PhotonMap>(world);
+    std::cout << "RayTracer: Photon map initialized (computing in background)" << std::endl;
 }
 
 ColourHDR RayTracer::render_pixel(const Camera& cam, int x, int y, int width, int height,
-                                  bool soft_shadows, FloatType light_intensity) const noexcept {
+                                  bool soft_shadows, FloatType light_intensity, bool use_caustics) const noexcept {
     auto [ray_origin, ray_dir] = cam.generate_ray(x, y, width, height, 
                                                     static_cast<double>(width) / height);
-    return trace_ray(ray_origin, ray_dir, 0, MediumState{}, soft_shadows, light_intensity);
+    return trace_ray(ray_origin, ray_dir, 0, MediumState{}, soft_shadows, light_intensity, use_caustics);
 }
 
 // Helper for DOF lens sampling
@@ -50,7 +56,7 @@ static glm::vec2 sample_disk_concentric(FloatType u1, FloatType u2) noexcept {
 
 ColourHDR RayTracer::render_pixel_dof(const Camera& cam, int x, int y, int width, int height,
                                       FloatType focal_distance, FloatType aperture_size, int samples,
-                                      bool soft_shadows, FloatType light_intensity) const noexcept {
+                                      bool soft_shadows, FloatType light_intensity, bool use_caustics) const noexcept {
     ColourHDR accumulated_color(0.0f, 0.0f, 0.0f);
     double aspect_ratio = static_cast<double>(width) / height;
     
@@ -67,7 +73,7 @@ ColourHDR RayTracer::render_pixel_dof(const Camera& cam, int x, int y, int width
         glm::vec3 ray_origin = center_origin + lens_offset;
         glm::vec3 ray_dir = glm::normalize(focal_point - ray_origin);
         
-        accumulated_color = accumulated_color + trace_ray(ray_origin, ray_dir, 0, MediumState{}, soft_shadows, light_intensity);
+        accumulated_color = accumulated_color + trace_ray(ray_origin, ray_dir, 0, MediumState{}, soft_shadows, light_intensity, use_caustics);
     }
     
     return ColourHDR(
@@ -142,7 +148,7 @@ HitRecord RayTracer::hit(const glm::vec3& ro, const glm::vec3& rd) const noexcep
 }
 
 ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray_dir, int depth,
-                               const MediumState& medium, bool soft_shadows, FloatType light_intensity) const noexcept {
+                               const MediumState& medium, bool soft_shadows, FloatType light_intensity, bool use_caustics) const noexcept {
     constexpr int MAX_DEPTH = 5;
     
     if (depth >= MAX_DEPTH) {
@@ -219,7 +225,7 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
         if (total_internal_reflection) {
             glm::vec3 reflected_dir = glm::reflect(ray_dir, normal);
             glm::vec3 offset_origin = intersection.intersectionPoint + normal * epsilon;
-            ColourHDR reflected = trace_ray(offset_origin, reflected_dir, depth + 1, medium, soft_shadows, light_intensity);
+            ColourHDR reflected = trace_ray(offset_origin, reflected_dir, depth + 1, medium, soft_shadows, light_intensity, use_caustics);
             return reflected * medium_absorption;
         }
         
@@ -238,7 +244,7 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
         if (reflect_weight > 0.01f) {
             glm::vec3 reflected_dir = glm::reflect(ray_dir, normal);
             glm::vec3 offset_origin = intersection.intersectionPoint + normal * epsilon;
-            ColourHDR reflected_color = trace_ray(offset_origin, reflected_dir, depth + 1, medium, soft_shadows, light_intensity);
+            ColourHDR reflected_color = trace_ray(offset_origin, reflected_dir, depth + 1, medium, soft_shadows, light_intensity, use_caustics);
             result_color = result_color + reflected_color * reflect_weight;
         }
         
@@ -254,7 +260,7 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
                 new_medium.entry_point = glm::vec3(0.0f);
                 new_medium.entry_distance = 0.0f;
             }
-            ColourHDR refracted_color = trace_ray(offset_origin, refracted_dir, depth + 1, new_medium, soft_shadows, light_intensity);
+            ColourHDR refracted_color = trace_ray(offset_origin, refracted_dir, depth + 1, new_medium, soft_shadows, light_intensity, use_caustics);
             result_color = result_color + refracted_color * refract_weight;
         }
         
@@ -331,7 +337,7 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
         glm::vec3 reflected_dir = glm::reflect(ray_dir, intersection.normal);
         constexpr FloatType epsilon = 0.001f;
         glm::vec3 offset_origin = intersection.intersectionPoint + intersection.normal * epsilon;
-        ColourHDR reflected_color = trace_ray(offset_origin, reflected_dir, depth + 1, medium, soft_shadows, light_intensity);
+        ColourHDR reflected_color = trace_ray(offset_origin, reflected_dir, depth + 1, medium, soft_shadows, light_intensity, use_caustics);
         ColourHDR metallic_reflection = ColourHDR(
             reflected_color.red * hdr_colour.red,
             reflected_color.green * hdr_colour.green,
@@ -340,7 +346,17 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
         return direct_lighting * (1.0f - face.material.metallic * 0.8f) + metallic_reflection * face.material.metallic;
     }
     
-    return direct_lighting * medium_absorption;
+    // Add caustics contribution if enabled
+    ColourHDR caustics_contribution(0.0f, 0.0f, 0.0f);
+    if (use_caustics && photon_map_ && photon_map_->is_ready()) {
+        // Estimate caustic radiance at this point
+        FloatType search_radius = 0.15f;  // Smaller radius for tighter caustics
+        caustics_contribution = photon_map_->estimate_caustic(&face, intersection.intersectionPoint, intersection.normal, search_radius);
+        // Scale down caustics contribution to blend naturally with direct lighting
+        caustics_contribution = caustics_contribution * 1.5f;
+    }
+    
+    return (direct_lighting + caustics_contribution) * medium_absorption;
 }
 
 // Shadow and lighting helpers

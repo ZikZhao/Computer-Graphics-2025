@@ -1,6 +1,7 @@
 #include "renderer.hpp"
 #include "DrawingWindow.h"
 #include <algorithm>
+#include <iostream>
 
 Renderer::Renderer(DrawingWindow& window, const World& world)
     : window_(window),
@@ -84,12 +85,12 @@ void Renderer::process_rows(int y0, int y1) noexcept {
                 final_hdr = raytracer_->render_pixel_dof(
                     camera, x, y, window_.width, window_.height,
                     focal_distance_, aperture_size_, dof_samples_,
-                    soft_shadows_enabled_, world_.light_intensity()
+                    soft_shadows_enabled_, world_.light_intensity(), caustics_enabled_
                 );
             } else {
                 final_hdr = raytracer_->render_pixel(
                     camera, x, y, window_.width, window_.height,
-                    soft_shadows_enabled_, world_.light_intensity()
+                    soft_shadows_enabled_, world_.light_intensity(), caustics_enabled_
                 );
             }
             
@@ -140,6 +141,14 @@ void Renderer::handle_event(const SDL_Event& event) noexcept {
             break;
         case SDLK_h:
             soft_shadows_enabled_ = !soft_shadows_enabled_;
+            break;
+        case SDLK_p:
+            if (raytracer_->is_photon_map_ready()) {
+                caustics_enabled_ = !caustics_enabled_;
+                std::cout << "Caustics (photon mapping): " << (caustics_enabled_ ? "ENABLED" : "DISABLED") << std::endl;
+            } else {
+                std::cout << "Photon map not ready yet, please wait..." << std::endl;
+            }
             break;
         }
     }

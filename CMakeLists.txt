@@ -38,7 +38,8 @@ add_executable(CG-CW
         src/shader.cpp
         src/raytracer.cpp
         src/rasterizer.cpp
-        src/renderer.cpp)
+        src/renderer.cpp
+        src/PhotonMap.cpp)
 
 if (MSVC)
     target_compile_options(CG-CW
