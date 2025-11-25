@@ -171,9 +171,9 @@ Colour Rasterizer::sample_texture(const Face& face, const glm::vec3& bary,
     glm::vec3 base_color;
     
     if (face.material.texture) {
-        FloatType inv_w = bary.z * v0.inv_w + bary.x * v1.inv_w + bary.y * v2.inv_w;
-        FloatType u = (bary.z * v0.uv.x * v0.inv_w + bary.x * v1.uv.x * v1.inv_w + bary.y * v2.uv.x * v2.inv_w) / inv_w;
-        FloatType v = (bary.z * v0.uv.y * v0.inv_w + bary.x * v1.uv.y * v1.inv_w + bary.y * v2.uv.y * v2.inv_w) / inv_w;
+        FloatType inv_w = bary.x * v0.inv_w + bary.y * v1.inv_w + bary.z * v2.inv_w;
+        FloatType u = (bary.x * v0.uv.x * v0.inv_w + bary.y * v1.uv.x * v1.inv_w + bary.z * v2.uv.x * v2.inv_w) / inv_w;
+        FloatType v = (bary.x * v0.uv.y * v0.inv_w + bary.y * v1.uv.y * v1.inv_w + bary.z * v2.uv.y * v2.inv_w) / inv_w;
         
         Colour tex_sample = face.material.texture->sample(u, v);
         base_color = glm::vec3(
@@ -281,12 +281,12 @@ void Rasterizer::rasterized_render(const Camera& camera, const Face& face, Windo
             
             for (std::int64_t x = start_x; x <= end_x; x++) {
                 FloatType x_center = static_cast<FloatType>(x) + 0.5f;
-                glm::vec3 bary = convertToBarycentricCoordinates(
+                glm::vec3 bary = CalculateBarycentric(
                     { v0.x, v0.y }, { v1.x, v1.y }, { v2.x, v2.y }, { x_center, y_center });
                 
                 if (bary.x >= 0.0f && bary.y >= 0.0f && bary.z >= 0.0f) {
                     Colour colour = sample_texture(face, bary, v0, v1, v2);
-                    FloatType inv_z = ComputeInvZndc(std::array<FloatType, 3>{bary.z, bary.x, bary.y}, 
+                    FloatType inv_z = ComputeInvZndc(std::array<FloatType, 3>{bary.x, bary.y, bary.z}, 
                                                      std::array<FloatType, 3>{v0.z_ndc, v1.z_ndc, v2.z_ndc});
                     FloatType& depth = z_buffer_[y * width_ + x];
                     if (inv_z > depth) {
@@ -307,12 +307,12 @@ void Rasterizer::rasterized_render(const Camera& camera, const Face& face, Windo
             
             for (std::int64_t x = start_x; x <= end_x; x++) {
                 FloatType x_center = static_cast<FloatType>(x) + 0.5f;
-                glm::vec3 bary = convertToBarycentricCoordinates(
+                glm::vec3 bary = CalculateBarycentric(
                     { v0.x, v0.y }, { v1.x, v1.y }, { v2.x, v2.y }, { x_center, y_center });
                 
                 if (bary.x >= 0.0f && bary.y >= 0.0f && bary.z >= 0.0f) {
                     Colour colour = sample_texture(face, bary, v0, v1, v2);
-                    FloatType inv_z = ComputeInvZndc(std::array<FloatType, 3>{bary.z, bary.x, bary.y}, 
+                    FloatType inv_z = ComputeInvZndc(std::array<FloatType, 3>{bary.x, bary.y, bary.z}, 
                                                      std::array<FloatType, 3>{v0.z_ndc, v1.z_ndc, v2.z_ndc});
                     FloatType& depth = z_buffer_[y * width_ + x];
                     if (inv_z > depth) {

@@ -10,7 +10,6 @@
 #include <vector>
 #include <thread>
 #include <iostream>
-#include "Utils.h"
 
 using FloatType = decltype(std::declval<glm::vec3>().x);
 
@@ -118,6 +117,18 @@ inline bool IntersectRayTriangle(
     out_v = v;
     
     return t > EPSILON;
+}
+
+inline glm::vec3 CalculateBarycentric(glm::vec2 v0, glm::vec2 v1, glm::vec2 v2, glm::vec2 p) noexcept {
+    glm::vec2 e0 = v1 - v0;
+    glm::vec2 e1 = v2 - v0;
+    glm::vec2 e2 = p - v0;
+    FloatType denominator = e0.x * e1.y - e0.y * e1.x;
+    FloatType invDenominator = 1.0f / denominator;
+    FloatType weight_v1 = (e2.x * e1.y - e2.y * e1.x) * invDenominator;
+    FloatType weight_v2 = (e0.x * e2.y - e0.y * e2.x) * invDenominator;
+    FloatType weight_v0 = 1.0f - weight_v1 - weight_v2;
+    return glm::vec3(weight_v0, weight_v1, weight_v2);
 }
 
 // ============================================================================

@@ -28,11 +28,9 @@ set(GLM_INCLUDE_DIRS libs/glm-0.9.7.2)
 find_package(SDL2 REQUIRED)
 
 include_directories(${SDL2_INCLUDE_DIRS} ${GLM_INCLUDE_DIRS})
-include_directories(libs/sdw)
+# include_directories(libs/sdw)
 
 add_executable(CG-CW
-        libs/sdw/DrawingWindow.cpp
-        libs/sdw/Utils.cpp
         src/main.cpp
         src/window.cpp
         src/world.cpp
