@@ -194,7 +194,7 @@ public:
     void orbiting() noexcept;
     void stop_orbiting() noexcept;
     void rotate(FloatType delta_yaw, FloatType delta_pitch) noexcept;
-    void move(FloatType forward_delta, FloatType right_delta, FloatType up_delta) noexcept;
+    void move(FloatType forward_delta, FloatType right_delta, FloatType up_delta, FloatType dt) noexcept;
     void update_movement() noexcept;  // Update camera position based on keyboard state
     void update() noexcept;  // Legacy update function (calls update_movement)
     std::pair<glm::vec3, glm::vec3> generate_ray(int pixel_x, int pixel_y, int screen_width, int screen_height, double aspect_ratio) const noexcept;
@@ -268,6 +268,3 @@ public:
     void set_light_intensity(FloatType intensity) noexcept { light_intensity_ = intensity; }
     const EnvironmentMap& env_map() const noexcept { return env_map_; }
 };
-
-// Forward declaration - Renderer is now in renderer.hpp
-class Renderer;

@@ -7,6 +7,7 @@
 #include <functional>
 #include <unordered_map>
 #include <unordered_set>
+#include <chrono>
 #include "SDL.h"
 #include "world.hpp"
 
@@ -26,8 +27,8 @@ public:
     };
 
     using KeyState = std::array<Uint8, SDL_NUM_SCANCODES>;
-    using KeyHandler = std::function<void(const KeyState&)>;
-    using MouseHandler = std::function<void(int, int)>;
+    using KeyHandler = std::function<void(const KeyState&, float)>;
+    using MouseHandler = std::function<void(int, int, float)>;
 
 private:
     // SDL components
@@ -57,6 +58,8 @@ private:
         Trigger trigger;
         KeyHandler handler;
         size_t id;
+        std::chrono::steady_clock::time_point last_time;
+        bool time_initialized = false;
     };
     std::vector<KeyBinding> key_bindings;
     struct MouseBinding {
@@ -64,6 +67,8 @@ private:
         Trigger trigger;
         MouseHandler handler;
         bool first_motion;
+        std::chrono::steady_clock::time_point last_time;
+        bool time_initialized = false;
     };
     std::vector<MouseBinding> mouse_bindings;
     size_t next_event_id = 0;
@@ -74,6 +79,11 @@ private:
     void process_mouse_bindings();
     void update_keyboard_state();
     bool has_modifier_keys() const;
+    static bool is_pressed_mode(Trigger t) noexcept {
+        return t == Trigger::ANY_PRESSED || t == Trigger::ALL_PRESSED ||
+               t == Trigger::ANY_DOWN || t == Trigger::ALL_DOWN ||
+               t == Trigger::ANY_PRESSED_NO_MODIFIER;
+    }
 
 public:
     Window() noexcept = delete;
@@ -103,7 +113,7 @@ public:
     size_t get_height() const noexcept { return height; }
     
     // Keyboard state queries
-    bool is_key_down(SDL_Scancode key) const;
+    bool is_key_pressed(SDL_Scancode key) const;
     bool is_key_just_pressed(SDL_Scancode key) const;
     bool is_key_just_released(SDL_Scancode key) const;
 };

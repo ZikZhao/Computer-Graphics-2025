@@ -27,21 +27,21 @@ int main(int argc, char *argv[]) {
     VideoRecorder video_recorder(window.get_pixel_buffer(), WIDTH, HEIGHT);
 
     // Centralized input callbacks
-    constexpr FloatType move_step = 0.1f;
     window.register_key(
         {SDL_SCANCODE_W, SDL_SCANCODE_S, SDL_SCANCODE_A, SDL_SCANCODE_D, SDL_SCANCODE_SPACE, SDL_SCANCODE_C},
         Window::Trigger::ANY_PRESSED_NO_MODIFIER,
-        [&](const Window::KeyState& ks) {
+        [&](const Window::KeyState& ks, float dt) {
+            constexpr FloatType move_step = 3.0f;
             FloatType fwd = (ks[SDL_SCANCODE_W] ? 1.0f : 0.0f) - (ks[SDL_SCANCODE_S] ? 1.0f : 0.0f);
             FloatType right = (ks[SDL_SCANCODE_D] ? 1.0f : 0.0f) - (ks[SDL_SCANCODE_A] ? 1.0f : 0.0f);
             FloatType up = (ks[SDL_SCANCODE_SPACE] ? 1.0f : 0.0f) - (ks[SDL_SCANCODE_C] ? 1.0f : 0.0f);
             if (fwd != 0.0f || right != 0.0f || up != 0.0f) {
-                world.camera_.move(fwd * move_step, right * move_step, up * move_step);
+                world.camera_.move(fwd * move_step, right * move_step, up * move_step, dt);
             }
         });
 
     window.register_key({SDL_SCANCODE_O}, Window::Trigger::ANY_JUST_PRESSED,
-        [&](const Window::KeyState&) {
+        [&](const Window::KeyState&, float) {
             if (!world.camera_.is_orbiting_) {
                 world.camera_.start_orbiting(world.camera_.orbit_target_);
             } else {
@@ -52,7 +52,7 @@ int main(int argc, char *argv[]) {
     window.register_key(
         {SDL_SCANCODE_1, SDL_SCANCODE_2, SDL_SCANCODE_3, SDL_SCANCODE_4},
         Window::Trigger::ANY_JUST_PRESSED,
-        [&](const Window::KeyState& ks) {
+        [&](const Window::KeyState& ks, float) {
             if (ks[SDL_SCANCODE_1]) renderer.mode_ = Renderer::Wireframe;
             else if (ks[SDL_SCANCODE_2]) renderer.mode_ = Renderer::Rasterized;
             else if (ks[SDL_SCANCODE_3]) renderer.mode_ = Renderer::Raytraced;
@@ -60,11 +60,11 @@ int main(int argc, char *argv[]) {
         });
 
     window.register_key({SDL_SCANCODE_G}, Window::Trigger::ANY_JUST_PRESSED,
-        [&](const Window::KeyState&) { renderer.gamma_ = (renderer.gamma_ == 2.2f) ? 1.0f : 2.2f; });
+        [&](const Window::KeyState&, float) { renderer.gamma_ = (renderer.gamma_ == 2.2f) ? 1.0f : 2.2f; });
     window.register_key({SDL_SCANCODE_H}, Window::Trigger::ANY_JUST_PRESSED,
-        [&](const Window::KeyState&) { renderer.soft_shadows_enabled_ = !renderer.soft_shadows_enabled_; });
+        [&](const Window::KeyState&, float) { renderer.soft_shadows_enabled_ = !renderer.soft_shadows_enabled_; });
     window.register_key({SDL_SCANCODE_P}, Window::Trigger::ANY_JUST_PRESSED,
-        [&](const Window::KeyState&) {
+        [&](const Window::KeyState&, float) {
             if (renderer.raytracer_->is_photon_map_ready()) {
                 renderer.caustics_enabled_ = !renderer.caustics_enabled_;
                 std::cout << "Caustics (photon mapping): "
@@ -74,7 +74,7 @@ int main(int argc, char *argv[]) {
             }
         });
     window.register_key({SDL_SCANCODE_V}, Window::Trigger::ANY_JUST_PRESSED,
-        [&](const Window::KeyState&) {
+        [&](const Window::KeyState&, float) {
             RayTracer::debug_visualize_caustics_only = !RayTracer::debug_visualize_caustics_only;
             std::cout << "DEBUG Caustics-only mode: "
                       << (RayTracer::debug_visualize_caustics_only ? "ON (verify Beer-Lambert color)" : "OFF")
@@ -83,14 +83,14 @@ int main(int argc, char *argv[]) {
     
     // Screenshot Save (Ctrl+S)
     window.register_key({SDL_SCANCODE_LCTRL, SDL_SCANCODE_S}, Window::Trigger::ALL_JUST_PRESSED,
-        [&](const Window::KeyState& ks) {
+        [&](const Window::KeyState& ks, float) {
             window.save_ppm("screenshot.ppm");
             window.save_bmp("screenshot.bmp");
             std::cout << "Screenshot saved as screenshot.ppm and screenshot.bmp" << std::endl;
         });
     
     window.register_key({SDL_SCANCODE_RCTRL, SDL_SCANCODE_S}, Window::Trigger::ALL_JUST_PRESSED,
-        [&](const Window::KeyState& ks) {
+        [&](const Window::KeyState& ks, float) {
             window.save_ppm("screenshot.ppm");
             window.save_bmp("screenshot.bmp");
             std::cout << "Screenshot saved as screenshot.ppm and screenshot.bmp" << std::endl;
@@ -98,13 +98,13 @@ int main(int argc, char *argv[]) {
     
     // Video Recording Toggle (Ctrl+Shift+S)
     window.register_key({SDL_SCANCODE_LCTRL, SDL_SCANCODE_LSHIFT, SDL_SCANCODE_S}, Window::Trigger::ALL_JUST_PRESSED,
-        [&](const auto&) { video_recorder.toggleRecording(); });
+        [&](const Window::KeyState&, float) { video_recorder.toggleRecording(); });
     
     window.register_key({SDL_SCANCODE_RCTRL, SDL_SCANCODE_RSHIFT, SDL_SCANCODE_S}, Window::Trigger::ALL_JUST_PRESSED,
-        [&](const auto&) { video_recorder.toggleRecording(); });
+        [&](const Window::KeyState&, float) { video_recorder.toggleRecording(); });
 
     window.register_mouse(SDL_BUTTON_LEFT, Window::Trigger::ANY_PRESSED,
-        [&](int xrel, int yrel) {
+        [&](int xrel, int yrel, float dt) {
             if (xrel == 0 && yrel == 0) return;
             FloatType dx = -static_cast<FloatType>(xrel) * world.camera_.mouse_sensitivity_;
             FloatType dy = static_cast<FloatType>(yrel) * world.camera_.mouse_sensitivity_;

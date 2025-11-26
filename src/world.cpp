@@ -81,10 +81,10 @@ void Camera::rotate(FloatType delta_yaw, FloatType delta_pitch) noexcept {
     pitch_ = std::clamp(pitch_, -max_pitch, max_pitch);
 }
 
-void Camera::move(FloatType forward_delta, FloatType right_delta, FloatType up_delta) noexcept {
-    position_ += forward() * forward_delta;
-    position_ += right() * right_delta;
-    position_ += up() * up_delta;
+void Camera::move(FloatType forward_delta, FloatType right_delta, FloatType up_delta, FloatType dt) noexcept {
+    position_ += forward() * (forward_delta * dt);
+    position_ += right() * (right_delta * dt);
+    position_ += up() * (up_delta * dt);
 }
 
 void Camera::update_movement() noexcept {

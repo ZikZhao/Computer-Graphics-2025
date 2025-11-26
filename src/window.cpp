@@ -50,11 +50,13 @@ Window::~Window() {
 }
 
 void Window::register_key(const std::unordered_set<SDL_Scancode>& keys, Trigger trigger, KeyHandler handler) {
-    key_bindings.push_back({keys, trigger, handler, next_event_id++});
+    auto now = std::chrono::steady_clock::now();
+    key_bindings.push_back({keys, trigger, handler, next_event_id++, now, false});
 }
 
 void Window::register_mouse(Uint8 button, Trigger trigger, MouseHandler handler) {
-    mouse_bindings.push_back({button, trigger, handler, true});
+    auto now = std::chrono::steady_clock::now();
+    mouse_bindings.push_back({button, trigger, handler, true, now, false});
 }
 
 bool Window::process_events() {
@@ -121,9 +123,45 @@ void Window::update_keyboard_state() {
  
 
 void Window::process_key_bindings() {
-    for (const auto& binding : key_bindings) {
-        if (check_key_trigger(binding)) {
-            binding.handler(keys_this_frame);
+    auto now = std::chrono::steady_clock::now();
+    for (auto& binding : key_bindings) {
+        if (is_pressed_mode(binding.trigger)) {
+            bool any_down = true;
+            if (binding.trigger == Trigger::ANY_DOWN || binding.trigger == Trigger::ANY_PRESSED || binding.trigger == Trigger::ANY_PRESSED_NO_MODIFIER) {
+                any_down = false;
+                for (auto k : binding.keys) {
+                    if (keys_this_frame[k]) { any_down = true; break; }
+                }
+            } else if (binding.trigger == Trigger::ALL_DOWN || binding.trigger == Trigger::ALL_PRESSED) {
+                any_down = true;
+                for (auto k : binding.keys) {
+                    if (!keys_this_frame[k]) { any_down = false; break; }
+                }
+            }
+            if (binding.trigger == Trigger::ANY_PRESSED_NO_MODIFIER && has_modifier_keys()) any_down = false;
+
+            bool just_pressed = false;
+            for (auto k : binding.keys) {
+                if (keys_updated_this_frame.count(k) && keys_this_frame[k]) { just_pressed = true; break; }
+            }
+            if (any_down) {
+                if (just_pressed) {
+                    binding.last_time = now;
+                    binding.time_initialized = true;
+                    continue; // do not call on initial press
+                }
+                if (!binding.time_initialized) {
+                    binding.last_time = now;
+                    binding.time_initialized = true;
+                }
+                float dt = std::chrono::duration<float>(now - binding.last_time).count();
+                binding.handler(keys_this_frame, dt);
+                binding.last_time = now;
+            }
+        } else {
+            if (check_key_trigger(binding)) {
+                binding.handler(keys_this_frame, 0.0f);
+            }
         }
     }
 }
@@ -212,23 +250,26 @@ bool Window::check_key_trigger(const KeyBinding& binding) const {
 }
 
 void Window::process_mouse_bindings() {
+    auto now = std::chrono::steady_clock::now();
     for (auto& binding : mouse_bindings) {
         bool down = mouse_buttons_this_frame.count(binding.button) > 0;
         bool just_pressed = mouse_buttons_updated_this_frame.count(binding.button) > 0 && down;
         switch (binding.trigger) {
             case Trigger::ANY_JUST_PRESSED: {
-                if (just_pressed) {
-                    binding.handler(0, 0);
-                }
+                if (just_pressed) binding.handler(0, 0, 0.0f);
                 break;
             }
             case Trigger::ANY_PRESSED: {
                 if (down) {
-                    if (binding.first_motion) {
-                        binding.handler(0, 0);
+                    if (just_pressed) {
+                        binding.last_time = now;
+                        binding.time_initialized = true;
                         binding.first_motion = false;
                     } else if (mouse_motion_this_frame) {
-                        binding.handler(mouse_xrel, mouse_yrel);
+                        if (!binding.time_initialized) { binding.last_time = now; binding.time_initialized = true; }
+                        float dt = std::chrono::duration<float>(now - binding.last_time).count();
+                        binding.handler(mouse_xrel, mouse_yrel, dt);
+                        binding.last_time = now;
                     }
                 }
                 break;
@@ -296,7 +337,7 @@ void Window::save_bmp(const std::string& filename) const {
     SDL_FreeSurface(surface);
 }
 
-bool Window::is_key_down(SDL_Scancode key) const {
+bool Window::is_key_pressed(SDL_Scancode key) const {
     return keys_this_frame[key] != 0;
 }
 
