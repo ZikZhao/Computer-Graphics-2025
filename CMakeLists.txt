@@ -26,6 +26,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(GLM_INCLUDE_DIRS libs/glm-0.9.7.2)
 
 find_package(SDL2 REQUIRED)
+find_package(Threads REQUIRED)
 
 include_directories(${SDL2_INCLUDE_DIRS} ${GLM_INCLUDE_DIRS})
 # include_directories(libs/sdw)
@@ -65,6 +66,8 @@ else ()
 
     set(DEBUG_OPTIONS -fno-omit-frame-pointer -g)
     set(RELEASE_OPTIONS -O3 -march=native -mtune=native)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -static-libstdc++ -static-libgcc")
+    target_link_libraries(CG-CW PRIVATE Threads::Threads)
     target_link_libraries(CG-CW PUBLIC $<$<CONFIG:Debug>:-Wl,-lasan>)
 
 endif()
