@@ -169,7 +169,7 @@ struct ScreenNdcCoord {
 
 class Camera {
 public:
-    static constexpr std::int64_t OrbitInterval = 1'000'000'000 / 60; // 60 FPS
+    static constexpr auto OrbitInterval = std::chrono::seconds(1) / 60;
     static constexpr double FOV = 45.0;
     static constexpr double NearPlane = 0.001;
     static constexpr double FarPlane = 100.0;

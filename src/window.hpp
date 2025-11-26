@@ -26,7 +26,7 @@ public:
         ANY_PRESSED_NO_MODIFIER   // At least one key is pressed with no modifier keys (Ctrl/Shift/Alt)
     };
 
-    using KeyState = std::array<Uint8, SDL_NUM_SCANCODES>;
+    using KeyState = std::array<bool, SDL_NUM_SCANCODES>;
     using KeyHandler = std::function<void(const KeyState&, float)>;
     using MouseHandler = std::function<void(int, int, float)>;
 
@@ -42,8 +42,8 @@ private:
     std::vector<uint32_t> pixel_buffer;
     
     // Input management
-    std::array<Uint8, SDL_NUM_SCANCODES> keys_this_frame{};
-    std::array<Uint8, SDL_NUM_SCANCODES> keys_last_frame{};
+    KeyState keys_this_frame{};
+    KeyState keys_last_frame{};
     std::unordered_set<SDL_Scancode> keys_updated_this_frame;
     std::unordered_set<Uint8> mouse_buttons_this_frame;
     std::unordered_set<Uint8> mouse_buttons_last_frame;
@@ -100,8 +100,8 @@ public:
     
     // Pixel manipulation
     void clear_pixels() noexcept;
-    std::uint32_t& operator[](const std::pair<int,int>& xy) noexcept;
-    std::uint32_t operator[](const std::pair<int,int>& xy) const noexcept;
+    std::uint32_t& operator[](const std::pair<int, int>& xy) noexcept;
+    std::uint32_t operator[](const std::pair<int, int>& xy) const noexcept;
     const std::vector<uint32_t>& get_pixel_buffer() const noexcept;
     
     // File operations

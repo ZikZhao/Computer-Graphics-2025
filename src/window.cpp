@@ -115,12 +115,11 @@ bool Window::process_events() {
 void Window::update_keyboard_state() {
     keys_last_frame = keys_this_frame;
     const Uint8* keystate = SDL_GetKeyboardState(nullptr);
-    for (int i = 0; i < SDL_NUM_SCANCODES; ++i) {
-        keys_this_frame[i] = keystate[i] ? 1 : 0;
-    }
+    // for (int i = 0; i < SDL_NUM_SCANCODES; ++i) {
+    //     keys_this_frame[i] = keystate[i];
+    // }
+    std::copy(keystate, keystate + SDL_NUM_SCANCODES, keys_this_frame.begin());
 }
-
- 
 
 void Window::process_key_bindings() {
     auto now = std::chrono::steady_clock::now();

@@ -246,7 +246,7 @@ public:
     }
     
     // Capture current frame
-    void captureFrame() {
+    void capture_frame() {
         if (!recording) {
             return;
         }
@@ -256,7 +256,7 @@ public:
     }
     
     // Check if currently recording
-    bool isRecording() const noexcept { return recording; }
+    bool is_recording() const noexcept { return recording; }
     
 private:
     const std::vector<uint32_t>& pixel_buffer;

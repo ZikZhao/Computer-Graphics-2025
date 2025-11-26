@@ -111,36 +111,31 @@ int main(int argc, char *argv[]) {
             world.camera_.rotate(dx, dy);
         });
 
-    std::size_t last_print_time = std::chrono::system_clock::now().time_since_epoch().count();
+    auto last_print = std::chrono::steady_clock::now();
     std::size_t fps = 0;
     
     while (true) {
-        // Process window events (handles quit, escape, etc.)
-        if (!window.process_events()) {
-            break; // Exit main loop if window should close
-        }
-        
-        // Input callbacks already dispatched within process_events()
+        if (!window.process_events()) break;
         
         // Render frame
-        world.update();
         world.orbiting();
         renderer.render();
         window.update();
         
         // Capture frame if recording
-        if (video_recorder.isRecording()) {
-            video_recorder.captureFrame();
+        if (video_recorder.is_recording()) {
+            video_recorder.capture_frame();
         }
         
         // FPS counter
         fps++;
-        std::size_t now = std::chrono::system_clock::now().time_since_epoch().count();
-        if (now - last_print_time >= 1000000000) { // 1 second in nanoseconds
+        auto now = std::chrono::steady_clock::now();
+        std::chrono::duration<double> elapsed = now - last_print;
+        if (elapsed >= std::chrono::seconds(1)) {
             std::cout << "FPS: " << std::fixed << std::setprecision(1) 
-                      << static_cast<double>(fps / ((now - last_print_time) / 1000000000.0)) << std::endl;
+                      << static_cast<double>(fps / elapsed.count()) << std::endl;
             fps = 0;
-            last_print_time = now;
+            last_print = now;
         }
     }
     
