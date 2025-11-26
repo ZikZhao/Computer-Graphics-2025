@@ -289,14 +289,29 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
     glm::vec3 to_camera_hit = -ray_dir;
     
     ColourHDR shadow_color;
-    if (soft_shadows) {
-        constexpr int shadow_samples = 16;
-        FloatType light_radius = world_.light_radius();
-        FloatType shadow_factor = compute_soft_shadow(intersection.intersectionPoint, light_pos, light_radius, shadow_samples);
-        shadow_color = ColourHDR(shadow_factor, shadow_factor, shadow_factor);
-    } else {
-        glm::vec3 transmittance = compute_transmittance_bvh(intersection.intersectionPoint, light_pos);
-        shadow_color = ColourHDR(transmittance.r, transmittance.g, transmittance.b);
+    bool backface_view_gate = false;
+    {
+        glm::vec3 light_dir = glm::normalize(to_light_hit);
+        glm::vec3 n_to_light = face.face_normal;
+        if (glm::dot(n_to_light, light_dir) < 0.0f) {
+            n_to_light = -n_to_light;
+        }
+        glm::vec3 v_cam_point = glm::normalize(ray_dir);
+        FloatType nl_view_dot = glm::dot(n_to_light, v_cam_point);
+        if (nl_view_dot > 0.0f) {
+            backface_view_gate = true;
+            shadow_color = ColourHDR(1.0f, 1.0f, 1.0f);
+        } else {
+            if (soft_shadows) {
+                constexpr int shadow_samples = 16;
+                FloatType light_radius = world_.light_radius();
+                FloatType shadow_factor = compute_soft_shadow(intersection.intersectionPoint, light_pos, light_radius, shadow_samples);
+                shadow_color = ColourHDR(shadow_factor, shadow_factor, shadow_factor);
+            } else {
+                glm::vec3 transmittance = compute_transmittance_bvh(intersection.intersectionPoint, light_pos);
+                shadow_color = ColourHDR(transmittance.r, transmittance.g, transmittance.b);
+            }
+        }
     }
     
     ColourHDR hdr_colour = ColourHDR(intersection.color.r, intersection.color.g, intersection.color.b);
@@ -305,30 +320,32 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
     FloatType specular = 0.0f;
     
     FloatType w = 1.0f - intersection.u - intersection.v;
-    if (face.material.shading == Material::Shading::Flat) {
-        lambertian = compute_lambertian_lighting(face.face_normal, to_light_hit, dist_light_hit, light_intensity);
-        if (lambertian > 0.0f) {
-            specular = compute_specular_lighting(face.face_normal, to_light_hit, to_camera_hit, dist_light_hit, light_intensity, face.material.shininess);
-        }
-    } else if (face.material.shading == Material::Shading::Gouraud) {
-        FloatType lam_v[3] = {0.0f, 0.0f, 0.0f};
-        FloatType spec_v[3] = {0.0f, 0.0f, 0.0f};
-        for (int k = 0; k < 3; ++k) {
-            glm::vec3 to_light_v = light_pos - face.vertices[k];
-            FloatType dist_v = glm::length(to_light_v);
-            glm::vec3 to_camera_v = -ray_dir;
-            lam_v[k] = compute_lambertian_lighting(face.vertex_normals[k], to_light_v, dist_v, light_intensity);
-            if (lam_v[k] > 0.0f) {
-                spec_v[k] = compute_specular_lighting(face.vertex_normals[k], to_light_v, to_camera_v, dist_v, light_intensity, face.material.shininess);
+    if (!backface_view_gate) {
+        if (face.material.shading == Material::Shading::Flat) {
+            lambertian = compute_lambertian_lighting(face.face_normal, to_light_hit, dist_light_hit, light_intensity);
+            if (lambertian > 0.0f) {
+                specular = compute_specular_lighting(face.face_normal, to_light_hit, to_camera_hit, dist_light_hit, light_intensity, face.material.shininess);
             }
-        }
-        lambertian = w * lam_v[0] + intersection.u * lam_v[1] + intersection.v * lam_v[2];
-        specular = w * spec_v[0] + intersection.u * spec_v[1] + intersection.v * spec_v[2];
-    } else {
-        glm::vec3 n_interp = glm::normalize(w * face.vertex_normals[0] + intersection.u * face.vertex_normals[1] + intersection.v * face.vertex_normals[2]);
-        lambertian = compute_lambertian_lighting(n_interp, to_light_hit, dist_light_hit, light_intensity);
-        if (lambertian > 0.0f) {
-            specular = compute_specular_lighting(n_interp, to_light_hit, to_camera_hit, dist_light_hit, light_intensity, face.material.shininess);
+        } else if (face.material.shading == Material::Shading::Gouraud) {
+            FloatType lam_v[3] = {0.0f, 0.0f, 0.0f};
+            FloatType spec_v[3] = {0.0f, 0.0f, 0.0f};
+            for (int k = 0; k < 3; ++k) {
+                glm::vec3 to_light_v = light_pos - face.vertices[k];
+                FloatType dist_v = glm::length(to_light_v);
+                glm::vec3 to_camera_v = -ray_dir;
+                lam_v[k] = compute_lambertian_lighting(face.vertex_normals[k], to_light_v, dist_v, light_intensity);
+                if (lam_v[k] > 0.0f) {
+                    spec_v[k] = compute_specular_lighting(face.vertex_normals[k], to_light_v, to_camera_v, dist_v, light_intensity, face.material.shininess);
+                }
+            }
+            lambertian = w * lam_v[0] + intersection.u * lam_v[1] + intersection.v * lam_v[2];
+            specular = w * spec_v[0] + intersection.u * spec_v[1] + intersection.v * spec_v[2];
+        } else {
+            glm::vec3 n_interp = glm::normalize(w * face.vertex_normals[0] + intersection.u * face.vertex_normals[1] + intersection.v * face.vertex_normals[2]);
+            lambertian = compute_lambertian_lighting(n_interp, to_light_hit, dist_light_hit, light_intensity);
+            if (lambertian > 0.0f) {
+                specular = compute_specular_lighting(n_interp, to_light_hit, to_camera_hit, dist_light_hit, light_intensity, face.material.shininess);
+            }
         }
     }
     
