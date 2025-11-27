@@ -175,14 +175,7 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
         }
         return ColourHDR(0.0f, 0.0f, 0.0f);
     }
-    if (depth > 2) {
-        FloatType p = std::max(throughput.x, std::max(throughput.y, throughput.z));
-        p = std::clamp(p, 0.1f, 0.95f);
-        FloatType u = rand_float(rng);
-        if (u > p) {
-            return ColourHDR(0.0f, 0.0f, 0.0f);
-        }
-    }
+    
     
     HitRecord intersection = hit(ray_origin, ray_dir);
     

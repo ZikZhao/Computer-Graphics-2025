@@ -195,12 +195,9 @@ Colour Renderer::tonemap_and_gamma_correct(const ColourHDR& hdr, FloatType gamma
         g_out = std::pow(g_ldr, 1.0f / gamma);
         b_out = std::pow(b_ldr, 1.0f / gamma);
     }
-    FloatType noise_r = (RayTracer::rand_float(seed) - 0.5f) / 255.0f;
-    FloatType noise_g = (RayTracer::rand_float(seed) - 0.5f) / 255.0f;
-    FloatType noise_b = (RayTracer::rand_float(seed) - 0.5f) / 255.0f;
-    r_out = std::clamp(r_out + noise_r, 0.0f, 1.0f);
-    g_out = std::clamp(g_out + noise_g, 0.0f, 1.0f);
-    b_out = std::clamp(b_out + noise_b, 0.0f, 1.0f);
+    r_out = std::clamp(r_out, 0.0f, 1.0f);
+    g_out = std::clamp(g_out, 0.0f, 1.0f);
+    b_out = std::clamp(b_out, 0.0f, 1.0f);
     
     return Colour{
         static_cast<std::uint8_t>(std::clamp(r_out * 255.0f, 0.0f, 255.0f)),
