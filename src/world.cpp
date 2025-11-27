@@ -791,6 +791,8 @@ void World::load_files(const std::vector<std::string>& filenames) {
             emissive_faces_.push_back(&f);
         }
     }
+
+    accelerator_.build(all_faces_);
 }
 
 // Legacy SDL event hooks removed; input is handled via keystate callbacks

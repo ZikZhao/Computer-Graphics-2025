@@ -7,18 +7,6 @@
 
 class RayTracer {
 public:
-    // BVH structures (moved from Renderer)
-    struct AABB {
-        glm::vec3 min;
-        glm::vec3 max;
-    };
-    struct BVHNode {
-        AABB box;
-        int left;
-        int right;
-        int start;
-        int count;
-    };
     // Medium tracking for absorption
     struct MediumState {
         const Material* material = nullptr;
@@ -34,17 +22,12 @@ public:
     static FloatType ComputeSpecularLighting(const glm::vec3& normal, const glm::vec3& to_light,
                                              const glm::vec3& to_camera, FloatType distance,
                                              FloatType intensity, FloatType shininess) noexcept;
-    static std::pair<std::vector<int>, std::vector<BVHNode>> BuildBVH(const std::vector<Face>& faces) noexcept;
-    static bool IntersectAABB(const glm::vec3& ro, const glm::vec3& rd, const AABB& box, FloatType tmax) noexcept;
     static glm::vec3 SampleSphereHalton(int index, FloatType radius, const glm::vec3& center) noexcept;
     static FloatType Halton(int index, int base) noexcept;
     static ColourHDR ClampRadiance(const ColourHDR& c, FloatType max_luma) noexcept;
 
 private:
     const World& world_;
-    // BVH data (immutable after construction)
-    const std::vector<int> bvh_tri_indices_;
-    const std::vector<BVHNode> bvh_nodes_;
     // Shader instances (stateless singletons)
     std::unique_ptr<Shader> shader_lambertian_;
     std::unique_ptr<Shader> shader_metal_;

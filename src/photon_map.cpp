@@ -350,22 +350,11 @@ void PhotonMap::store_photon(const Photon& photon) {
 
 std::optional<RayTriangleIntersection> PhotonMap::find_intersection(
     const glm::vec3& ro, const glm::vec3& rd) const noexcept {
-    
-    std::optional<RayTriangleIntersection> closest_hit;
-    FloatType closest_dist = std::numeric_limits<FloatType>::max();
-    
-    for (std::size_t i = 0; i < world_.all_faces().size(); ++i) {
-        const auto& face = world_.all_faces()[i];
-        auto hit_opt = intersect_triangle(ro, rd, face);
-        
-        if (hit_opt.has_value() && hit_opt->distanceFromCamera < closest_dist) {
-            closest_dist = hit_opt->distanceFromCamera;
-            closest_hit = hit_opt;
-            closest_hit->triangleIndex = i;
-        }
+    auto rec = world_.accelerator().intersect(ro, rd, world_.all_faces());
+    if (rec.triangleIndex == static_cast<std::size_t>(-1)) {
+        return std::nullopt;
     }
-    
-    return closest_hit;
+    return rec;
 }
 
 std::optional<RayTriangleIntersection> PhotonMap::intersect_triangle(
