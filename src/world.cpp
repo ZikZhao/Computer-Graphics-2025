@@ -341,6 +341,201 @@ void Model::load_file(std::string filename) {
     cache_faces();
 }
 
+void Model::load_scene_txt(std::string filename) {
+    auto current_obj = objects_.end();
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        throw std::runtime_error("Could not open file: " + filename);
+    }
+    std::string line;
+    auto current_material = materials_.end();
+    int vertex_offset = 0;
+    int tex_offset = 0;
+    int normal_offset = 0;
+    while (std::getline(file, line)) {
+        std::istringstream iss(line);
+        std::string type;
+        iss >> type;
+        if (type == "Material") {
+            std::string name;
+            iss >> name;
+            current_material = materials_.emplace(name, Material{}).first;
+        } else if (type == "Colour") {
+            if (current_material != materials_.end()) {
+                FloatType r, g, b;
+                iss >> r >> g >> b;
+                current_material->second.base_color = glm::vec3(r, g, b);
+            }
+        } else if (type == "Metallic") {
+            if (current_material != materials_.end()) {
+                FloatType m;
+                iss >> m;
+                current_material->second.metallic = std::clamp(m, 0.0f, 1.0f);
+            }
+        } else if (type == "IOR") {
+            if (current_material != materials_.end()) {
+                FloatType i;
+                iss >> i;
+                current_material->second.ior = std::max(1.0f, i);
+            }
+        } else if (type == "AtDistance") {
+            if (current_material != materials_.end()) {
+                FloatType td;
+                iss >> td;
+                current_material->second.td = std::max(0.0f, td);
+            }
+        } else if (type == "TransimissionWeight") {
+            if (current_material != materials_.end()) {
+                FloatType tw;
+                iss >> tw;
+                current_material->second.tw = std::clamp(tw, 0.0f, 1.0f);
+            }
+        } else if (type == "Texture") {
+            if (current_material != materials_.end()) {
+                std::string tex_name;
+                iss >> tex_name;
+                std::string texture_filename = (std::filesystem::path(filename).parent_path() / tex_name).string();
+                current_material->second.texture = std::make_shared<Texture>(load_texture(texture_filename));
+            }
+        } else if (type == "Object") {
+            std::string rest;
+            std::getline(iss, rest);
+            std::string name = rest;
+            if (!name.empty() && name[0] == '#') {
+                name.erase(0, 1);
+            }
+            while (!name.empty() && (name[0] == ' ' || name[0] == '\t')) name.erase(0, 1);
+            objects_.emplace_back(name);
+            current_obj = std::prev(objects_.end());
+            vertex_offset = static_cast<int>(vertices_.size());
+            tex_offset = static_cast<int>(texture_coords_.size());
+            normal_offset = static_cast<int>(vertex_normals_.size());
+        } else if (type == "Use") {
+            if (current_obj != objects_.end()) {
+                std::string mat_name;
+                iss >> mat_name;
+                auto it = materials_.find(mat_name);
+                if (it != materials_.end()) {
+                    auto prev_shading = current_obj->material.shading;
+                    current_obj->material = it->second;
+                    current_obj->material.shading = prev_shading;
+                }
+            }
+        } else if (type == "Vertex") {
+            if (current_obj != objects_.end()) {
+                FloatType x, y, z;
+                iss >> x >> y >> z;
+                vertices_.emplace_back(x, y, z);
+            }
+        } else if (type == "TextureCoord") {
+            FloatType u, v;
+            iss >> u >> v;
+            texture_coords_.emplace_back(u, v);
+        } else if (type == "Normal") {
+            FloatType x, y, z;
+            iss >> x >> y >> z;
+            vertex_normals_.emplace_back(glm::normalize(glm::vec3(x, y, z)));
+        } else if (type == "Face") {
+            if (current_obj == objects_.end()) continue;
+            std::string tok[3];
+            iss >> tok[0] >> tok[1] >> tok[2];
+            glm::vec3 vpos[3];
+            std::uint8_t tex_idx_out[3] = {0,0,0};
+            glm::vec2 uv_out[3] = {glm::vec2(0.0f), glm::vec2(0.0f), glm::vec2(0.0f)};
+            int vi_out[3] = {0,0,0};
+            glm::vec3 vnorm_out[3] = {glm::vec3(0.0f), glm::vec3(0.0f), glm::vec3(0.0f)};
+            bool has_vn = false;
+            for (int i = 0; i < 3; ++i) {
+                int v_i = -1, vt_i = -1, vn_i = -1;
+                const std::string& t = tok[i];
+                if (t.find('/') != std::string::npos) {
+                    std::vector<std::string> parts;
+                    std::stringstream ss(t);
+                    std::string p;
+                    while (std::getline(ss, p, '/')) parts.push_back(p);
+                    if (!parts.empty() && !parts[0].empty()) v_i = std::stoi(parts[0]);
+                    if (parts.size() >= 2 && !parts[1].empty()) vt_i = std::stoi(parts[1]);
+                    if (parts.size() >= 3 && !parts[2].empty()) { vn_i = std::stoi(parts[2]); has_vn = true; }
+                } else {
+                    bool digits_only = !t.empty() && std::all_of(t.begin(), t.end(), [](char c){ return c >= '0' && c <= '9'; });
+                    if (digits_only) {
+                        v_i = std::stoi(t);
+                    }
+                }
+                int v_global = vertex_offset + (v_i >= 0 ? v_i : 0);
+                vpos[i] = vertices_[v_global];
+                vi_out[i] = v_global;
+                if (vt_i >= 0) {
+                    int vt_global = tex_offset + vt_i;
+                    tex_idx_out[i] = static_cast<std::uint8_t>(vt_i);
+                    if (vt_global >= 0 && static_cast<std::size_t>(vt_global) < texture_coords_.size()) {
+                        uv_out[i] = texture_coords_[vt_global];
+                    }
+                }
+                if (vn_i >= 0) {
+                    int vn_global = normal_offset + vn_i;
+                    if (vn_global >= 0 && static_cast<std::size_t>(vn_global) < vertex_normals_.size()) {
+                        vnorm_out[i] = vertex_normals_[vn_global];
+                    }
+                }
+            }
+            Face new_face{
+                { vpos[0], vpos[1], vpos[2] },
+                { tex_idx_out[0], tex_idx_out[1], tex_idx_out[2] },
+                { uv_out[0], uv_out[1], uv_out[2] },
+                current_obj->material,
+                { vi_out[0], vi_out[1], vi_out[2] },
+                { vnorm_out[0], vnorm_out[1], vnorm_out[2] },
+                glm::vec3(0.0f)
+            };
+            current_obj->faces.emplace_back(std::move(new_face));
+        }
+    }
+    for (auto& obj : objects_) {
+        for (auto& f : obj.faces) {
+            f.face_normal = CalculateNormal(f.vertices[0], f.vertices[1], f.vertices[2]);
+        }
+    }
+    std::vector<glm::vec3> accum_normals(vertices_.size(), glm::vec3(0.0f));
+    for (auto& obj : objects_) {
+        for (auto& f : obj.faces) {
+            bool needs_computed = false;
+            for (int k = 0; k < 3; ++k) {
+                if (glm::length(f.vertex_normals[k]) < 0.001f) { needs_computed = true; break; }
+            }
+            if (needs_computed) {
+                glm::vec3 n = f.face_normal;
+                glm::vec3 e0 = f.vertices[1] - f.vertices[0];
+                glm::vec3 e1 = f.vertices[2] - f.vertices[0];
+                FloatType area2 = glm::length(glm::cross(e0, e1));
+                glm::vec3 weighted = n * area2;
+                for (int k = 0; k < 3; ++k) {
+                    int idx = f.vertex_indices[k];
+                    if (idx >= 0 && static_cast<std::size_t>(idx) < accum_normals.size()) {
+                        accum_normals[idx] += weighted;
+                    }
+                }
+            }
+        }
+    }
+    for (auto& acc : accum_normals) {
+        if (glm::length(acc) > 0.0f) acc = glm::normalize(acc);
+    }
+    for (auto& obj : objects_) {
+        for (auto& f : obj.faces) {
+            for (int k = 0; k < 3; ++k) {
+                if (glm::length(f.vertex_normals[k]) < 0.001f) {
+                    int idx = f.vertex_indices[k];
+                    f.vertex_normals[k] = (idx >= 0 && static_cast<std::size_t>(idx) < accum_normals.size()) 
+                        ? accum_normals[idx] 
+                        : CalculateNormal(f.vertices[0], f.vertices[1], f.vertices[2]);
+                }
+            }
+        }
+    }
+    cache_faces();
+}
+
 void Model::cache_faces() noexcept {
     all_faces_.clear();
     all_faces_.reserve(std::accumulate(objects_.begin(), objects_.end(), std::size_t(0),
@@ -529,6 +724,43 @@ void World::load_files(const std::vector<std::string>& filenames) {
             } else {
                 throw std::runtime_error("Failed to load HDR environment map: " + filename);
             }
+        } else if (ext == ".txt") {
+            {
+                std::ifstream file(filename);
+                if (file.is_open()) {
+                    std::string line;
+                    while (std::getline(file, line)) {
+                        std::istringstream iss(line);
+                        std::string type;
+                        iss >> type;
+                        if (type == "Environ") {
+                            std::string hdr_name;
+                            iss >> hdr_name;
+                            std::string hdr_path = (std::filesystem::path(filename).parent_path() / hdr_name).string();
+                            int width, height, channels;
+                            float* data = stbi_loadf(hdr_path.c_str(), &width, &height, &channels, 3);
+                            if (data) {
+                                std::vector<ColourHDR> hdr_data;
+                                hdr_data.reserve(width * height);
+                                for (int i = 0; i < width * height; ++i) {
+                                    hdr_data.emplace_back(
+                                        data[i * 3 + 0],
+                                        data[i * 3 + 1],
+                                        data[i * 3 + 2]
+                                    );
+                                }
+                                stbi_image_free(data);
+                                FloatType auto_intensity = EnvironmentMap::compute_auto_exposure(hdr_data);
+                                env_map_ = EnvironmentMap(width, height, std::move(hdr_data), auto_intensity);
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+            Model group;
+            group.load_scene_txt(filename);
+            models_.emplace_back(std::move(group));
         } else {
             Model group;
             group.load_file(filename);

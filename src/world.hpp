@@ -229,6 +229,7 @@ private:
 public:
     Model() noexcept = default;
     void load_file(std::string filename);
+    void load_scene_txt(std::string filename);
     // Getter for all_faces_
     const std::vector<Face>& all_faces() const noexcept { return all_faces_; }
     // Light accessors
