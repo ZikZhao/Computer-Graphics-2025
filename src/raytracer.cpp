@@ -10,11 +10,15 @@
 // DEBUG: Set to true to only show caustics (black background)
 bool RayTracer::DebugVisualizeCausticsOnly = false;
 
-ColourHDR RayTracer::ClampRadiance(const ColourHDR& c, FloatType max_component) noexcept {
-    FloatType r = std::min(c.red, max_component);
-    FloatType g = std::min(c.green, max_component);
-    FloatType b = std::min(c.blue, max_component);
-    return ColourHDR(r, g, b);
+uint32_t RayTracer::PcgHash(uint32_t v) noexcept {
+    uint32_t state = v * 747796405u + 2891336453u;
+    uint32_t word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return word ^ (word >> 22u);
+}
+
+FloatType RayTracer::RandFloat(uint32_t& seed) noexcept {
+    seed = PcgHash(seed);
+    return static_cast<FloatType>((seed >> 8) & 0x00FFFFFFu) / 16777216.0f;
 }
 
 RayTracer::RayTracer(const World& world)
@@ -102,69 +106,6 @@ ColourHDR RayTracer::render_pixel_dof(const Camera& cam, int x, int y, int width
     );
 }
 
-HitRecord RayTracer::hit(const glm::vec3& ro, const glm::vec3& rd) const noexcept {
-    HitRecord closest;
-    closest.distanceFromCamera = std::numeric_limits<FloatType>::infinity();
-    closest.triangleIndex = static_cast<std::size_t>(-1);
-    
-    if (bvh_nodes_.empty()) return closest;
-    
-    const std::vector<Face>& faces = world_.all_faces();
-    std::vector<int> stack;
-    stack.reserve(64);
-    stack.push_back(0);
-    
-    while (!stack.empty()) {
-        int ni = stack.back();
-        stack.pop_back();
-        const BVHNode& n = bvh_nodes_[ni];
-        if (!IntersectAABB(ro, rd, n.box, closest.distanceFromCamera)) continue;
-        
-        if (n.count == 0) {
-            stack.push_back(n.left);
-            stack.push_back(n.right);
-        } else {
-            for (int i = 0; i < n.count; ++i) {
-                int tri_index = bvh_tri_indices_[n.start + i];
-                const Face& face = faces[tri_index];
-                FloatType t, u, v;
-                
-                if (IntersectRayTriangle(ro, rd, face.vertices[0], face.vertices[1], face.vertices[2], t, u, v) 
-                    && t < closest.distanceFromCamera) {
-                    closest.distanceFromCamera = t;
-                    closest.intersectionPoint = ro + rd * t;
-                    closest.triangleIndex = tri_index;
-                    closest.u = u;
-                    closest.v = v;
-                    
-                    FloatType w = 1.0f - u - v;
-                    glm::vec3 interpolated_normal = glm::normalize(
-                        w * face.vertex_normals[0] + u * face.vertex_normals[1] + v * face.vertex_normals[2]
-                    );
-                    
-                    if (glm::dot(interpolated_normal, -rd) < 0.0f) {
-                        interpolated_normal = -interpolated_normal;
-                    }
-                    closest.normal = interpolated_normal;
-                    
-                    glm::vec2 uv_coord = face.texture_coords[0] * w + face.texture_coords[1] * u + face.texture_coords[2] * v;
-                    if (face.material.texture) {
-                        Colour tex_sample = face.material.texture->sample(uv_coord.x, uv_coord.y);
-                        closest.color = glm::vec3(
-                            (tex_sample.red / 255.0f) * face.material.base_color.r,
-                            (tex_sample.green / 255.0f) * face.material.base_color.g,
-                            (tex_sample.blue / 255.0f) * face.material.base_color.b
-                        );
-                    } else {
-                        closest.color = face.material.base_color;
-                    }
-                }
-            }
-        }
-    }
-    
-    return closest;
-}
 
 ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray_dir, int depth,
                                const MediumState& medium, bool soft_shadows, FloatType light_intensity, bool use_caustics, int sample_index, const glm::vec3& throughput, uint32_t& rng) const noexcept {
@@ -468,7 +409,67 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
     }
 }
 
+HitRecord RayTracer::hit(const glm::vec3& ro, const glm::vec3& rd) const noexcept {
+    HitRecord closest;
+    closest.distanceFromCamera = std::numeric_limits<FloatType>::infinity();
+    closest.triangleIndex = static_cast<std::size_t>(-1);
+    if (bvh_nodes_.empty()) return closest;
+    const std::vector<Face>& faces = world_.all_faces();
+    std::vector<int> stack;
+    stack.reserve(64);
+    stack.push_back(0);
+    while (!stack.empty()) {
+        int ni = stack.back();
+        stack.pop_back();
+        const BVHNode& n = bvh_nodes_[ni];
+        if (!IntersectAABB(ro, rd, n.box, closest.distanceFromCamera)) continue;
+        if (n.count == 0) {
+            stack.push_back(n.left);
+            stack.push_back(n.right);
+        } else {
+            for (int i = 0; i < n.count; ++i) {
+                int tri_index = bvh_tri_indices_[n.start + i];
+                const Face& face = faces[tri_index];
+                FloatType t, u, v;
+                if (IntersectRayTriangle(ro, rd, face.vertices[0], face.vertices[1], face.vertices[2], t, u, v)
+                    && t < closest.distanceFromCamera) {
+                    closest.distanceFromCamera = t;
+                    closest.intersectionPoint = ro + rd * t;
+                    closest.triangleIndex = tri_index;
+                    closest.u = u;
+                    closest.v = v;
+                    FloatType w = 1.0f - u - v;
+                    glm::vec3 interpolated_normal = glm::normalize(
+                        w * face.vertex_normals[0] + u * face.vertex_normals[1] + v * face.vertex_normals[2]
+                    );
+                    if (glm::dot(interpolated_normal, -rd) < 0.0f) {
+                        interpolated_normal = -interpolated_normal;
+                    }
+                    closest.normal = interpolated_normal;
+                    glm::vec2 uv_coord = face.texture_coords[0] * w + face.texture_coords[1] * u + face.texture_coords[2] * v;
+                    if (face.material.texture) {
+                        Colour tex_sample = face.material.texture->sample(uv_coord.x, uv_coord.y);
+                        closest.color = glm::vec3(
+                            (tex_sample.red / 255.0f) * face.material.base_color.r,
+                            (tex_sample.green / 255.0f) * face.material.base_color.g,
+                            (tex_sample.blue / 255.0f) * face.material.base_color.b
+                        );
+                    } else {
+                        closest.color = face.material.base_color;
+                    }
+                }
+            }
+        }
+    }
+    return closest;
+}
+
 // Shadow and lighting helpers
+bool RayTracer::is_in_shadow_bvh(const glm::vec3& point, const glm::vec3& light_pos) const noexcept {
+    glm::vec3 transmittance = compute_transmittance_bvh(point, light_pos);
+    return (transmittance.r < 0.01f && transmittance.g < 0.01f && transmittance.b < 0.01f);
+}
+
 glm::vec3 RayTracer::compute_transmittance_bvh(const glm::vec3& point, const glm::vec3& light_pos) const noexcept {
     glm::vec3 to_light = light_pos - point;
     FloatType light_distance = glm::length(to_light);
@@ -557,11 +558,6 @@ glm::vec3 RayTracer::compute_transmittance_bvh(const glm::vec3& point, const glm
     return transmittance;
 }
 
-bool RayTracer::is_in_shadow_bvh(const glm::vec3& point, const glm::vec3& light_pos) const noexcept {
-    glm::vec3 transmittance = compute_transmittance_bvh(point, light_pos);
-    return (transmittance.r < 0.01f && transmittance.g < 0.01f && transmittance.b < 0.01f);
-}
-
 FloatType RayTracer::compute_soft_shadow(const glm::vec3& point, const glm::vec3& light_center, 
                                          FloatType light_radius, int num_samples, int start_index) const noexcept {
     FloatType visible_light = 0.0f;
@@ -620,11 +616,7 @@ FloatType RayTracer::ComputeLambertianLighting(const glm::vec3& normal, const gl
                                                FloatType distance, FloatType intensity) noexcept {
     glm::vec3 light_dir = glm::normalize(to_light);
     FloatType cos_theta = glm::dot(normal, light_dir);
-    
-    if (cos_theta <= 0.0f) {
-        return 0.0f;
-    }
-    
+    if (cos_theta <= 0.0f) return 0.0f;
     FloatType attenuation = (intensity * cos_theta) / (4.0f * std::numbers::pi * distance * distance);
     return std::clamp(attenuation, 0.0f, 1.0f);
 }
@@ -634,61 +626,14 @@ FloatType RayTracer::ComputeSpecularLighting(const glm::vec3& normal, const glm:
                                              FloatType intensity, FloatType shininess) noexcept {
     glm::vec3 light_dir = glm::normalize(to_light);
     glm::vec3 view_dir = glm::normalize(to_camera);
-    
     FloatType n_dot_v = glm::dot(normal, view_dir);
-    if (n_dot_v <= 0.0f) {
-        return 0.0f;
-    }
-    
+    if (n_dot_v <= 0.0f) return 0.0f;
     glm::vec3 halfway = glm::normalize(light_dir + view_dir);
     FloatType cos_alpha = glm::dot(normal, halfway);
-    
-    if (cos_alpha <= 0.0f) {
-        return 0.0f;
-    }
-    
+    if (cos_alpha <= 0.0f) return 0.0f;
     FloatType spec_term = std::pow(cos_alpha, shininess);
     FloatType attenuation = (intensity * spec_term) / (4.0f * std::numbers::pi * distance * distance);
-    
     return std::clamp(attenuation, 0.0f, 1.0f);
-}
-
-FloatType RayTracer::Halton(int index, int base) noexcept {
-    FloatType result = 0.0f;
-    FloatType f = 1.0f / base;
-    int i = index;
-    while (i > 0) {
-        result += f * (i % base);
-        i = i / base;
-        f = f / base;
-    }
-    return result;
-}
-
-glm::vec3 RayTracer::SampleSphereHalton(int index, FloatType radius, const glm::vec3& center) noexcept {
-    FloatType u = Halton(index, 2);
-    FloatType v = Halton(index, 3);
-    
-    FloatType theta = 2.0f * std::numbers::pi * u;
-    FloatType phi = std::acos(2.0f * v - 1.0f);
-    
-    FloatType sin_phi = std::sin(phi);
-    FloatType x = radius * sin_phi * std::cos(theta);
-    FloatType y = radius * sin_phi * std::sin(theta);
-    FloatType z = radius * std::cos(phi);
-    
-    return center + glm::vec3(x, y, z);
-}
-
-uint32_t RayTracer::PcgHash(uint32_t v) noexcept {
-    uint32_t state = v * 747796405u + 2891336453u;
-    uint32_t word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
-    return word ^ (word >> 22u);
-}
-
-FloatType RayTracer::RandFloat(uint32_t& seed) noexcept {
-    seed = PcgHash(seed);
-    return static_cast<FloatType>((seed >> 8) & 0x00FFFFFFu) / 16777216.0f;
 }
 
 
@@ -697,17 +642,6 @@ static inline RayTracer::AABB TriAABB(const Face& f) noexcept {
     glm::vec3 mn = glm::min(glm::min(f.vertices[0], f.vertices[1]), f.vertices[2]);
     glm::vec3 mx = glm::max(glm::max(f.vertices[0], f.vertices[1]), f.vertices[2]);
     return RayTracer::AABB{mn, mx};
-}
-
-bool RayTracer::IntersectAABB(const glm::vec3& ro, const glm::vec3& rd, const AABB& box, FloatType tmax) noexcept {
-    glm::vec3 inv = glm::vec3(1.0f) / rd;
-    glm::vec3 t0 = (box.min - ro) * inv;
-    glm::vec3 t1 = (box.max - ro) * inv;
-    glm::vec3 tmin = glm::min(t0, t1);
-    glm::vec3 tmaxv = glm::max(t0, t1);
-    FloatType t_enter = std::max(std::max(tmin.x, tmin.y), tmin.z);
-    FloatType t_exit = std::min(std::min(tmaxv.x, tmaxv.y), tmaxv.z);
-    return t_enter <= t_exit && t_exit >= 0.0f && t_enter <= tmax;
 }
 
 std::pair<std::vector<int>, std::vector<RayTracer::BVHNode>> RayTracer::BuildBVH(const std::vector<Face>& faces) noexcept {
@@ -720,8 +654,7 @@ std::pair<std::vector<int>, std::vector<RayTracer::BVHNode>> RayTracer::BuildBVH
         auto b = TriAABB(faces[i]);
         glm::vec3 c = (faces[i].vertices[0] + faces[i].vertices[1] + faces[i].vertices[2]) / 3.0f;
         data[i] = Cent{c, b};
-    }
-    
+}
     std::vector<RayTracer::BVHNode> nodes;
     
     auto surface_area = [](const RayTracer::AABB& box) -> FloatType {
@@ -851,4 +784,46 @@ std::pair<std::vector<int>, std::vector<RayTracer::BVHNode>> RayTracer::BuildBVH
     build(0, (int)faces.size());
     
     return {std::move(tri_indices), std::move(nodes)};
+}
+
+bool RayTracer::IntersectAABB(const glm::vec3& ro, const glm::vec3& rd, const AABB& box, FloatType tmax) noexcept {
+    glm::vec3 inv = glm::vec3(1.0f) / rd;
+    glm::vec3 t0 = (box.min - ro) * inv;
+    glm::vec3 t1 = (box.max - ro) * inv;
+    glm::vec3 tmin = glm::min(t0, t1);
+    glm::vec3 tmaxv = glm::max(t0, t1);
+    FloatType t_enter = std::max(std::max(tmin.x, tmin.y), tmin.z);
+    FloatType t_exit = std::min(std::min(tmaxv.x, tmaxv.y), tmaxv.z);
+    return t_enter <= t_exit && t_exit >= 0.0f && t_enter <= tmax;
+}
+
+glm::vec3 RayTracer::SampleSphereHalton(int index, FloatType radius, const glm::vec3& center) noexcept {
+    FloatType u = Halton(index, 2);
+    FloatType v = Halton(index, 3);
+    FloatType theta = 2.0f * std::numbers::pi * u;
+    FloatType phi = std::acos(2.0f * v - 1.0f);
+    FloatType sin_phi = std::sin(phi);
+    FloatType x = radius * sin_phi * std::cos(theta);
+    FloatType y = radius * sin_phi * std::sin(theta);
+    FloatType z = radius * std::cos(phi);
+    return center + glm::vec3(x, y, z);
+}
+
+FloatType RayTracer::Halton(int index, int base) noexcept {
+    FloatType result = 0.0f;
+    FloatType f = 1.0f / base;
+    int i = index;
+    while (i > 0) {
+        result += f * (i % base);
+        i = i / base;
+        f = f / base;
+    }
+    return result;
+}
+
+ColourHDR RayTracer::ClampRadiance(const ColourHDR& c, FloatType max_component) noexcept {
+    FloatType r = std::min(c.red, max_component);
+    FloatType g = std::min(c.green, max_component);
+    FloatType b = std::min(c.blue, max_component);
+    return ColourHDR(r, g, b);
 }
