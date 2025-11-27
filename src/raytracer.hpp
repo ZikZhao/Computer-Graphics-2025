@@ -64,7 +64,7 @@ public:
 private:
     // Ray tracing core (no longer contains material logic)
     ColourHDR trace_ray(const glm::vec3& ro, const glm::vec3& rd, int depth, 
-                        const MediumState& medium, bool soft_shadows, FloatType light_intensity, bool use_caustics, int sample_index = 0) const noexcept;
+                        const MediumState& medium, bool soft_shadows, FloatType light_intensity, bool use_caustics, int sample_index = 0, const glm::vec3& throughput = glm::vec3(1.0f)) const noexcept;
     
     // BVH intersection
     HitRecord hit(const glm::vec3& ro, const glm::vec3& rd) const noexcept;
@@ -88,7 +88,8 @@ private:
     
     // Sampling utilities
     static glm::vec3 sample_sphere_halton(int index, FloatType radius, const glm::vec3& center) noexcept;
-    static glm::vec3 sample_sphere_halton_scrambled(int index, uint32_t seed, FloatType radius, const glm::vec3& center) noexcept;
-    static FloatType rand01(uint32_t seed) noexcept;
+    static glm::vec3 sample_sphere_halton_cp(int index, FloatType radius, const glm::vec3& center) noexcept;
+    static FloatType cp_shift(int index, FloatType salt) noexcept;
     static FloatType halton(int index, int base) noexcept;
+    static ColourHDR clamp_radiance(const ColourHDR& c, FloatType max_luma) noexcept;
 };
