@@ -61,8 +61,8 @@ void Window::register_mouse(Uint8 button, Trigger trigger, MouseHandler handler)
 
 bool Window::process_events() {
     SDL_Event event;
-    keys_last_frame_ = keys_this_frame_;
     keys_updated_this_frame_.clear();
+    keys_pressed_this_frame_.clear();
     mouse_buttons_last_frame_ = mouse_buttons_this_frame_;
     mouse_buttons_updated_this_frame_.clear();
     mouse_motion_this_frame_ = false;
@@ -79,6 +79,7 @@ bool Window::process_events() {
             if (sc >= 0 && sc < SDL_NUM_SCANCODES) {
                 keys_this_frame_[sc] = 1;
                 keys_updated_this_frame_.insert(sc);
+                keys_pressed_this_frame_.insert(sc);
             }
         }
         if (event.type == SDL_KEYUP) {
@@ -113,7 +114,6 @@ bool Window::process_events() {
 }
 
 void Window::update_keyboard_state() {
-    keys_last_frame_ = keys_this_frame_;
     const Uint8* keystate = SDL_GetKeyboardState(nullptr);
     // for (int i = 0; i < SDL_NUM_SCANCODES; ++i) {
     //     keys_this_frame[i] = keystate[i];
@@ -141,7 +141,7 @@ void Window::process_key_bindings() {
 
             bool just_pressed = false;
             for (auto k : binding.keys) {
-                if (keys_updated_this_frame_.count(k) && keys_this_frame_[k]) { just_pressed = true; break; }
+                if (keys_pressed_this_frame_.count(k)) { just_pressed = true; break; }
             }
             if (any_down) {
                 if (just_pressed) {
@@ -224,16 +224,18 @@ bool Window::check_key_trigger(const KeyBinding& binding) const {
         
         case Trigger::ANY_JUST_PRESSED: {
             for (auto key : binding.keys) {
-                if (keys_updated_this_frame_.count(key) && keys_this_frame_[key]) return true;
+                if (keys_pressed_this_frame_.count(key)) return true;
             }
             return false;
         }
         
         case Trigger::ALL_JUST_PRESSED: {
+            bool exists_pressed_this_frame = false;
             for (auto key : binding.keys) {
-                if (!(keys_updated_this_frame_.count(key) && keys_this_frame_[key])) return false;
+                if (!(keys_this_frame_[key] || keys_pressed_this_frame_.count(key))) return false;
+                if (keys_pressed_this_frame_.count(key)) exists_pressed_this_frame = true;
             }
-            return true;
+            return exists_pressed_this_frame;
         }
         
         case Trigger::ANY_PRESSED_NO_MODIFIER: {
@@ -341,7 +343,7 @@ bool Window::is_key_pressed(SDL_Scancode key) const {
 }
 
 bool Window::is_key_just_pressed(SDL_Scancode key) const {
-    return keys_updated_this_frame_.count(key) && keys_this_frame_[key];
+    return keys_pressed_this_frame_.count(key);
 }
 
 bool Window::is_key_just_released(SDL_Scancode key) const {

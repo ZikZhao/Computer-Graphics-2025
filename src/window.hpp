@@ -42,8 +42,8 @@ private:
     
     // Input management
     KeyState keys_this_frame_{};
-    KeyState keys_last_frame_{};
     std::unordered_set<SDL_Scancode> keys_updated_this_frame_;
+    std::unordered_set<SDL_Scancode> keys_pressed_this_frame_;
     std::unordered_set<Uint8> mouse_buttons_this_frame_;
     std::unordered_set<Uint8> mouse_buttons_last_frame_;
     std::unordered_set<Uint8> mouse_buttons_updated_this_frame_;
