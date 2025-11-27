@@ -20,34 +20,30 @@ public:
         RAYTRACED,
         DEPTH_OF_FIELD,
     };
-    
-    Mode mode_ = Mode::RASTERIZED;
-    FloatType gamma_ = 2.2f;
-    bool soft_shadows_enabled_ = false;
-    bool caustics_enabled_ = false;  // Photon mapping for caustics
-    
-    // Depth of field parameters
-    FloatType focal_distance_ = 8.0f;
-    FloatType aperture_size_ = 0.1f;
-    int dof_samples_ = 16;
-    
-    // Sub-engines (public for event handlers)
-    std::unique_ptr<RayTracer> raytracer_;
-    std::unique_ptr<Rasterizer> rasterizer_;
+    static constexpr int TileHeight = 16;
+    static Colour TonemapAndGammaCorrect(const ColourHDR& hdr, FloatType gamma) noexcept;
+    static FloatType AcesToneMapping(FloatType hdr_value) noexcept;
     
 private:
     Window& window_;
     const World& world_;
-    
+    Mode mode_ = Mode::RASTERIZED;
+    FloatType gamma_ = 2.2f;
+    bool soft_shadows_enabled_ = false;
+    bool caustics_enabled_ = false;
+    FloatType focal_distance_ = 8.0f;
+    FloatType aperture_size_ = 0.1f;
+    int dof_samples_ = 16;
+    // Sub-engines (public for event handlers)
+    std::unique_ptr<RayTracer> raytracer_;
+    std::unique_ptr<Rasterizer> rasterizer_;
     // Frame buffer (HDR for ray tracing, tonemapped to LDR for display)
     std::vector<ColourHDR> hdr_buffer_;
     std::vector<ColourHDR> accumulation_buffer_;
     int frame_count_ = 0;
     int rendering_frame_count_ = 0;
     double aspect_ratio_ = 1.0;
-    
     // Multi-threading support
-    static constexpr int TileHeight = 16;
     std::barrier<> frame_barrier_;
     std::vector<std::jthread> workers_;
     std::atomic<int> tile_counter_ = 0;
@@ -59,27 +55,16 @@ private:
 public:
     Renderer(Window& window, const World& world);
     ~Renderer();
-    
     void render() noexcept;
     void reset_accumulation() noexcept;
     
 private:
     void clear() noexcept;
-    
-    // Mode-specific rendering dispatchers
     void wireframe_render() noexcept;
     void rasterized_render() noexcept;
     void raytraced_render() noexcept;
     void depth_of_field_render() noexcept;
-    
-    // Worker thread function
     void worker_thread(std::stop_token st) noexcept;
     void process_rows(int y0, int y1) noexcept;
-    
-    // Tonemapping and gamma correction
-    static Colour TonemapAndGammaCorrect(const ColourHDR& hdr, FloatType gamma) noexcept;
-    static FloatType AcesToneMapping(FloatType hdr_value) noexcept;
-    
-    // Coordinate axis visualization
     void draw_coordinate_axes() noexcept;
 };

@@ -76,39 +76,28 @@ struct ColourHDR {
 
 // Environment map for HDR lighting
 class EnvironmentMap {
+public:
+    static FloatType compute_auto_exposure(const std::vector<ColourHDR>& hdr_data) noexcept;
+
 private:
     std::size_t width_;
     std::size_t height_;
     std::vector<ColourHDR> data_;  // HDR pixel data
     FloatType intensity_;  // Scaling factor for environment map brightness
+
 public:
     EnvironmentMap() noexcept : width_(0), height_(0), intensity_(1.0f) {}
     EnvironmentMap(std::size_t w, std::size_t h, std::vector<ColourHDR> data, FloatType intensity = 0.3f) noexcept
         : width_(w), height_(h), data_(std::move(data)), intensity_(intensity) {}
-    
     bool is_loaded() const noexcept { return width_ > 0 && height_ > 0; }
-    
-    // Compute automatic exposure intensity based on HDR image luminance histogram
-    static FloatType compute_auto_exposure(const std::vector<ColourHDR>& hdr_data) noexcept;
-    
-    // Sample environment map using spherical coordinates from direction vector
     ColourHDR sample(const glm::vec3& direction) const noexcept {
         if (!is_loaded()) return ColourHDR(0.0f, 0.0f, 0.0f);
-        
-        // Convert direction to spherical coordinates (latitude-longitude)
-        // Assumes equirectangular projection
-        FloatType theta = std::atan2(direction.x, -direction.z);  // Azimuth angle
-        FloatType phi = std::asin(std::clamp(direction.y, -1.0f, 1.0f));  // Elevation angle
-        
-        // Map to UV coordinates [0, 1]
+        FloatType theta = std::atan2(direction.x, -direction.z);
+        FloatType phi = std::asin(std::clamp(direction.y, -1.0f, 1.0f));
         FloatType u = (theta / (2.0f * std::numbers::pi)) + 0.5f;
         FloatType v = (phi / std::numbers::pi) + 0.5f;
-        
-        // Convert to pixel coordinates
         std::size_t x = static_cast<std::size_t>(std::clamp(u * static_cast<FloatType>(width_), 0.0f, static_cast<FloatType>(width_ - 1)));
         std::size_t y = static_cast<std::size_t>(std::clamp(v * static_cast<FloatType>(height_), 0.0f, static_cast<FloatType>(height_ - 1)));
-        
-        // Apply intensity scaling to reduce brightness
         return data_[y * width_ + x] * intensity_;
     }
 };

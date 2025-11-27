@@ -15,17 +15,16 @@ class Window {
 public:
     // Event trigger types
     enum class Trigger {
-        ANY_PRESSED,              // At least one key is pressed this frame (fires once per press)
-        ALL_PRESSED,              // All keys are pressed this frame
-        ANY_RELEASED,             // At least one key was released this frame
-        ALL_RELEASED,             // All keys were released this frame
-        ANY_DOWN,                 // At least one key is held down (continuous)
-        ALL_DOWN,                 // All keys are held down (continuous)
-        ANY_JUST_PRESSED,         // At least one key was just pressed (not pressed last frame, pressed this frame)
-        ALL_JUST_PRESSED,         // All keys were just pressed
-        ANY_PRESSED_NO_MODIFIER   // At least one key is pressed with no modifier keys (Ctrl/Shift/Alt)
+        ANY_PRESSED,
+        ALL_PRESSED,
+        ANY_RELEASED,
+        ALL_RELEASED,
+        ANY_DOWN,
+        ALL_DOWN,
+        ANY_JUST_PRESSED,
+        ALL_JUST_PRESSED,
+        ANY_PRESSED_NO_MODIFIER
     };
-
     using KeyState = std::array<bool, SDL_NUM_SCANCODES>;
     using KeyHandler = std::function<void(const KeyState&, float)>;
     using MouseHandler = std::function<void(int, int, float)>;
@@ -95,8 +94,8 @@ public:
     void register_mouse(Uint8 button, Trigger trigger, MouseHandler handler);
     
     // Main loop methods
-    bool process_events(); // Returns false if should quit; also dispatches bindings
-    void update();         // Present the frame and clear buffer for next frame (end of loop)
+    bool process_events();
+    void update();
     
     // Pixel manipulation
     void clear_pixels() noexcept;
