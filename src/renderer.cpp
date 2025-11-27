@@ -3,6 +3,41 @@
 #include "window.hpp"
 #include "renderer.hpp"
 
+FloatType Renderer::AcesToneMapping(FloatType hdr_value) noexcept {
+    const FloatType a = 2.51f;
+    const FloatType b = 0.03f;
+    const FloatType c = 2.43f;
+    const FloatType d = 0.59f;
+    const FloatType e = 0.14f;
+    FloatType numerator = hdr_value * (a * hdr_value + b);
+    FloatType denominator = hdr_value * (c * hdr_value + d) + e;
+    return std::clamp(numerator / denominator, 0.0f, 1.0f);
+}
+
+Colour Renderer::TonemapAndGammaCorrect(const ColourHDR& hdr, FloatType gamma) noexcept {
+    FloatType r_ldr = AcesToneMapping(hdr.red * 0.6f);
+    FloatType g_ldr = AcesToneMapping(hdr.green * 0.6f);
+    FloatType b_ldr = AcesToneMapping(hdr.blue * 0.6f);
+    FloatType r_out, g_out, b_out;
+    if (gamma == 1.0f) {
+        r_out = r_ldr;
+        g_out = g_ldr;
+        b_out = b_ldr;
+    } else {
+        r_out = std::pow(r_ldr, 1.0f / gamma);
+        g_out = std::pow(g_ldr, 1.0f / gamma);
+        b_out = std::pow(b_ldr, 1.0f / gamma);
+    }
+    r_out = std::clamp(r_out, 0.0f, 1.0f);
+    g_out = std::clamp(g_out, 0.0f, 1.0f);
+    b_out = std::clamp(b_out, 0.0f, 1.0f);
+    return Colour{
+        static_cast<std::uint8_t>(std::clamp(r_out * 255.0f, 0.0f, 255.0f)),
+        static_cast<std::uint8_t>(std::clamp(g_out * 255.0f, 0.0f, 255.0f)),
+        static_cast<std::uint8_t>(std::clamp(b_out * 255.0f, 0.0f, 255.0f))
+    };
+}
+
 Renderer::Renderer(Window& window, const World& world)
     : window_(window),
       world_(world),
@@ -27,10 +62,7 @@ Renderer::~Renderer() {
     frame_barrier_.arrive_and_wait();
 }
 
-void Renderer::clear() noexcept {
-    rasterizer_->clear();
-    hdr_buffer_.assign(window_.get_width() * window_.get_height(), ColourHDR());
-}
+ 
 
 void Renderer::render() noexcept {
     aspect_ratio_ = static_cast<double>(window_.get_width()) / window_.get_height();
@@ -54,6 +86,16 @@ void Renderer::render() noexcept {
     
     // Draw coordinate axes overlay
     draw_coordinate_axes();
+}
+
+void Renderer::reset_accumulation() noexcept {
+    std::fill(accumulation_buffer_.begin(), accumulation_buffer_.end(), ColourHDR());
+    frame_count_ = 0;
+}
+
+void Renderer::clear() noexcept {
+    rasterizer_->clear();
+    hdr_buffer_.assign(window_.get_width() * window_.get_height(), ColourHDR());
 }
 
 void Renderer::wireframe_render() noexcept {
@@ -166,44 +208,6 @@ void Renderer::worker_thread(std::stop_token st) noexcept {
 }
 
 
-FloatType Renderer::AcesToneMapping(FloatType hdr_value) noexcept {
-    const FloatType a = 2.51f;
-    const FloatType b = 0.03f;
-    const FloatType c = 2.43f;
-    const FloatType d = 0.59f;
-    const FloatType e = 0.14f;
-    
-    FloatType numerator = hdr_value * (a * hdr_value + b);
-    FloatType denominator = hdr_value * (c * hdr_value + d) + e;
-    
-    return std::clamp(numerator / denominator, 0.0f, 1.0f);
-}
-
-Colour Renderer::TonemapAndGammaCorrect(const ColourHDR& hdr, FloatType gamma) noexcept {
-    FloatType r_ldr = AcesToneMapping(hdr.red * 0.6f);
-    FloatType g_ldr = AcesToneMapping(hdr.green * 0.6f);
-    FloatType b_ldr = AcesToneMapping(hdr.blue * 0.6f);
-    
-    FloatType r_out, g_out, b_out;
-    if (gamma == 1.0f) {
-        r_out = r_ldr;
-        g_out = g_ldr;
-        b_out = b_ldr;
-    } else {
-        r_out = std::pow(r_ldr, 1.0f / gamma);
-        g_out = std::pow(g_ldr, 1.0f / gamma);
-        b_out = std::pow(b_ldr, 1.0f / gamma);
-    }
-    r_out = std::clamp(r_out, 0.0f, 1.0f);
-    g_out = std::clamp(g_out, 0.0f, 1.0f);
-    b_out = std::clamp(b_out, 0.0f, 1.0f);
-    
-    return Colour{
-        static_cast<std::uint8_t>(std::clamp(r_out * 255.0f, 0.0f, 255.0f)),
-        static_cast<std::uint8_t>(std::clamp(g_out * 255.0f, 0.0f, 255.0f)),
-        static_cast<std::uint8_t>(std::clamp(b_out * 255.0f, 0.0f, 255.0f))
-    };
-}
 
 void Renderer::draw_coordinate_axes() noexcept {
     // Configuration
@@ -327,7 +331,4 @@ void Renderer::draw_coordinate_axes() noexcept {
     }
 }
 
-void Renderer::reset_accumulation() noexcept {
-    std::fill(accumulation_buffer_.begin(), accumulation_buffer_.end(), ColourHDR());
-    frame_count_ = 0;
-}
+ 

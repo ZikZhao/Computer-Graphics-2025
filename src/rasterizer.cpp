@@ -35,15 +35,115 @@ void Rasterizer::draw_model_rasterized(const Camera& camera, const std::vector<F
     }
 }
 
-ScreenNdcCoord Rasterizer::ndc_to_screen(const glm::vec3& ndc, const glm::vec2& uv, FloatType w) const noexcept {
-    return ScreenNdcCoord{
-        (ndc.x + 1.0f) * 0.5f * width_,
-        (1.0f - ndc.y) * 0.5f * height_,
-        ndc.z,
-        uv,
-        1.0f / w
-    };
+void Rasterizer::wireframe_render(const Camera& camera, const Face& face, Window& window, double aspect_ratio) noexcept {
+    auto clipped = clip_triangle(camera, face, aspect_ratio);
+    if (clipped.size() < 3) return;
+    InplaceVector<ScreenNdcCoord, 9> screen_verts;
+    for (size_t i = 0; i < clipped.size(); i++) {
+        glm::vec3 ndc = camera.clip_to_ndc(clipped[i].position_clip);
+        screen_verts.push_back(ndc_to_screen(ndc, clipped[i].uv, clipped[i].position_clip.w));
+    }
+    Colour colour = clipped[0].colour;
+    for (size_t i = 0; i < screen_verts.size(); i++) {
+        ScreenNdcCoord from = screen_verts[i];
+        ScreenNdcCoord to = screen_verts[(i + 1) % screen_verts.size()];
+        if (std::abs(to.x - from.x) >= std::abs(to.y - from.y)) {
+            std::size_t from_x = std::max<std::size_t>(static_cast<std::size_t>(std::min(from.x, to.x)), 0);
+            std::size_t to_x = std::min<std::size_t>(static_cast<std::size_t>(std::max(from.x, to.x)), width_ - 1);
+            for (std::size_t x = from_x; x <= to_x; x++) {
+                std::int64_t y = static_cast<std::int64_t>(std::round(from.y + (to.y - from.y) * (x - from.x) / (to.x - from.x)));
+                if (x >= static_cast<std::size_t>(width_) || y < 0 || y >= static_cast<std::int64_t>(height_)) continue;
+                FloatType progress = (to.x == from.x) ? 0.0f : static_cast<FloatType>(x - from.x) / static_cast<FloatType>(to.x - from.x);
+                FloatType inv_z = ComputeInvZndc(progress, std::array<FloatType, 2>{from.z_ndc, to.z_ndc});
+                FloatType& depth = z_buffer_[y * width_ + x];
+                if (inv_z > depth) {
+                    depth = inv_z;
+                    window[{static_cast<int>(x), static_cast<int>(y)}] = colour;
+                }
+            }
+        } else {
+            std::size_t from_y = std::max<std::size_t>(static_cast<std::size_t>(std::min(from.y, to.y)), 0);
+            std::size_t to_y = std::min(static_cast<std::size_t>(static_cast<std::size_t>(std::max(from.y, to.y))), static_cast<std::size_t>(height_ - 1));
+            for (std::size_t y = from_y; y <= to_y; y++) {
+                std::int64_t x = static_cast<std::int64_t>(std::round(from.x + (to.x - from.x) * (y - from.y) / (to.y - from.y)));
+                if (x < 0 || x >= static_cast<std::int64_t>(width_) || y >= static_cast<std::size_t>(height_)) continue;
+                FloatType progress = (to.y == from.y) ? 0.0f : static_cast<FloatType>(y - from.y) / static_cast<FloatType>(to.y - from.y);
+                FloatType inv_z = ComputeInvZndc(progress, std::array<FloatType, 2>{from.z_ndc, to.z_ndc});
+                FloatType& depth = z_buffer_[y * width_ + x];
+                if (inv_z > depth) {
+                    depth = inv_z;
+                    window[{static_cast<int>(x), static_cast<int>(y)}] = colour;
+                }
+            }
+        }
+    }
 }
+
+void Rasterizer::rasterized_render(const Camera& camera, const Face& face, Window& window, double aspect_ratio) noexcept {
+    auto clipped = clip_triangle(camera, face, aspect_ratio);
+    if (clipped.size() < 3) { return; }
+    InplaceVector<ScreenNdcCoord, 9> screen_verts;
+    for (size_t i = 0; i < clipped.size(); i++) {
+        glm::vec3 ndc = camera.clip_to_ndc(clipped[i].position_clip);
+        screen_verts.push_back(ndc_to_screen(ndc, clipped[i].uv, clipped[i].position_clip.w));
+    }
+    for (size_t i = 1; i + 1 < clipped.size(); i++) {
+        ScreenNdcCoord v0 = screen_verts[0];
+        ScreenNdcCoord v1 = screen_verts[i];
+        ScreenNdcCoord v2 = screen_verts[i + 1];
+        if (v0.y > v1.y) std::swap(v0, v1);
+        if (v0.y > v2.y) std::swap(v0, v2);
+        if (v1.y > v2.y) std::swap(v1, v2);
+        std::int64_t from_y = std::max<std::int64_t>(static_cast<std::int64_t>(std::ceil(v0.y)), 0);
+        std::int64_t mid_y = std::min<std::int64_t>(static_cast<std::int64_t>(std::ceil(v1.y)), static_cast<std::int64_t>(height_ - 1));
+        std::int64_t to_y = std::min<std::int64_t>(static_cast<std::int64_t>(std::ceil(v2.y)), static_cast<std::int64_t>(height_ - 1));
+        FloatType inv_slope_v0v1 = (v1.y - v0.y) == 0 ? 0 : (v1.x - v0.x) / (v1.y - v0.y);
+        FloatType inv_slope_v0v2 = (v2.y - v0.y) == 0 ? 0 : (v2.x - v0.x) / (v2.y - v0.y);
+        FloatType inv_slope_v1v2 = (v2.y - v1.y) == 0 ? 0 : (v2.x - v1.x) / (v2.y - v1.y);
+        for (std::int64_t y = from_y; y < mid_y; y++) {
+            FloatType y_center = static_cast<FloatType>(y) + 0.5f;
+            FloatType x01 = inv_slope_v0v1 * (y_center - v0.y) + v0.x;
+            FloatType x02 = inv_slope_v0v2 * (y_center - v0.y) + v0.x;
+            std::int64_t start_x = std::max<std::int64_t>(static_cast<std::int64_t>(std::floor(std::min(x01, x02))), 0);
+            std::int64_t end_x = std::min<std::int64_t>(static_cast<std::int64_t>(std::ceil(std::max(x01, x02))), static_cast<std::int64_t>(width_ - 1));
+            for (std::int64_t x = start_x; x <= end_x; x++) {
+                FloatType x_center = static_cast<FloatType>(x) + 0.5f;
+                glm::vec3 bary = CalculateBarycentric({ v0.x, v0.y }, { v1.x, v1.y }, { v2.x, v2.y }, { x_center, y_center });
+                if (bary.x >= 0.0f && bary.y >= 0.0f && bary.z >= 0.0f) {
+                    Colour colour = sample_texture(face, bary, v0, v1, v2);
+                    FloatType inv_z = ComputeInvZndc(std::array<FloatType, 3>{bary.x, bary.y, bary.z}, std::array<FloatType, 3>{v0.z_ndc, v1.z_ndc, v2.z_ndc});
+                    FloatType& depth = z_buffer_[y * width_ + x];
+                    if (inv_z > depth) {
+                        depth = inv_z;
+                        window[{static_cast<int>(x), static_cast<int>(y)}] = colour;
+                    }
+                }
+            }
+        }
+        for (std::int64_t y = mid_y; y <= to_y; y++) {
+            FloatType y_center = static_cast<FloatType>(y) + 0.5f;
+            FloatType x12 = inv_slope_v1v2 * (y_center - v1.y) + v1.x;
+            FloatType x02 = inv_slope_v0v2 * (y_center - v0.y) + v0.x;
+            std::int64_t start_x = std::max<std::int64_t>(static_cast<std::int64_t>(std::floor(std::min(x12, x02))), 0);
+            std::int64_t end_x = std::min<std::int64_t>(static_cast<std::int64_t>(std::ceil(std::max(x12, x02))), static_cast<std::int64_t>(width_ - 1));
+            for (std::int64_t x = start_x; x <= end_x; x++) {
+                FloatType x_center = static_cast<FloatType>(x) + 0.5f;
+                glm::vec3 bary = CalculateBarycentric({ v0.x, v0.y }, { v1.x, v1.y }, { v2.x, v2.y }, { x_center, y_center });
+                if (bary.x >= 0.0f && bary.y >= 0.0f && bary.z >= 0.0f) {
+                    Colour colour = sample_texture(face, bary, v0, v1, v2);
+                    FloatType inv_z = ComputeInvZndc(std::array<FloatType, 3>{bary.x, bary.y, bary.z}, std::array<FloatType, 3>{v0.z_ndc, v1.z_ndc, v2.z_ndc});
+                    FloatType& depth = z_buffer_[y * width_ + x];
+                    if (inv_z > depth) {
+                        depth = inv_z;
+                        window[{static_cast<int>(x), static_cast<int>(y)}] = colour;
+                    }
+                }
+            }
+        }
+    }
+}
+
+ 
 
 bool Rasterizer::inside_plane(const glm::vec4& v, ClipPlane plane) noexcept {
     switch (plane) {
@@ -192,136 +292,13 @@ Colour Rasterizer::sample_texture(const Face& face, const glm::vec3& bary,
     };
 }
 
-void Rasterizer::wireframe_render(const Camera& camera, const Face& face, Window& window, double aspect_ratio) noexcept {
-    auto clipped = clip_triangle(camera, face, aspect_ratio);
-    if (clipped.size() < 3) return;
-    
-    InplaceVector<ScreenNdcCoord, 9> screen_verts;
-    for (size_t i = 0; i < clipped.size(); i++) {
-        glm::vec3 ndc = camera.clip_to_ndc(clipped[i].position_clip);
-        screen_verts.push_back(ndc_to_screen(ndc, clipped[i].uv, clipped[i].position_clip.w));
-    }
-    
-    Colour colour = clipped[0].colour;
-    
-    for (size_t i = 0; i < screen_verts.size(); i++) {
-        ScreenNdcCoord from = screen_verts[i];
-        ScreenNdcCoord to = screen_verts[(i + 1) % screen_verts.size()];
-        
-        if (std::abs(to.x - from.x) >= std::abs(to.y - from.y)) {
-            std::size_t from_x = std::max<std::size_t>(static_cast<std::size_t>(std::min(from.x, to.x)), 0);
-            std::size_t to_x = std::min<std::size_t>(static_cast<std::size_t>(std::max(from.x, to.x)), width_ - 1);
-            for (std::size_t x = from_x; x <= to_x; x++) {
-                std::int64_t y = static_cast<std::int64_t>(std::round(from.y + (to.y - from.y) * (x - from.x) / (to.x - from.x)));
-                if (x >= static_cast<std::size_t>(width_) || y < 0 || y >= static_cast<std::int64_t>(height_)) {
-                    continue;
-                }
-                FloatType progress = (to.x == from.x) ? 0.0f : static_cast<FloatType>(x - from.x) / static_cast<FloatType>(to.x - from.x);
-                FloatType inv_z = ComputeInvZndc(progress, std::array<FloatType, 2>{from.z_ndc, to.z_ndc});
-                FloatType& depth = z_buffer_[y * width_ + x];
-                if (inv_z > depth) {
-                    depth = inv_z;
-                    window[{static_cast<int>(x), static_cast<int>(y)}] = colour;
-                }
-            }
-        } else {
-            std::size_t from_y = std::max<std::size_t>(static_cast<std::size_t>(std::min(from.y, to.y)), 0);
-            std::size_t to_y = std::min(static_cast<std::size_t>(std::max(from.y, to.y)), static_cast<std::size_t>(height_ - 1));
-            for (std::size_t y = from_y; y <= to_y; y++) {
-                std::int64_t x = static_cast<std::int64_t>(std::round(from.x + (to.x - from.x) * (y - from.y) / (to.y - from.y)));
-                if (x < 0 || x >= static_cast<std::int64_t>(width_) || y >= static_cast<std::size_t>(height_)) {
-                    continue;
-                }
-                FloatType progress = (to.y == from.y) ? 0.0f : static_cast<FloatType>(y - from.y) / static_cast<FloatType>(to.y - from.y);
-                FloatType inv_z = ComputeInvZndc(progress, std::array<FloatType, 2>{from.z_ndc, to.z_ndc});
-                FloatType& depth = z_buffer_[y * width_ + x];
-                if (inv_z > depth) {
-                    depth = inv_z;
-                    window[{static_cast<int>(x), static_cast<int>(y)}] = colour;
-                }
-            }
-        }
-    }
-}
 
-void Rasterizer::rasterized_render(const Camera& camera, const Face& face, Window& window, double aspect_ratio) noexcept {
-    auto clipped = clip_triangle(camera, face, aspect_ratio);
-    if (clipped.size() < 3) { return; }
-    
-    InplaceVector<ScreenNdcCoord, 9> screen_verts;
-    for (size_t i = 0; i < clipped.size(); i++) {
-        glm::vec3 ndc = camera.clip_to_ndc(clipped[i].position_clip);
-        screen_verts.push_back(ndc_to_screen(ndc, clipped[i].uv, clipped[i].position_clip.w));
-    }
-    
-    for (size_t i = 1; i + 1 < clipped.size(); i++) {
-        ScreenNdcCoord v0 = screen_verts[0];
-        ScreenNdcCoord v1 = screen_verts[i];
-        ScreenNdcCoord v2 = screen_verts[i + 1];
-        
-        if (v0.y > v1.y) std::swap(v0, v1);
-        if (v0.y > v2.y) std::swap(v0, v2);
-        if (v1.y > v2.y) std::swap(v1, v2);
-
-        std::int64_t from_y = std::max<std::int64_t>(static_cast<std::int64_t>(std::ceil(v0.y)), 0);
-        std::int64_t mid_y = std::min<std::int64_t>(static_cast<std::int64_t>(std::ceil(v1.y)), static_cast<std::int64_t>(height_ - 1));
-        std::int64_t to_y = std::min<std::int64_t>(static_cast<std::int64_t>(std::ceil(v2.y)), static_cast<std::int64_t>(height_ - 1));
-
-        FloatType inv_slope_v0v1 = (v1.y - v0.y) == 0 ? 0 : (v1.x - v0.x) / (v1.y - v0.y);
-        FloatType inv_slope_v0v2 = (v2.y - v0.y) == 0 ? 0 : (v2.x - v0.x) / (v2.y - v0.y);
-        FloatType inv_slope_v1v2 = (v2.y - v1.y) == 0 ? 0 : (v2.x - v1.x) / (v2.y - v1.y);
-
-        for (std::int64_t y = from_y; y < mid_y; y++) {
-            FloatType y_center = static_cast<FloatType>(y) + 0.5f;
-            FloatType x01 = inv_slope_v0v1 * (y_center - v0.y) + v0.x;
-            FloatType x02 = inv_slope_v0v2 * (y_center - v0.y) + v0.x;
-
-            std::int64_t start_x = std::max<std::int64_t>(static_cast<std::int64_t>(std::floor(std::min(x01, x02))), 0);
-            std::int64_t end_x = std::min<std::int64_t>(static_cast<std::int64_t>(std::ceil(std::max(x01, x02))), static_cast<std::int64_t>(width_ - 1));
-            
-            for (std::int64_t x = start_x; x <= end_x; x++) {
-                FloatType x_center = static_cast<FloatType>(x) + 0.5f;
-                glm::vec3 bary = CalculateBarycentric(
-                    { v0.x, v0.y }, { v1.x, v1.y }, { v2.x, v2.y }, { x_center, y_center });
-                
-                if (bary.x >= 0.0f && bary.y >= 0.0f && bary.z >= 0.0f) {
-                    Colour colour = sample_texture(face, bary, v0, v1, v2);
-                    FloatType inv_z = ComputeInvZndc(std::array<FloatType, 3>{bary.x, bary.y, bary.z}, 
-                                                     std::array<FloatType, 3>{v0.z_ndc, v1.z_ndc, v2.z_ndc});
-                    FloatType& depth = z_buffer_[y * width_ + x];
-                    if (inv_z > depth) {
-                        depth = inv_z;
-                        window[{static_cast<int>(x), static_cast<int>(y)}] = colour;
-                    }
-                }
-            }
-        }
-
-        for (std::int64_t y = mid_y; y <= to_y; y++) {
-            FloatType y_center = static_cast<FloatType>(y) + 0.5f;
-            FloatType x12 = inv_slope_v1v2 * (y_center - v1.y) + v1.x;
-            FloatType x02 = inv_slope_v0v2 * (y_center - v0.y) + v0.x;
-
-            std::int64_t start_x = std::max<std::int64_t>(static_cast<std::int64_t>(std::floor(std::min(x12, x02))), 0);
-            std::int64_t end_x = std::min<std::int64_t>(static_cast<std::int64_t>(std::ceil(std::max(x12, x02))), static_cast<std::int64_t>(width_ - 1));
-            
-            for (std::int64_t x = start_x; x <= end_x; x++) {
-                FloatType x_center = static_cast<FloatType>(x) + 0.5f;
-                glm::vec3 bary = CalculateBarycentric(
-                    { v0.x, v0.y }, { v1.x, v1.y }, { v2.x, v2.y }, { x_center, y_center });
-                
-                if (bary.x >= 0.0f && bary.y >= 0.0f && bary.z >= 0.0f) {
-                    Colour colour = sample_texture(face, bary, v0, v1, v2);
-                    FloatType inv_z = ComputeInvZndc(std::array<FloatType, 3>{bary.x, bary.y, bary.z}, 
-                                                     std::array<FloatType, 3>{v0.z_ndc, v1.z_ndc, v2.z_ndc});
-                    FloatType& depth = z_buffer_[y * width_ + x];
-                    if (inv_z > depth) {
-                        depth = inv_z;
-                        window[{static_cast<int>(x), static_cast<int>(y)}] = colour;
-                    }
-                }
-            }
-        }
-        
-    }
+ScreenNdcCoord Rasterizer::ndc_to_screen(const glm::vec3& ndc, const glm::vec2& uv, FloatType w) const noexcept {
+    return ScreenNdcCoord{
+        (ndc.x + 1.0f) * 0.5f * width_,
+        (1.0f - ndc.y) * 0.5f * height_,
+        ndc.z,
+        uv,
+        1.0f / w
+    };
 }

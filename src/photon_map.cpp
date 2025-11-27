@@ -10,6 +10,58 @@ PhotonMap::PhotonMap(const World& world)
     worker_thread_ = std::jthread([this]() { trace_photons(); });
 }
 
+std::vector<Photon> PhotonMap::query_photons(const Face* face, const glm::vec3& point, 
+                                             FloatType radius) const {
+    std::vector<Photon> result;
+    GridCell center_cell = get_grid_cell(point);
+    auto [cx, cy, cz] = center_cell;
+    int cell_range = static_cast<int>(std::ceil(radius / GRID_CELL_SIZE)) + 1;
+    FloatType radius_sq = radius * radius;
+    for (int dx = -cell_range; dx <= cell_range; ++dx) {
+        for (int dy = -cell_range; dy <= cell_range; ++dy) {
+            for (int dz = -cell_range; dz <= cell_range; ++dz) {
+                GridCell neighbor_cell = std::make_tuple(cx + dx, cy + dy, cz + dz);
+                auto it = spatial_grid_.find(neighbor_cell);
+                if (it == spatial_grid_.end()) continue;
+                for (const auto& photon : it->second) {
+                    if (photon.face != face) continue;
+                    glm::vec3 diff = photon.position - point;
+                    FloatType dist_sq = glm::dot(diff, diff);
+                    if (dist_sq < radius_sq) result.push_back(photon);
+                }
+            }
+        }
+    }
+    return result;
+}
+
+ColourHDR PhotonMap::estimate_caustic(const Face* face, const glm::vec3& point, 
+                                      const glm::vec3& normal, FloatType search_radius) const noexcept {
+    if (!is_ready()) return ColourHDR(0.0f, 0.0f, 0.0f);
+    auto photons = query_photons(face, point, search_radius);
+    if (photons.empty()) return ColourHDR(0.0f, 0.0f, 0.0f);
+    glm::vec3 accumulated_flux(0.0f);
+    constexpr FloatType k = 1.1f;
+    for (const auto& photon : photons) {
+        FloatType alignment = glm::dot(photon.direction, normal);
+        if (alignment > 0.0f) continue;
+        glm::vec3 diff = photon.position - point;
+        FloatType dist = glm::length(diff);
+        FloatType weight = std::max(0.0f, 1.0f - (dist / (k * search_radius)));
+        FloatType cos_theta = std::max(0.0f, -alignment);
+        accumulated_flux += photon.power * (cos_theta * weight);
+    }
+    FloatType search_area = std::numbers::pi * search_radius * search_radius;
+    glm::vec3 radiance = accumulated_flux / search_area;
+    return ColourHDR(radiance.x, radiance.y, radiance.z);
+}
+
+std::size_t PhotonMap::total_photons() const noexcept {
+    std::size_t count = 0;
+    for (const auto& [face, photons] : photon_map_) count += photons.size();
+    return count;
+}
+
 void PhotonMap::trace_photons() {
     const auto& area_lights = world_.area_lights();
     if (area_lights.empty()) {
@@ -380,114 +432,16 @@ std::optional<RayTriangleIntersection> PhotonMap::intersect_triangle(
     return hit;
 }
 
-std::vector<Photon> PhotonMap::query_photons(const Face* face, const glm::vec3& point, 
-                                              FloatType radius) const {
-    std::vector<Photon> result;
-    
-    // Use spatial hash grid for efficient photon lookup
-    // Compute which grid cell the query point is in
-    GridCell center_cell = get_grid_cell(point);
-    auto [cx, cy, cz] = center_cell;
-    
-    // Determine how many cells we need to search in each direction
-    // Add 1 to ensure we cover all photons within radius
-    int cell_range = static_cast<int>(std::ceil(radius / GRID_CELL_SIZE)) + 1;
-    
-    FloatType radius_sq = radius * radius;
-    
-    // Search all neighboring cells (27 cells for immediate neighbors, more if radius is large)
-    for (int dx = -cell_range; dx <= cell_range; ++dx) {
-        for (int dy = -cell_range; dy <= cell_range; ++dy) {
-            for (int dz = -cell_range; dz <= cell_range; ++dz) {
-                GridCell neighbor_cell = std::make_tuple(cx + dx, cy + dy, cz + dz);
-                
-                auto it = spatial_grid_.find(neighbor_cell);
-                if (it == spatial_grid_.end()) {
-                    continue;  // No photons in this cell
-                }
-                
-                // Check all photons in this cell
-                for (const auto& photon : it->second) {
-                    // Only include photons on the same face
-                    if (photon.face != face) {
-                        continue;
-                    }
-                    
-                    glm::vec3 diff = photon.position - point;
-                    FloatType dist_sq = glm::dot(diff, diff);
-                    if (dist_sq < radius_sq) {
-                        result.push_back(photon);
-                    }
-                }
-            }
-        }
-    }
-    
-    return result;
-}
-
-ColourHDR PhotonMap::estimate_caustic(const Face* face, const glm::vec3& point, 
-                                      const glm::vec3& normal, FloatType search_radius) const noexcept {
-    if (!is_ready()) {
-        return ColourHDR(0.0f, 0.0f, 0.0f);
-    }
-    
-    auto photons = query_photons(face, point, search_radius);
-    
-    if (photons.empty()) {
-        return ColourHDR(0.0f, 0.0f, 0.0f);
-    }
-    
-    // Cone filtering with energy conservation
-    glm::vec3 accumulated_flux(0.0f);
-    constexpr FloatType k = 1.1f;  // Cone filter parameter for smooth falloff
-    
-    for (const auto& photon : photons) {
-        // Leakage check: ensure photon is on the correct side of surface
-        // Photon direction points toward surface, normal points away
-        FloatType alignment = glm::dot(photon.direction, normal);
-        if (alignment > 0.0f) {
-            // Photon hit from backface, skip to prevent light leaking
-            continue;
-        }
-        
-        // Calculate distance-based cone filter weight
-        glm::vec3 diff = photon.position - point;
-        FloatType dist = glm::length(diff);
-        FloatType weight = 1.0f - (dist / (k * search_radius));
-        weight = std::max(0.0f, weight);  // Clamp to [0, 1]
-        
-        // BRDF: Lambertian diffuse (cos_theta / pi already in power)
-        FloatType cos_theta = std::max(0.0f, -alignment);  // -dot because direction points in
-        
-        // Accumulate weighted photon contribution
-        accumulated_flux += photon.power * (cos_theta * weight);
-    }
-    
-    // Energy conservation: normalize by search area (not photon count!)
-    FloatType search_area = std::numbers::pi * search_radius * search_radius;
-    glm::vec3 radiance = accumulated_flux / search_area;
-    
-    return ColourHDR(radiance.x, radiance.y, radiance.z);
-}
-
-std::size_t PhotonMap::total_photons() const noexcept {
-    std::size_t count = 0;
-    for (const auto& [face, photons] : photon_map_) {
-        count += photons.size();
-    }
-    return count;
-}
-
-FloatType PhotonMap::random_float(FloatType min, FloatType max) noexcept {
-    thread_local std::mt19937 rng(std::random_device{}());
-    std::uniform_real_distribution<FloatType> dist(min, max);
-    return dist(rng);
-}
 
 PhotonMap::GridCell PhotonMap::get_grid_cell(const glm::vec3& position) noexcept {
     int x = static_cast<int>(std::floor(position.x / GRID_CELL_SIZE));
     int y = static_cast<int>(std::floor(position.y / GRID_CELL_SIZE));
     int z = static_cast<int>(std::floor(position.z / GRID_CELL_SIZE));
     return std::make_tuple(x, y, z);
+}
+
+FloatType PhotonMap::random_float(FloatType min, FloatType max) noexcept {
+    thread_local std::mt19937 rng(std::random_device{}());
+    std::uniform_real_distribution<FloatType> dist(min, max);
+    return dist(rng);
 }

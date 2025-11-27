@@ -6,28 +6,6 @@
 static thread_local std::mt19937 rng(std::random_device{}());
 static thread_local std::uniform_real_distribution<FloatType> dist(0.0f, 1.0f);
 
-// Generate random direction in hemisphere around normal
-glm::vec3 LambertianShader::random_in_hemisphere(const glm::vec3& normal) noexcept {
-    // Cosine-weighted hemisphere sampling
-    FloatType u1 = dist(rng);
-    FloatType u2 = dist(rng);
-    
-    FloatType r = std::sqrt(u1);
-    FloatType theta = 2.0f * std::numbers::pi * u2;
-    
-    FloatType x = r * std::cos(theta);
-    FloatType y = r * std::sin(theta);
-    FloatType z = std::sqrt(std::max(0.0f, 1.0f - u1));
-    
-    // Build orthonormal basis around normal
-    glm::vec3 w = normal;
-    glm::vec3 a = std::abs(w.x) > 0.9f ? glm::vec3(0.0f, 1.0f, 0.0f) : glm::vec3(1.0f, 0.0f, 0.0f);
-    glm::vec3 v = glm::normalize(glm::cross(w, a));
-    glm::vec3 u = glm::cross(w, v);
-    
-    return glm::normalize(u * x + v * y + w * z);
-}
-
 bool LambertianShader::scatter(
     const Ray& r_in,
     const HitRecord& rec,
@@ -44,6 +22,22 @@ bool LambertianShader::scatter(
     scattered.pdf = glm::dot(rec.normal, scatter_dir) / std::numbers::pi;
     
     return true;
+}
+
+// Generate random direction in hemisphere around normal
+glm::vec3 LambertianShader::random_in_hemisphere(const glm::vec3& normal) noexcept {
+    FloatType u1 = dist(rng);
+    FloatType u2 = dist(rng);
+    FloatType r = std::sqrt(u1);
+    FloatType theta = 2.0f * std::numbers::pi * u2;
+    FloatType x = r * std::cos(theta);
+    FloatType y = r * std::sin(theta);
+    FloatType z = std::sqrt(std::max(0.0f, 1.0f - u1));
+    glm::vec3 w = normal;
+    glm::vec3 a = std::abs(w.x) > 0.9f ? glm::vec3(0.0f, 1.0f, 0.0f) : glm::vec3(1.0f, 0.0f, 0.0f);
+    glm::vec3 v = glm::normalize(glm::cross(w, a));
+    glm::vec3 u = glm::cross(w, v);
+    return glm::normalize(u * x + v * y + w * z);
 }
 
 bool MetalShader::scatter(
@@ -63,14 +57,6 @@ bool MetalShader::scatter(
     
     // Only scatter if reflection is in same hemisphere as normal
     return glm::dot(reflected, rec.normal) > 0.0f;
-}
-
-FloatType DielectricShader::fresnel_schlick(FloatType cos_theta, FloatType ior_ratio) noexcept {
-    FloatType r0 = (1.0f - ior_ratio) / (1.0f + ior_ratio);
-    r0 = r0 * r0;
-    FloatType cos_term = 1.0f - cos_theta;
-    FloatType cos5 = cos_term * cos_term * cos_term * cos_term * cos_term;
-    return r0 + (1.0f - r0) * cos5;
 }
 
 bool DielectricShader::scatter(
@@ -144,4 +130,12 @@ bool DielectricShader::scatter(
         scattered.pdf = 1.0f - reflect_prob;
         return true;
     }
+}
+
+FloatType DielectricShader::fresnel_schlick(FloatType cos_theta, FloatType ior_ratio) noexcept {
+    FloatType r0 = (1.0f - ior_ratio) / (1.0f + ior_ratio);
+    r0 = r0 * r0;
+    FloatType cos_term = 1.0f - cos_theta;
+    FloatType cos5 = cos_term * cos_term * cos_term * cos_term * cos_term;
+    return r0 + (1.0f - r0) * cos5;
 }

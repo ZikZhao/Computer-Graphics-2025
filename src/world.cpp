@@ -31,6 +31,26 @@ static IndexTriple parse_index_token(const std::string& t) {
 }
 
 // Camera implementation
+glm::vec4 Camera::world_to_clip(const glm::vec3& vertex, double aspect_ratio) const noexcept {
+    glm::vec3 view_vector = vertex - position_;
+    glm::mat3 view_rotation = glm::transpose(orientation());
+    glm::vec3 view_space = view_rotation * view_vector;
+    FloatType w = view_space.z;
+    double fov_rad = glm::radians(FOV);
+    double tan_half_fov = std::tan(fov_rad / 2.0);
+    FloatType x_ndc = view_space.x / (view_space.z * tan_half_fov * aspect_ratio);
+    FloatType y_ndc = view_space.y / (view_space.z * tan_half_fov);
+    FloatType z_ndc = (FarPlane * (view_space.z - NearPlane)) / ((view_space.z) * (FarPlane - NearPlane));
+    return glm::vec4(x_ndc * w, y_ndc * w, z_ndc * w, w);
+}
+
+glm::vec3 Camera::clip_to_ndc(const glm::vec4& clip) const noexcept {
+    if (std::abs(clip.w) < 1e-6f) {
+        return glm::vec3(0.0f, 0.0f, -1.0f);
+    }
+    return glm::vec3(clip) / clip.w;
+}
+
 glm::mat3 Camera::orientation() const noexcept {
     FloatType cos_pitch = std::cos(pitch_);
     FloatType sin_pitch = std::sin(pitch_);
@@ -137,30 +157,6 @@ void Camera::update() noexcept {
 }
 
 // Input callbacks are registered centrally in main; World no longer registers to Window
-
-glm::vec4 Camera::world_to_clip(const glm::vec3& vertex, double aspect_ratio) const noexcept {
-    glm::vec3 view_vector = vertex - position_;
-    glm::mat3 view_rotation = glm::transpose(orientation());
-    glm::vec3 view_space = view_rotation * view_vector;
-    
-    FloatType w = view_space.z;
-    
-    double fov_rad = glm::radians(FOV);
-    double tan_half_fov = std::tan(fov_rad / 2.0);
-    
-    FloatType x_ndc = view_space.x / (view_space.z * tan_half_fov * aspect_ratio);
-    FloatType y_ndc = view_space.y / (view_space.z * tan_half_fov);
-    FloatType z_ndc = (FarPlane * (view_space.z - NearPlane)) / ((view_space.z) * (FarPlane - NearPlane));
-    
-    return glm::vec4(x_ndc * w, y_ndc * w, z_ndc * w, w);
-}
-
-glm::vec3 Camera::clip_to_ndc(const glm::vec4& clip) const noexcept {
-    if (std::abs(clip.w) < 1e-6f) {
-        return glm::vec3(0.0f, 0.0f, -1.0f);
-    }
-    return glm::vec3(clip) / clip.w;
-}
 
 std::pair<glm::vec3, glm::vec3> Camera::generate_ray(int pixel_x, int pixel_y, int screen_width, int screen_height, double aspect_ratio) const noexcept {
     FloatType u = (static_cast<FloatType>(pixel_x) + 0.5f) / static_cast<FloatType>(screen_width);
