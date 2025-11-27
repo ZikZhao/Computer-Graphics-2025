@@ -63,6 +63,9 @@ Renderer::~Renderer() {
 }
 
 void Renderer::render() noexcept {
+    if (video_export_mode_) {
+        reset_accumulation();
+    }
     aspect_ratio_ = static_cast<double>(window_.get_width()) / window_.get_height();
     
     switch (mode_) {
@@ -144,37 +147,60 @@ void Renderer::process_rows(int y0, int y1) noexcept {
     
     for (int y = y0; y < y1; ++y) {
         for (int x = 0; x < static_cast<int>(window_.get_width()); x++) {
-            ColourHDR final_hdr;
-            
-            if (is_dof) {
-                final_hdr = raytracer_->render_pixel_dof(
-                    camera, x, y, window_.get_width(), window_.get_height(),
-                    focal_distance_, aperture_size_, dof_samples_,
-                    true, world_.light_intensity(), caustics_enabled_
-                );
+            int w = static_cast<int>(window_.get_width());
+            int h = static_cast<int>(window_.get_height());
+            int pixel_index = y * w + x;
+            int samples_to_run = video_export_mode_ ? VIDEO_SAMPLES : 1;
+            ColourHDR pixel_accum(0.0f, 0.0f, 0.0f);
+            for (int s = 0; s < samples_to_run; ++s) {
+                if (is_dof) {
+                    ColourHDR hdr = raytracer_->render_pixel_dof(
+                        camera, x, y, w, h,
+                        focal_distance_, aperture_size_, dof_samples_,
+                        true, world_.light_intensity(), caustics_enabled_
+                    );
+                    pixel_accum = ColourHDR(
+                        pixel_accum.red + hdr.red,
+                        pixel_accum.green + hdr.green,
+                        pixel_accum.blue + hdr.blue
+                    );
+                } else {
+                    int sample_index = rendering_frame_count_ * (w * h) + pixel_index + s;
+                    uint32_t base_seed = static_cast<uint32_t>(pixel_index + rendering_frame_count_ * 123457u) | 1u;
+                    uint32_t sub_seed = base_seed ^ (static_cast<uint32_t>(s) * 0x9e3779b9u);
+                    ColourHDR hdr = raytracer_->render_pixel(
+                        camera, x, y, w, h,
+                        true, world_.light_intensity(), caustics_enabled_, sample_index, sub_seed
+                    );
+                    pixel_accum = ColourHDR(
+                        pixel_accum.red + hdr.red,
+                        pixel_accum.green + hdr.green,
+                        pixel_accum.blue + hdr.blue
+                    );
+                }
+            }
+            ColourHDR final_hdr_avg(
+                pixel_accum.red / static_cast<FloatType>(samples_to_run),
+                pixel_accum.green / static_cast<FloatType>(samples_to_run),
+                pixel_accum.blue / static_cast<FloatType>(samples_to_run)
+            );
+            std::size_t idx = static_cast<std::size_t>(y) * window_.get_width() + static_cast<std::size_t>(x);
+            if (video_export_mode_) {
+                accumulation_buffer_[idx] = final_hdr_avg;
             } else {
-                int w = static_cast<int>(window_.get_width());
-                int h = static_cast<int>(window_.get_height());
-                int pixel_index = y * w + x;
-                int sample_index = rendering_frame_count_ * (w * h) + pixel_index;
-                uint32_t seed = static_cast<uint32_t>(pixel_index + rendering_frame_count_ * 123457u) | 1u;
-                final_hdr = raytracer_->render_pixel(
-                    camera, x, y, w, h,
-                    true, world_.light_intensity(), caustics_enabled_, sample_index, seed
+                accumulation_buffer_[idx] = ColourHDR(
+                    accumulation_buffer_[idx].red + final_hdr_avg.red,
+                    accumulation_buffer_[idx].green + final_hdr_avg.green,
+                    accumulation_buffer_[idx].blue + final_hdr_avg.blue
                 );
             }
-            
-            std::size_t idx = static_cast<std::size_t>(y) * window_.get_width() + static_cast<std::size_t>(x);
-            accumulation_buffer_[idx] = ColourHDR(
-                accumulation_buffer_[idx].red + final_hdr.red,
-                accumulation_buffer_[idx].green + final_hdr.green,
-                accumulation_buffer_[idx].blue + final_hdr.blue
-            );
-            ColourHDR avg_hdr(
-                accumulation_buffer_[idx].red / static_cast<FloatType>(rendering_frame_count_),
-                accumulation_buffer_[idx].green / static_cast<FloatType>(rendering_frame_count_),
-                accumulation_buffer_[idx].blue / static_cast<FloatType>(rendering_frame_count_)
-            );
+            ColourHDR avg_hdr = video_export_mode_
+                ? accumulation_buffer_[idx]
+                : ColourHDR(
+                    accumulation_buffer_[idx].red / static_cast<FloatType>(rendering_frame_count_),
+                    accumulation_buffer_[idx].green / static_cast<FloatType>(rendering_frame_count_),
+                    accumulation_buffer_[idx].blue / static_cast<FloatType>(rendering_frame_count_)
+                  );
             Colour final_colour = TonemapAndGammaCorrect(avg_hdr, gamma_);
             window_[{x, y}] = final_colour;
         }

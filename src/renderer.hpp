@@ -21,6 +21,7 @@ public:
         DEPTH_OF_FIELD,
     };
     static constexpr int TileHeight = 16;
+    static constexpr int VIDEO_SAMPLES = 64;
     static Colour TonemapAndGammaCorrect(const ColourHDR& hdr, FloatType gamma) noexcept;
     static FloatType AcesToneMapping(FloatType hdr_value) noexcept;
     
@@ -57,6 +58,7 @@ public:
     ~Renderer();
     void render() noexcept;
     void reset_accumulation() noexcept;
+    bool video_export_mode_ = false;
     void set_mode(Mode m) noexcept { mode_ = m; }
     FloatType gamma() const noexcept { return gamma_; }
     void set_gamma(FloatType g) noexcept { gamma_ = g; }

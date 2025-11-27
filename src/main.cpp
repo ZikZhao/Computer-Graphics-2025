@@ -107,10 +107,16 @@ int main(int argc, char *argv[]) {
     
     // Video Recording Toggle (Ctrl+Shift+S)
     window.register_key({SDL_SCANCODE_LCTRL, SDL_SCANCODE_LSHIFT, SDL_SCANCODE_S}, Window::Trigger::ALL_JUST_PRESSED,
-        [&](const Window::KeyState&, float) { video_recorder.toggleRecording(); });
+        [&](const Window::KeyState&, float) {
+            video_recorder.toggleRecording();
+            renderer.video_export_mode_ = video_recorder.is_recording();
+        });
     
     window.register_key({SDL_SCANCODE_RCTRL, SDL_SCANCODE_RSHIFT, SDL_SCANCODE_S}, Window::Trigger::ALL_JUST_PRESSED,
-        [&](const Window::KeyState&, float) { video_recorder.toggleRecording(); });
+        [&](const Window::KeyState&, float) {
+            video_recorder.toggleRecording();
+            renderer.video_export_mode_ = video_recorder.is_recording();
+        });
 
     window.register_mouse(SDL_BUTTON_LEFT, Window::Trigger::ANY_PRESSED,
         [&](int xrel, int yrel, float dt) {
@@ -132,6 +138,7 @@ int main(int argc, char *argv[]) {
     while (true) {
 
         world.orbiting();
+        renderer.video_export_mode_ = video_recorder.is_recording();
         renderer.render();
 
         if (!window.process_events()) break;

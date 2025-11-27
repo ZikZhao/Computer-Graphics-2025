@@ -108,7 +108,7 @@ void Camera::start_orbiting(glm::vec3 target) noexcept {
 
 void Camera::orbiting() noexcept {
     if (is_orbiting_) {
-        constexpr static FloatType angle_increment = glm::radians(0.5f);
+        constexpr static FloatType angle_increment = glm::radians(-0.5f);
         yaw_ += angle_increment;
         position_ = orbit_target_ - forward() * orbit_radius_;
     }
