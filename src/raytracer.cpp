@@ -366,14 +366,15 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
                 FloatType b1 = su * (1.0f - u2);
                 FloatType b2 = su * u2;
                 glm::vec3 light_p = lf->vertices[0] + b1 * e0 + b2 * e1;
-                glm::vec3 to_light = light_p - intersection.intersectionPoint;
+                glm::vec3 shadow_origin = intersection.intersectionPoint + n_shade * 1e-4f;
+                glm::vec3 to_light = light_p - shadow_origin;
                 FloatType dist = glm::length(to_light);
                 if (dist < 1e-4f) continue;
                 glm::vec3 L = glm::normalize(to_light);
                 glm::vec3 n_light = glm::normalize(lf->face_normal);
                 FloatType cos_surf = std::max(0.0f, glm::dot(n_shade, L));
                 FloatType cos_light = std::max(0.0f, glm::dot(n_light, -L));
-                glm::vec3 transmittance = compute_transmittance_bvh(intersection.intersectionPoint, light_p);
+                glm::vec3 transmittance = compute_transmittance_bvh(shadow_origin, light_p);
                 FloatType vis = (transmittance.r + transmittance.g + transmittance.b) / 3.0f;
                 glm::vec3 Le = lf->material.emission;
                 FloatType G = (cos_surf * cos_light) / (dist * dist + 1e-6f);
@@ -514,7 +515,7 @@ glm::vec3 RayTracer::compute_transmittance_bvh(const glm::vec3& point, const glm
                 const Face& face = faces[tri_index];
                 FloatType t, u, v;
                 bool hit = IntersectRayTriangle(point, light_dir, face.vertices[0], face.vertices[1], face.vertices[2], t, u, v);
-                if (hit && t > min_t && t < light_distance) {
+                if (hit && t > min_t && t < (light_distance - 1e-4f)) {
                     intersections.push_back({t, &face, u, v});
                 }
             }
