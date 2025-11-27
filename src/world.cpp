@@ -216,11 +216,13 @@ void Model::load_file(std::string filename) {
             auto prev_shading = current_obj->material.shading;
             current_obj->material = materials_[colour_name];
             current_obj->material.shading = prev_shading;
-        } else if (type == "shading") {
+        } else if (type == "shading" || type == "Shading") {
             std::string mode;
             iss >> mode;
             if (current_obj != objects_.end()) {
-                if (mode == "Gouraud") {
+                if (mode == "Flat") {
+                    current_obj->material.shading = Material::Shading::Flat;
+                } else if (mode == "Gouraud") {
                     current_obj->material.shading = Material::Shading::Gouraud;
                 } else if (mode == "Phong") {
                     current_obj->material.shading = Material::Shading::Phong;
@@ -404,6 +406,18 @@ void Model::load_scene_txt(std::string filename) {
                     auto prev_shading = current_obj->material.shading;
                     current_obj->material = it->second;
                     current_obj->material.shading = prev_shading;
+                }
+            }
+        } else if (type == "Shading") {
+            if (current_obj != objects_.end()) {
+                std::string mode;
+                iss >> mode;
+                if (mode == "Flat") {
+                    current_obj->material.shading = Material::Shading::Flat;
+                } else if (mode == "Gouraud") {
+                    current_obj->material.shading = Material::Shading::Gouraud;
+                } else if (mode == "Phong") {
+                    current_obj->material.shading = Material::Shading::Phong;
                 }
             }
         } else if (type == "Vertex") {

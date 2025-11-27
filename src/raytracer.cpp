@@ -233,10 +233,12 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
     const std::vector<Face>& all_faces = world_.all_faces();
     const Face& face = all_faces[intersection.triangleIndex];
 
-    if (depth == 0) {
+    {
         glm::vec3 Le = face.material.emission;
         if (glm::length(Le) > 1e-6f) {
-            return ColourHDR(Le.r, Le.g, Le.b) * medium_absorption;
+            ColourHDR out = ColourHDR(Le.r, Le.g, Le.b) * medium_absorption;
+            if (depth > 0) out = clamp_radiance(out, 10.0f);
+            return out;
         }
     }
     const auto& area_lights = world_.area_lights();
@@ -415,9 +417,15 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
     }
     
     if (face.material.metallic > 0.0f) {
-        glm::vec3 reflected_dir = glm::reflect(ray_dir, intersection.normal);
+        glm::vec3 use_normal = (face.material.shading == Material::Shading::Flat)
+            ? face.face_normal
+            : intersection.normal;
+        if (glm::dot(use_normal, -ray_dir) < 0.0f) {
+            use_normal = -use_normal;
+        }
+        glm::vec3 reflected_dir = glm::reflect(ray_dir, use_normal);
         constexpr FloatType epsilon = 0.001f;
-        glm::vec3 offset_origin = intersection.intersectionPoint + intersection.normal * epsilon;
+        glm::vec3 offset_origin = intersection.intersectionPoint + use_normal * epsilon;
         glm::vec3 next_tp = throughput * glm::vec3(hdr_colour.red, hdr_colour.green, hdr_colour.blue);
         FloatType p = std::max(next_tp.x, std::max(next_tp.y, next_tp.z));
         p = std::clamp(p, 0.05f, 1.0f);
@@ -429,7 +437,7 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
             reflected_color.blue * hdr_colour.blue
         );
         {
-            ColourHDR out = direct_lighting * (1.0f - face.material.metallic * 0.8f) + metallic_reflection * face.material.metallic;
+            ColourHDR out = direct_lighting * (1.0f - face.material.metallic) + metallic_reflection * face.material.metallic;
             if (depth > 0) out = clamp_radiance(out, 10.0f);
             return out;
         }
