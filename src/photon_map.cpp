@@ -1,7 +1,7 @@
-#include "photon_map.hpp"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include "photon_map.hpp"
 
 PhotonMap::PhotonMap(const World& world) 
     : world_(world) 
@@ -89,7 +89,7 @@ void PhotonMap::emit_photons_to_object(const Face& target_face, int num_photons)
     
     for (int i = 0; i < num_photons; ++i) {
         // Use Halton sequence for stratified sampling instead of random
-        glm::vec3 direction = sample_cone_halton(i, to_face, cone_angle);
+        glm::vec3 direction = SampleConeHalton(i, to_face, cone_angle);
         trace_single_photon(light_pos, direction, photon_power, 0);
     }
 }
@@ -106,8 +106,8 @@ void PhotonMap::emit_photons_from_area_light(const Face& light_face, const glm::
     
     
     for (int i = 0; i < num_photons; ++i) {
-        FloatType u1 = halton(i, 2);
-        FloatType u2 = halton(i, 3);
+        FloatType u1 = Halton(i, 2);
+        FloatType u2 = Halton(i, 3);
         FloatType su = std::sqrt(u1);
         FloatType b0 = 1.0f - su;
         FloatType b1 = su * (1.0f - u2);
@@ -117,7 +117,7 @@ void PhotonMap::emit_photons_from_area_light(const Face& light_face, const glm::
         glm::vec3 to_center = glm::normalize(target_center - origin);
         FloatType dist = glm::length(target_center - origin);
         FloatType cone_angle = std::atan(target_radius / std::max<FloatType>(dist, 1e-4f)) * 1.5f;
-        glm::vec3 direction = sample_cone_halton(i, to_center, cone_angle);
+        glm::vec3 direction = SampleConeHalton(i, to_center, cone_angle);
         trace_single_photon(origin, direction, photon_power, 0);
     }
 }

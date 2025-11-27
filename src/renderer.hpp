@@ -1,27 +1,27 @@
 #pragma once
-#include "world.hpp"
-#include "raytracer.hpp"
-#include "rasterizer.hpp"
 #include <memory>
 #include <vector>
 #include <barrier>
 #include <atomic>
 #include <thread>
 #include <stop_token>
+#include "world.hpp"
+#include "raytracer.hpp"
+#include "rasterizer.hpp"
 
 // Forward declaration
 class Window;
 
 class Renderer {
 public:
-    enum Mode {
-        Wireframe,
-        Rasterized,
-        Raytraced,
-        DepthOfField,
+    enum class Mode {
+        WIREFRAME,
+        RASTERIZED,
+        RAYTRACED,
+        DEPTH_OF_FIELD,
     };
     
-    Mode mode_ = Rasterized;
+    Mode mode_ = Mode::RASTERIZED;
     FloatType gamma_ = 2.2f;
     bool soft_shadows_enabled_ = false;
     bool caustics_enabled_ = false;  // Photon mapping for caustics
@@ -47,7 +47,7 @@ private:
     double aspect_ratio_ = 1.0;
     
     // Multi-threading support
-    static constexpr int tile_height = 16;
+    static constexpr int TileHeight = 16;
     std::barrier<> frame_barrier_;
     std::vector<std::jthread> workers_;
     std::atomic<int> tile_counter_ = 0;
@@ -61,7 +61,7 @@ public:
     ~Renderer();
     
     void render() noexcept;
-    void ResetAccumulation() noexcept;
+    void reset_accumulation() noexcept;
     
 private:
     void clear() noexcept;
@@ -77,8 +77,8 @@ private:
     void process_rows(int y0, int y1) noexcept;
     
     // Tonemapping and gamma correction
-    static Colour tonemap_and_gamma_correct(const ColourHDR& hdr, FloatType gamma) noexcept;
-    static FloatType aces_tone_mapping(FloatType hdr_value) noexcept;
+    static Colour TonemapAndGammaCorrect(const ColourHDR& hdr, FloatType gamma) noexcept;
+    static FloatType AcesToneMapping(FloatType hdr_value) noexcept;
     
     // Coordinate axis visualization
     void draw_coordinate_axes() noexcept;

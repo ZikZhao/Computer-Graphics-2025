@@ -1,9 +1,9 @@
 #pragma once
-#include "world.hpp"
-#include "shader.hpp"
-#include "photon_map.hpp"
 #include <memory>
 #include <vector>
+#include "shader.hpp"
+#include "photon_map.hpp"
+#include "world.hpp"
 
 class RayTracer {
 public:
@@ -59,9 +59,9 @@ public:
     bool is_photon_map_ready() const noexcept { return photon_map_ && photon_map_->is_ready(); }
     
     // Debug: visualize only caustics (temporary for verification)
-    static bool debug_visualize_caustics_only;
-    static uint32_t pcg_hash(uint32_t v) noexcept;
-    static FloatType rand_float(uint32_t& seed) noexcept;
+    static bool DebugVisualizeCausticsOnly;
+    static uint32_t PcgHash(uint32_t v) noexcept;
+    static FloatType RandFloat(uint32_t& seed) noexcept;
     
 private:
     // Ray tracing core (no longer contains material logic)
@@ -78,18 +78,18 @@ private:
                                    FloatType light_radius, int num_samples, int start_index) const noexcept;
     
     // Lighting calculations
-    static FloatType compute_lambertian_lighting(const glm::vec3& normal, const glm::vec3& to_light, 
-                                                  FloatType distance, FloatType intensity) noexcept;
-    static FloatType compute_specular_lighting(const glm::vec3& normal, const glm::vec3& to_light, 
-                                                const glm::vec3& to_camera, FloatType distance, 
-                                                FloatType intensity, FloatType shininess) noexcept;
+    static FloatType ComputeLambertianLighting(const glm::vec3& normal, const glm::vec3& to_light, 
+                                               FloatType distance, FloatType intensity) noexcept;
+    static FloatType ComputeSpecularLighting(const glm::vec3& normal, const glm::vec3& to_light, 
+                                             const glm::vec3& to_camera, FloatType distance, 
+                                             FloatType intensity, FloatType shininess) noexcept;
     
     // BVH construction and traversal
-    static std::pair<std::vector<int>, std::vector<BVHNode>> build_bvh(const std::vector<Face>& faces) noexcept;
-    static bool intersect_aabb(const glm::vec3& ro, const glm::vec3& rd, const AABB& box, FloatType tmax) noexcept;
+    static std::pair<std::vector<int>, std::vector<BVHNode>> BuildBVH(const std::vector<Face>& faces) noexcept;
+    static bool IntersectAABB(const glm::vec3& ro, const glm::vec3& rd, const AABB& box, FloatType tmax) noexcept;
     
     // Sampling utilities
-    static glm::vec3 sample_sphere_halton(int index, FloatType radius, const glm::vec3& center) noexcept;
-    static FloatType halton(int index, int base) noexcept;
-    static ColourHDR clamp_radiance(const ColourHDR& c, FloatType max_luma) noexcept;
+    static glm::vec3 SampleSphereHalton(int index, FloatType radius, const glm::vec3& center) noexcept;
+    static FloatType Halton(int index, int base) noexcept;
+    static ColourHDR ClampRadiance(const ColourHDR& c, FloatType max_luma) noexcept;
 };

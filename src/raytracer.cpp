@@ -1,16 +1,16 @@
-#include "raytracer.hpp"
-#include "photon_map.hpp"
 #include <numeric>
 #include <algorithm>
 #include <functional>
 #include <limits>
 #include <numbers>
 #include <iostream>
+#include "photon_map.hpp"
+#include "raytracer.hpp"
 
 // DEBUG: Set to true to only show caustics (black background)
-bool RayTracer::debug_visualize_caustics_only = false;
+bool RayTracer::DebugVisualizeCausticsOnly = false;
 
-ColourHDR RayTracer::clamp_radiance(const ColourHDR& c, FloatType max_component) noexcept {
+ColourHDR RayTracer::ClampRadiance(const ColourHDR& c, FloatType max_component) noexcept {
     FloatType r = std::min(c.red, max_component);
     FloatType g = std::min(c.green, max_component);
     FloatType b = std::min(c.blue, max_component);
@@ -22,7 +22,7 @@ RayTracer::RayTracer(const World& world)
       bvh_tri_indices_([]() { return std::vector<int>(); }()),
       bvh_nodes_([]() { return std::vector<BVHNode>(); }()) {
     // Build BVH once
-    auto [indices, nodes] = build_bvh(world.all_faces());
+    auto [indices, nodes] = BuildBVH(world.all_faces());
     const_cast<std::vector<int>&>(bvh_tri_indices_) = std::move(indices);
     const_cast<std::vector<BVHNode>&>(bvh_nodes_) = std::move(nodes);
     
@@ -38,9 +38,9 @@ RayTracer::RayTracer(const World& world)
 }
 
 ColourHDR RayTracer::render_pixel(const Camera& cam, int x, int y, int width, int height,
-                                  bool soft_shadows, FloatType light_intensity, bool use_caustics, int sample_index, uint32_t initial_seed) const noexcept {
-    FloatType jitter_x = rand_float(initial_seed) - 0.5f;
-    FloatType jitter_y = rand_float(initial_seed) - 0.5f;
+                                 bool soft_shadows, FloatType light_intensity, bool use_caustics, int sample_index, uint32_t initial_seed) const noexcept {
+    FloatType jitter_x = RandFloat(initial_seed) - 0.5f;
+    FloatType jitter_y = RandFloat(initial_seed) - 0.5f;
     FloatType u = (static_cast<FloatType>(x) + 0.5f + jitter_x) / static_cast<FloatType>(width);
     FloatType v = (static_cast<FloatType>(y) + 0.5f + jitter_y) / static_cast<FloatType>(height);
     auto [ray_origin, ray_dir] = cam.generate_ray_uv(u, v, width, height, static_cast<double>(width) / height);
@@ -48,7 +48,7 @@ ColourHDR RayTracer::render_pixel(const Camera& cam, int x, int y, int width, in
 }
 
 // Helper for DOF lens sampling
-static glm::vec2 sample_disk_concentric(FloatType u1, FloatType u2) noexcept {
+static glm::vec2 SampleDiskConcentric(FloatType u1, FloatType u2) noexcept {
     FloatType a = 2.0f * u1 - 1.0f;
     FloatType b = 2.0f * u2 - 1.0f;
     
@@ -76,13 +76,13 @@ ColourHDR RayTracer::render_pixel_dof(const Camera& cam, int x, int y, int width
     
     for (int sample = 0; sample < samples; ++sample) {
         uint32_t lens_seed = static_cast<uint32_t>((y * width + x) + sample * 747796405u) | 1u;
-        FloatType u1 = rand_float(lens_seed);
-        FloatType u2 = rand_float(lens_seed);
-        glm::vec2 lens_sample = sample_disk_concentric(u1, u2) * aperture_size;
+        FloatType u1 = RandFloat(lens_seed);
+        FloatType u2 = RandFloat(lens_seed);
+        glm::vec2 lens_sample = SampleDiskConcentric(u1, u2) * aperture_size;
         
         uint32_t jitter_seed = static_cast<uint32_t>((y * width + x) + sample * 1597334677u) | 1u;
-        FloatType u0 = (static_cast<FloatType>(x) + rand_float(jitter_seed)) / static_cast<FloatType>(width);
-        FloatType v0 = (static_cast<FloatType>(y) + rand_float(jitter_seed)) / static_cast<FloatType>(height);
+        FloatType u0 = (static_cast<FloatType>(x) + RandFloat(jitter_seed)) / static_cast<FloatType>(width);
+        FloatType v0 = (static_cast<FloatType>(y) + RandFloat(jitter_seed)) / static_cast<FloatType>(height);
         auto [center_origin, center_dir] = cam.generate_ray_uv(u0, v0, width, height, aspect_ratio);
         glm::vec3 focal_point = center_origin + center_dir * focal_distance;
         
@@ -118,7 +118,7 @@ HitRecord RayTracer::hit(const glm::vec3& ro, const glm::vec3& rd) const noexcep
         int ni = stack.back();
         stack.pop_back();
         const BVHNode& n = bvh_nodes_[ni];
-        if (!intersect_aabb(ro, rd, n.box, closest.distanceFromCamera)) continue;
+        if (!IntersectAABB(ro, rd, n.box, closest.distanceFromCamera)) continue;
         
         if (n.count == 0) {
             stack.push_back(n.left);
@@ -206,7 +206,7 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
     
     if (intersection.triangleIndex == static_cast<std::size_t>(-1)) {
         // DEBUG MODE: return black for background
-        if (debug_visualize_caustics_only) {
+        if (DebugVisualizeCausticsOnly) {
             return ColourHDR(0.0f, 0.0f, 0.0f);
         }
         
@@ -218,7 +218,7 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
         }
         {
             ColourHDR out = env_color * medium_absorption;
-            if (depth > 0) out = clamp_radiance(out, 10.0f);
+            if (depth > 0) out = ClampRadiance(out, 10.0f);
             return out;
         }
     }
@@ -230,7 +230,7 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
         glm::vec3 Le = face.material.emission;
         if (glm::length(Le) > 1e-6f) {
             ColourHDR out = ColourHDR(Le.r, Le.g, Le.b) * medium_absorption;
-            if (depth > 0) out = clamp_radiance(out, 10.0f);
+            if (depth > 0) out = ClampRadiance(out, 10.0f);
             return out;
         }
     }
@@ -266,7 +266,7 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
             glm::vec3 next_tp = throughput;
             ColourHDR reflected = trace_ray(offset_origin, reflected_dir, depth + 1, medium, soft_shadows, light_intensity, use_caustics, sample_index, next_tp, rng);
             ColourHDR out = reflected * medium_absorption;
-            if (depth > 0) out = clamp_radiance(out, 10.0f);
+            if (depth > 0) out = ClampRadiance(out, 10.0f);
             return out;
         }
         
@@ -316,7 +316,7 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
         
         {
             ColourHDR out = result_color * medium_absorption;
-            if (depth > 0) out = clamp_radiance(out, 10.0f);
+            if (depth > 0) out = ClampRadiance(out, 10.0f);
             return out;
         }
     }
@@ -332,7 +332,7 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
     }
     
     ColourHDR hdr_colour = ColourHDR(intersection.color.r, intersection.color.g, intersection.color.b);
-    FloatType ambient = debug_visualize_caustics_only ? 0.0f : 0.025f;
+    FloatType ambient = DebugVisualizeCausticsOnly ? 0.0f : 0.025f;
     FloatType lambertian = 0.0f;
     FloatType specular = 0.0f;
     ColourHDR diffuse_component(0.0f, 0.0f, 0.0f);
@@ -340,8 +340,8 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
     
     FloatType w = 1.0f - intersection.u - intersection.v;
     if (!backface_view_gate) {
-        if (!debug_visualize_caustics_only) {
-            glm::vec3 n_shade = (face.material.shading == Material::Shading::Flat)
+        if (!DebugVisualizeCausticsOnly) {
+            glm::vec3 n_shade = (face.material.shading == Material::Shading::FLAT)
                 ? face.face_normal
                 : glm::normalize(w * face.vertex_normals[0] + intersection.u * face.vertex_normals[1] + intersection.v * face.vertex_normals[2]);
             lambertian = 0.0f;
@@ -353,8 +353,8 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
                     glm::vec3 e1 = lf->vertices[2] - lf->vertices[0];
                     FloatType area = 0.5f * glm::length(glm::cross(e0, e1));
                     if (area < 1e-6f) continue;
-                    FloatType u1 = rand_float(rng);
-                    FloatType u2 = rand_float(rng);
+                    FloatType u1 = RandFloat(rng);
+                    FloatType u2 = RandFloat(rng);
                     FloatType su = std::sqrt(u1);
                     FloatType b0 = 1.0f - su;
                     FloatType b1 = su * (1.0f - u2);
@@ -387,12 +387,12 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
                 const glm::vec3& light_pos = world_.light_position();
                 glm::vec3 to_light_hit = light_pos - intersection.intersectionPoint;
                 FloatType dist_light_hit = glm::length(to_light_hit);
-                glm::vec3 n_shade = (face.material.shading == Material::Shading::Flat)
+                glm::vec3 n_shade = (face.material.shading == Material::Shading::FLAT)
                     ? face.face_normal
                     : glm::normalize(w * face.vertex_normals[0] + intersection.u * face.vertex_normals[1] + intersection.v * face.vertex_normals[2]);
-                lambertian = compute_lambertian_lighting(n_shade, to_light_hit, dist_light_hit, light_intensity);
+                lambertian = ComputeLambertianLighting(n_shade, to_light_hit, dist_light_hit, light_intensity);
                 if (lambertian > 0.0f) {
-                    specular = compute_specular_lighting(n_shade, to_light_hit, to_camera_hit, dist_light_hit, light_intensity, face.material.shininess);
+                    specular = ComputeSpecularLighting(n_shade, to_light_hit, to_camera_hit, dist_light_hit, light_intensity, face.material.shininess);
                 }
                 diffuse_component = hdr_colour * lambertian;
             }
@@ -407,7 +407,7 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
     specular_component = ColourHDR(specular, specular, specular);
     
     ColourHDR direct_lighting;
-    if (debug_visualize_caustics_only) {
+    if (DebugVisualizeCausticsOnly) {
         direct_lighting = ColourHDR(0.0f, 0.0f, 0.0f);
     } else {
         if (face.material.metallic > 0.0f) {
@@ -418,7 +418,7 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
     }
     
     if (face.material.metallic > 0.0f) {
-        glm::vec3 use_normal = (face.material.shading == Material::Shading::Flat)
+        glm::vec3 use_normal = (face.material.shading == Material::Shading::FLAT)
             ? face.face_normal
             : intersection.normal;
         if (glm::dot(use_normal, -ray_dir) < 0.0f) {
@@ -439,7 +439,7 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
         );
         {
             ColourHDR out = direct_lighting * (1.0f - face.material.metallic) + metallic_reflection * face.material.metallic;
-            if (depth > 0) out = clamp_radiance(out, 10.0f);
+            if (depth > 0) out = ClampRadiance(out, 10.0f);
             return out;
         }
     }
@@ -463,7 +463,7 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
     
     {
         ColourHDR out = (direct_lighting + caustics_contribution) * medium_absorption;
-        if (depth > 0) out = clamp_radiance(out, 10.0f);
+        if (depth > 0) out = ClampRadiance(out, 10.0f);
         return out;
     }
 }
@@ -494,7 +494,7 @@ glm::vec3 RayTracer::compute_transmittance_bvh(const glm::vec3& point, const glm
         int ni = stack.back();
         stack.pop_back();
         const BVHNode& n = bvh_nodes_[ni];
-        if (!intersect_aabb(point, light_dir, n.box, light_distance)) continue;
+        if (!IntersectAABB(point, light_dir, n.box, light_distance)) continue;
         if (n.count == 0) {
             stack.push_back(n.left);
             stack.push_back(n.right);
@@ -569,8 +569,8 @@ FloatType RayTracer::compute_soft_shadow(const glm::vec3& point, const glm::vec3
     FloatType early_visible = 0.0f;
     if (num_samples <= 1) {
         uint32_t seed = static_cast<uint32_t>(start_index * 1973 + 9277) | 1u;
-        FloatType u = rand_float(seed);
-        FloatType v = rand_float(seed);
+        FloatType u = RandFloat(seed);
+        FloatType v = RandFloat(seed);
         FloatType theta = 2.0f * std::numbers::pi * u;
         FloatType phi = std::acos(2.0f * v - 1.0f);
         FloatType sin_phi = std::sin(phi);
@@ -583,8 +583,8 @@ FloatType RayTracer::compute_soft_shadow(const glm::vec3& point, const glm::vec3
     
     for (int i = 0; i < early_test_samples; ++i) {
         uint32_t seed = static_cast<uint32_t>((start_index + i) * 1973 + 9277) | 1u;
-        FloatType u = rand_float(seed);
-        FloatType v = rand_float(seed);
+        FloatType u = RandFloat(seed);
+        FloatType v = RandFloat(seed);
         FloatType theta = 2.0f * std::numbers::pi * u;
         FloatType phi = std::acos(2.0f * v - 1.0f);
         FloatType sin_phi = std::sin(phi);
@@ -601,8 +601,8 @@ FloatType RayTracer::compute_soft_shadow(const glm::vec3& point, const glm::vec3
     visible_light = early_visible;
     for (int i = early_test_samples; i < num_samples; ++i) {
         uint32_t seed = static_cast<uint32_t>((start_index + i) * 1973 + 9277) | 1u;
-        FloatType u = rand_float(seed);
-        FloatType v = rand_float(seed);
+        FloatType u = RandFloat(seed);
+        FloatType v = RandFloat(seed);
         FloatType theta = 2.0f * std::numbers::pi * u;
         FloatType phi = std::acos(2.0f * v - 1.0f);
         FloatType sin_phi = std::sin(phi);
@@ -616,8 +616,8 @@ FloatType RayTracer::compute_soft_shadow(const glm::vec3& point, const glm::vec3
     return visible_light / static_cast<FloatType>(num_samples);
 }
 
-FloatType RayTracer::compute_lambertian_lighting(const glm::vec3& normal, const glm::vec3& to_light, 
-                                                  FloatType distance, FloatType intensity) noexcept {
+FloatType RayTracer::ComputeLambertianLighting(const glm::vec3& normal, const glm::vec3& to_light, 
+                                               FloatType distance, FloatType intensity) noexcept {
     glm::vec3 light_dir = glm::normalize(to_light);
     FloatType cos_theta = glm::dot(normal, light_dir);
     
@@ -629,9 +629,9 @@ FloatType RayTracer::compute_lambertian_lighting(const glm::vec3& normal, const 
     return std::clamp(attenuation, 0.0f, 1.0f);
 }
 
-FloatType RayTracer::compute_specular_lighting(const glm::vec3& normal, const glm::vec3& to_light, 
-                                                const glm::vec3& to_camera, FloatType distance, 
-                                                FloatType intensity, FloatType shininess) noexcept {
+FloatType RayTracer::ComputeSpecularLighting(const glm::vec3& normal, const glm::vec3& to_light, 
+                                             const glm::vec3& to_camera, FloatType distance, 
+                                             FloatType intensity, FloatType shininess) noexcept {
     glm::vec3 light_dir = glm::normalize(to_light);
     glm::vec3 view_dir = glm::normalize(to_camera);
     
@@ -653,7 +653,7 @@ FloatType RayTracer::compute_specular_lighting(const glm::vec3& normal, const gl
     return std::clamp(attenuation, 0.0f, 1.0f);
 }
 
-FloatType RayTracer::halton(int index, int base) noexcept {
+FloatType RayTracer::Halton(int index, int base) noexcept {
     FloatType result = 0.0f;
     FloatType f = 1.0f / base;
     int i = index;
@@ -665,9 +665,9 @@ FloatType RayTracer::halton(int index, int base) noexcept {
     return result;
 }
 
-glm::vec3 RayTracer::sample_sphere_halton(int index, FloatType radius, const glm::vec3& center) noexcept {
-    FloatType u = halton(index, 2);
-    FloatType v = halton(index, 3);
+glm::vec3 RayTracer::SampleSphereHalton(int index, FloatType radius, const glm::vec3& center) noexcept {
+    FloatType u = Halton(index, 2);
+    FloatType v = Halton(index, 3);
     
     FloatType theta = 2.0f * std::numbers::pi * u;
     FloatType phi = std::acos(2.0f * v - 1.0f);
@@ -680,26 +680,26 @@ glm::vec3 RayTracer::sample_sphere_halton(int index, FloatType radius, const glm
     return center + glm::vec3(x, y, z);
 }
 
-uint32_t RayTracer::pcg_hash(uint32_t v) noexcept {
+uint32_t RayTracer::PcgHash(uint32_t v) noexcept {
     uint32_t state = v * 747796405u + 2891336453u;
     uint32_t word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
     return word ^ (word >> 22u);
 }
 
-FloatType RayTracer::rand_float(uint32_t& seed) noexcept {
-    seed = pcg_hash(seed);
+FloatType RayTracer::RandFloat(uint32_t& seed) noexcept {
+    seed = PcgHash(seed);
     return static_cast<FloatType>((seed >> 8) & 0x00FFFFFFu) / 16777216.0f;
 }
 
 
 // BVH construction (moved from Renderer)
-static inline RayTracer::AABB tri_aabb(const Face& f) noexcept {
+static inline RayTracer::AABB TriAABB(const Face& f) noexcept {
     glm::vec3 mn = glm::min(glm::min(f.vertices[0], f.vertices[1]), f.vertices[2]);
     glm::vec3 mx = glm::max(glm::max(f.vertices[0], f.vertices[1]), f.vertices[2]);
     return RayTracer::AABB{mn, mx};
 }
 
-bool RayTracer::intersect_aabb(const glm::vec3& ro, const glm::vec3& rd, const AABB& box, FloatType tmax) noexcept {
+bool RayTracer::IntersectAABB(const glm::vec3& ro, const glm::vec3& rd, const AABB& box, FloatType tmax) noexcept {
     glm::vec3 inv = glm::vec3(1.0f) / rd;
     glm::vec3 t0 = (box.min - ro) * inv;
     glm::vec3 t1 = (box.max - ro) * inv;
@@ -710,14 +710,14 @@ bool RayTracer::intersect_aabb(const glm::vec3& ro, const glm::vec3& rd, const A
     return t_enter <= t_exit && t_exit >= 0.0f && t_enter <= tmax;
 }
 
-std::pair<std::vector<int>, std::vector<RayTracer::BVHNode>> RayTracer::build_bvh(const std::vector<Face>& faces) noexcept {
+std::pair<std::vector<int>, std::vector<RayTracer::BVHNode>> RayTracer::BuildBVH(const std::vector<Face>& faces) noexcept {
     std::vector<int> tri_indices(faces.size());
     std::iota(tri_indices.begin(), tri_indices.end(), 0);
     
     struct Cent { glm::vec3 c; RayTracer::AABB b; };
     std::vector<Cent> data(faces.size());
     for (std::size_t i = 0; i < faces.size(); ++i) {
-        auto b = tri_aabb(faces[i]);
+        auto b = TriAABB(faces[i]);
         glm::vec3 c = (faces[i].vertices[0] + faces[i].vertices[1] + faces[i].vertices[2]) / 3.0f;
         data[i] = Cent{c, b};
     }

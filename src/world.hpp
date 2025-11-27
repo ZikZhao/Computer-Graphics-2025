@@ -145,7 +145,7 @@ struct Material {
     glm::vec3 base_color = glm::vec3(1.0f, 1.0f, 1.0f);  // Color multiplier for texture (or base color if no texture)
     FloatType shininess = 64.0f;
     FloatType metallic = 0.0f;
-    enum class Shading { Flat, Gouraud, Phong } shading = Shading::Flat;
+    enum class Shading { FLAT, GOURAUD, PHONG } shading = Shading::FLAT;
     FloatType ior = 1.0f;           // Index of refraction (1.0 = no refraction, 1.5 = glass)
     FloatType td = 1.0f;            // Transmission Depth: The distance at which the base_color is reached
     FloatType tw = 0.0f;            // Transparency weight (0 = opaque, 1 = fully transparent)

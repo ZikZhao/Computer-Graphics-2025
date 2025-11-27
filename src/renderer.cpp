@@ -1,7 +1,7 @@
-#include "renderer.hpp"
-#include "window.hpp"
 #include <algorithm>
 #include <iostream>
+#include "window.hpp"
+#include "renderer.hpp"
 
 Renderer::Renderer(Window& window, const World& world)
     : window_(window),
@@ -36,18 +36,18 @@ void Renderer::render() noexcept {
     aspect_ratio_ = static_cast<double>(window_.get_width()) / window_.get_height();
     
     switch (mode_) {
-    case Wireframe:
+    case Mode::WIREFRAME:
         clear();
         wireframe_render();
         break;
-    case Rasterized:
+    case Mode::RASTERIZED:
         clear();
         rasterized_render();
         break;
-    case Raytraced:
+    case Mode::RAYTRACED:
         raytraced_render();
         break;
-    case DepthOfField:
+    case Mode::DEPTH_OF_FIELD:
         depth_of_field_render();
         break;
     }
@@ -74,7 +74,7 @@ void Renderer::raytraced_render() noexcept {
                        (std::abs(cur_yaw - last_cam_yaw_) > 1e-6f) ||
                        (std::abs(cur_pitch - last_cam_pitch_) > 1e-6f);
     if (cam_changed) {
-        ResetAccumulation();
+        reset_accumulation();
     }
     rendering_frame_count_ = frame_count_ + 1;
     
@@ -100,7 +100,7 @@ void Renderer::depth_of_field_render() noexcept {
 
 void Renderer::process_rows(int y0, int y1) noexcept {
     const Camera& camera = *current_camera_;
-    const bool is_dof = (mode_ == DepthOfField);
+    const bool is_dof = (mode_ == Mode::DEPTH_OF_FIELD);
     
     for (int y = y0; y < y1; ++y) {
         for (int x = 0; x < static_cast<int>(window_.get_width()); x++) {
@@ -135,7 +135,7 @@ void Renderer::process_rows(int y0, int y1) noexcept {
                 accumulation_buffer_[idx].green / static_cast<FloatType>(rendering_frame_count_),
                 accumulation_buffer_[idx].blue / static_cast<FloatType>(rendering_frame_count_)
             );
-            Colour final_colour = tonemap_and_gamma_correct(avg_hdr, gamma_);
+            Colour final_colour = TonemapAndGammaCorrect(avg_hdr, gamma_);
             window_[{x, y}] = final_colour;
         }
     }
@@ -148,13 +148,13 @@ void Renderer::worker_thread(std::stop_token st) noexcept {
         if (st.stop_requested()) break;
         
         // Process tiles until all are done
-        const int num_tiles = (window_.get_height() + tile_height - 1) / tile_height;
+        const int num_tiles = (window_.get_height() + TileHeight - 1) / TileHeight;
         while (true) {
             int tile_idx = tile_counter_.fetch_add(1, std::memory_order_relaxed);
             if (tile_idx >= num_tiles) break;
             
-            int y0 = tile_idx * tile_height;
-            int y1 = std::min(y0 + tile_height, static_cast<int>(window_.get_height()));
+            int y0 = tile_idx * TileHeight;
+            int y1 = std::min(y0 + TileHeight, static_cast<int>(window_.get_height()));
             process_rows(y0, y1);
             if (st.stop_requested()) break;
         }
@@ -166,7 +166,7 @@ void Renderer::worker_thread(std::stop_token st) noexcept {
 }
 
 
-FloatType Renderer::aces_tone_mapping(FloatType hdr_value) noexcept {
+FloatType Renderer::AcesToneMapping(FloatType hdr_value) noexcept {
     const FloatType a = 2.51f;
     const FloatType b = 0.03f;
     const FloatType c = 2.43f;
@@ -179,10 +179,10 @@ FloatType Renderer::aces_tone_mapping(FloatType hdr_value) noexcept {
     return std::clamp(numerator / denominator, 0.0f, 1.0f);
 }
 
-Colour Renderer::tonemap_and_gamma_correct(const ColourHDR& hdr, FloatType gamma) noexcept {
-    FloatType r_ldr = aces_tone_mapping(hdr.red * 0.6f);
-    FloatType g_ldr = aces_tone_mapping(hdr.green * 0.6f);
-    FloatType b_ldr = aces_tone_mapping(hdr.blue * 0.6f);
+Colour Renderer::TonemapAndGammaCorrect(const ColourHDR& hdr, FloatType gamma) noexcept {
+    FloatType r_ldr = AcesToneMapping(hdr.red * 0.6f);
+    FloatType g_ldr = AcesToneMapping(hdr.green * 0.6f);
+    FloatType b_ldr = AcesToneMapping(hdr.blue * 0.6f);
     
     FloatType r_out, g_out, b_out;
     if (gamma == 1.0f) {
@@ -327,7 +327,7 @@ void Renderer::draw_coordinate_axes() noexcept {
     }
 }
 
-void Renderer::ResetAccumulation() noexcept {
+void Renderer::reset_accumulation() noexcept {
     std::fill(accumulation_buffer_.begin(), accumulation_buffer_.end(), ColourHDR());
     frame_count_ = 0;
 }

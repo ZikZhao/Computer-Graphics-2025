@@ -135,7 +135,7 @@ inline glm::vec3 CalculateBarycentric(glm::vec2 v0, glm::vec2 v1, glm::vec2 v2, 
 // Low-Discrepancy Sampling (Halton Sequence)
 // ============================================================================
 
-inline FloatType halton(int index, int base) noexcept {
+inline FloatType Halton(int index, int base) noexcept {
     FloatType result = 0.0f;
     FloatType f = 1.0f / base;
     int i = index;
@@ -147,9 +147,9 @@ inline FloatType halton(int index, int base) noexcept {
     return result;
 }
 
-inline glm::vec3 sample_sphere_halton(int index, FloatType radius, const glm::vec3& center) noexcept {
-    FloatType u = halton(index, 2);
-    FloatType v = halton(index, 3);
+inline glm::vec3 SampleSphereHalton(int index, FloatType radius, const glm::vec3& center) noexcept {
+    FloatType u = Halton(index, 2);
+    FloatType v = Halton(index, 3);
     
     FloatType theta = 2.0f * std::numbers::pi * u;
     FloatType phi = std::acos(2.0f * v - 1.0f);
@@ -162,13 +162,13 @@ inline glm::vec3 sample_sphere_halton(int index, FloatType radius, const glm::ve
     return center + glm::vec3(x, y, z);
 }
 
-inline glm::vec3 sample_unit_vector_halton(int index) noexcept {
-    return sample_sphere_halton(index, 1.0f, glm::vec3(0.0f));
+inline glm::vec3 SampleUnitVectorHalton(int index) noexcept {
+    return SampleSphereHalton(index, 1.0f, glm::vec3(0.0f));
 }
 
-inline glm::vec3 sample_cone_halton(int index, const glm::vec3& direction, FloatType cone_angle) noexcept {
-    FloatType u1 = halton(index, 2);
-    FloatType u2 = halton(index, 3);
+inline glm::vec3 SampleConeHalton(int index, const glm::vec3& direction, FloatType cone_angle) noexcept {
+    FloatType u1 = Halton(index, 2);
+    FloatType u2 = Halton(index, 3);
     
     FloatType cos_angle = std::cos(cone_angle);
     FloatType z = cos_angle + (1.0f - cos_angle) * u1;

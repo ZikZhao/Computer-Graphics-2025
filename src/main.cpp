@@ -37,7 +37,7 @@ int main(int argc, char *argv[]) {
             FloatType up = (ks[SDL_SCANCODE_SPACE] ? 1.0f : 0.0f) - (ks[SDL_SCANCODE_C] ? 1.0f : 0.0f);
             if (fwd != 0.0f || right != 0.0f || up != 0.0f) {
                 world.camera_.move(fwd * move_step, right * move_step, up * move_step, dt);
-                renderer.ResetAccumulation();
+                renderer.reset_accumulation();
             }
         });
 
@@ -48,17 +48,17 @@ int main(int argc, char *argv[]) {
             } else {
                 world.camera_.stop_orbiting();
             }
-            renderer.ResetAccumulation();
+            renderer.reset_accumulation();
         });
 
     window.register_key(
         {SDL_SCANCODE_1, SDL_SCANCODE_2, SDL_SCANCODE_3, SDL_SCANCODE_4},
         Window::Trigger::ANY_JUST_PRESSED,
         [&](const Window::KeyState& ks, float) {
-            if (ks[SDL_SCANCODE_1]) renderer.mode_ = Renderer::Wireframe;
-            else if (ks[SDL_SCANCODE_2]) renderer.mode_ = Renderer::Rasterized;
-            else if (ks[SDL_SCANCODE_3]) renderer.mode_ = Renderer::Raytraced;
-            else if (ks[SDL_SCANCODE_4]) renderer.mode_ = Renderer::DepthOfField;
+            if (ks[SDL_SCANCODE_1]) renderer.mode_ = Renderer::Mode::WIREFRAME;
+            else if (ks[SDL_SCANCODE_2]) renderer.mode_ = Renderer::Mode::RASTERIZED;
+            else if (ks[SDL_SCANCODE_3]) renderer.mode_ = Renderer::Mode::RAYTRACED;
+            else if (ks[SDL_SCANCODE_4]) renderer.mode_ = Renderer::Mode::DEPTH_OF_FIELD;
         });
 
     window.register_key({SDL_SCANCODE_G}, Window::Trigger::ANY_JUST_PRESSED,
@@ -71,7 +71,7 @@ int main(int argc, char *argv[]) {
                 renderer.caustics_enabled_ = !renderer.caustics_enabled_;
                 std::cout << "Caustics (photon mapping): "
                           << (renderer.caustics_enabled_ ? "ENABLED" : "DISABLED") << std::endl;
-                renderer.ResetAccumulation();
+                renderer.reset_accumulation();
             } else {
                 std::cout << "Photon map not ready yet, please wait..." << std::endl;
             }
@@ -79,8 +79,8 @@ int main(int argc, char *argv[]) {
     window.register_key({SDL_SCANCODE_V}, Window::Trigger::ANY_JUST_PRESSED,
         [&](const Window::KeyState&, float) {
             static FloatType prev_intensity = world.light_intensity();
-            RayTracer::debug_visualize_caustics_only = !RayTracer::debug_visualize_caustics_only;
-            if (RayTracer::debug_visualize_caustics_only) {
+            RayTracer::DebugVisualizeCausticsOnly = !RayTracer::DebugVisualizeCausticsOnly;
+            if (RayTracer::DebugVisualizeCausticsOnly) {
                 prev_intensity = world.light_intensity();
                 world.set_light_intensity(0.0f);
                 std::cout << "DEBUG Caustics-only mode: ON (direct light intensity set to 0)" << std::endl;
@@ -88,7 +88,7 @@ int main(int argc, char *argv[]) {
                 world.set_light_intensity(prev_intensity);
                 std::cout << "DEBUG Caustics-only mode: OFF (direct light intensity restored)" << std::endl;
             }
-            renderer.ResetAccumulation();
+            renderer.reset_accumulation();
         });
     
     // Screenshot Save (Ctrl+S)
@@ -119,7 +119,7 @@ int main(int argc, char *argv[]) {
             FloatType dx = -static_cast<FloatType>(xrel) * world.camera_.mouse_sensitivity_;
             FloatType dy = static_cast<FloatType>(yrel) * world.camera_.mouse_sensitivity_;
             world.camera_.rotate(dx, dy);
-            renderer.ResetAccumulation();
+            renderer.reset_accumulation();
         });
 
     auto last_print = std::chrono::steady_clock::now();

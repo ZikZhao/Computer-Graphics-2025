@@ -32,25 +32,25 @@ public:
 
 private:
     // SDL components
-    SDL_Window* window;
-    SDL_Renderer* renderer;
-    SDL_Texture* texture;
+    SDL_Window* window_;
+    SDL_Renderer* renderer_;
+    SDL_Texture* texture_;
     
     // Window properties
-    size_t width;
-    size_t height;
-    std::vector<uint32_t> pixel_buffer;
+    size_t width_;
+    size_t height_;
+    std::vector<uint32_t> pixel_buffer_;
     
     // Input management
-    KeyState keys_this_frame{};
-    KeyState keys_last_frame{};
-    std::unordered_set<SDL_Scancode> keys_updated_this_frame;
-    std::unordered_set<Uint8> mouse_buttons_this_frame;
-    std::unordered_set<Uint8> mouse_buttons_last_frame;
-    std::unordered_set<Uint8> mouse_buttons_updated_this_frame;
-    int mouse_xrel = 0;
-    int mouse_yrel = 0;
-    bool mouse_motion_this_frame = false;
+    KeyState keys_this_frame_{};
+    KeyState keys_last_frame_{};
+    std::unordered_set<SDL_Scancode> keys_updated_this_frame_;
+    std::unordered_set<Uint8> mouse_buttons_this_frame_;
+    std::unordered_set<Uint8> mouse_buttons_last_frame_;
+    std::unordered_set<Uint8> mouse_buttons_updated_this_frame_;
+    int mouse_xrel_ = 0;
+    int mouse_yrel_ = 0;
+    bool mouse_motion_this_frame_ = false;
     
     // Event handling
     struct KeyBinding {
@@ -61,7 +61,7 @@ private:
         std::chrono::steady_clock::time_point last_time;
         bool time_initialized = false;
     };
-    std::vector<KeyBinding> key_bindings;
+    std::vector<KeyBinding> key_bindings_;
     struct MouseBinding {
         Uint8 button;
         Trigger trigger;
@@ -70,8 +70,8 @@ private:
         std::chrono::steady_clock::time_point last_time;
         bool time_initialized = false;
     };
-    std::vector<MouseBinding> mouse_bindings;
-    size_t next_event_id = 0;
+    std::vector<MouseBinding> mouse_bindings_;
+    size_t next_event_id_ = 0;
     
     // Helper methods
     bool check_key_trigger(const KeyBinding& binding) const;
@@ -79,7 +79,7 @@ private:
     void process_mouse_bindings();
     void update_keyboard_state();
     bool has_modifier_keys() const;
-    static bool is_pressed_mode(Trigger t) noexcept {
+    static bool IsPressedMode(Trigger t) noexcept {
         return t == Trigger::ANY_PRESSED || t == Trigger::ALL_PRESSED ||
                t == Trigger::ANY_DOWN || t == Trigger::ALL_DOWN ||
                t == Trigger::ANY_PRESSED_NO_MODIFIER;
@@ -109,8 +109,8 @@ public:
     void save_bmp(const std::string& filename) const;
     
     // Getters
-    size_t get_width() const noexcept { return width; }
-    size_t get_height() const noexcept { return height; }
+    size_t get_width() const noexcept { return width_; }
+    size_t get_height() const noexcept { return height_; }
     
     // Keyboard state queries
     bool is_key_pressed(SDL_Scancode key) const;

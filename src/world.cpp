@@ -1,11 +1,11 @@
-#include "world.hpp"
-#include "window.hpp"
 #include <numeric>
 #include <algorithm>
 #include <functional>
 #include <limits>
 #include <cstdlib>
 #include <random>
+#include "world.hpp"
+#include "window.hpp"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "../libs/stb_image.h"
@@ -221,11 +221,11 @@ void Model::load_file(std::string filename) {
             iss >> mode;
             if (current_obj != objects_.end()) {
                 if (mode == "Flat") {
-                    current_obj->material.shading = Material::Shading::Flat;
+                    current_obj->material.shading = Material::Shading::FLAT;
                 } else if (mode == "Gouraud") {
-                    current_obj->material.shading = Material::Shading::Gouraud;
+                    current_obj->material.shading = Material::Shading::GOURAUD;
                 } else if (mode == "Phong") {
-                    current_obj->material.shading = Material::Shading::Phong;
+                    current_obj->material.shading = Material::Shading::PHONG;
                 }
             }
         } else if (type == "v") {
@@ -413,11 +413,11 @@ void Model::load_scene_txt(std::string filename) {
                 std::string mode;
                 iss >> mode;
                 if (mode == "Flat") {
-                    current_obj->material.shading = Material::Shading::Flat;
+                    current_obj->material.shading = Material::Shading::FLAT;
                 } else if (mode == "Gouraud") {
-                    current_obj->material.shading = Material::Shading::Gouraud;
+                    current_obj->material.shading = Material::Shading::GOURAUD;
                 } else if (mode == "Phong") {
-                    current_obj->material.shading = Material::Shading::Phong;
+                    current_obj->material.shading = Material::Shading::PHONG;
                 }
             }
         } else if (type == "Vertex") {
