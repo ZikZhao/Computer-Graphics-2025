@@ -199,6 +199,7 @@ public:
     void update_movement() noexcept;  // Update camera position based on keyboard state
     void update() noexcept;  // Legacy update function (calls update_movement)
     std::pair<glm::vec3, glm::vec3> generate_ray(int pixel_x, int pixel_y, int screen_width, int screen_height, double aspect_ratio) const noexcept;
+    std::pair<glm::vec3, glm::vec3> generate_ray_uv(FloatType u, FloatType v, int screen_width, int screen_height, double aspect_ratio) const noexcept;
 };
 
 struct Face {

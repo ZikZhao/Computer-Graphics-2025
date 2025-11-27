@@ -48,7 +48,7 @@ public:
     
     // Core rendering entry point
     ColourHDR render_pixel(const Camera& cam, int x, int y, int width, int height, 
-                           bool soft_shadows, FloatType light_intensity, bool use_caustics = false, int sample_index = 0) const noexcept;
+                           bool soft_shadows, FloatType light_intensity, bool use_caustics = false, int sample_index = 0, uint32_t initial_seed = 1u) const noexcept;
     
     // Depth of field rendering
     ColourHDR render_pixel_dof(const Camera& cam, int x, int y, int width, int height,
@@ -60,11 +60,13 @@ public:
     
     // Debug: visualize only caustics (temporary for verification)
     static bool debug_visualize_caustics_only;
+    static uint32_t pcg_hash(uint32_t v) noexcept;
+    static FloatType rand_float(uint32_t& seed) noexcept;
     
 private:
     // Ray tracing core (no longer contains material logic)
     ColourHDR trace_ray(const glm::vec3& ro, const glm::vec3& rd, int depth, 
-                        const MediumState& medium, bool soft_shadows, FloatType light_intensity, bool use_caustics, int sample_index = 0, const glm::vec3& throughput = glm::vec3(1.0f)) const noexcept;
+                        const MediumState& medium, bool soft_shadows, FloatType light_intensity, bool use_caustics, int sample_index, const glm::vec3& throughput, uint32_t& rng) const noexcept;
     
     // BVH intersection
     HitRecord hit(const glm::vec3& ro, const glm::vec3& rd) const noexcept;
@@ -88,8 +90,6 @@ private:
     
     // Sampling utilities
     static glm::vec3 sample_sphere_halton(int index, FloatType radius, const glm::vec3& center) noexcept;
-    static glm::vec3 sample_sphere_halton_cp(int index, FloatType radius, const glm::vec3& center) noexcept;
-    static FloatType cp_shift(int index, FloatType salt) noexcept;
     static FloatType halton(int index, int base) noexcept;
     static ColourHDR clamp_radiance(const ColourHDR& c, FloatType max_luma) noexcept;
 };

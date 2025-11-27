@@ -77,8 +77,8 @@ private:
     void process_rows(int y0, int y1) noexcept;
     
     // Tonemapping and gamma correction
-    static Colour tonemap_and_gamma_correct(const ColourHDR& hdr, FloatType gamma) noexcept;
-    static FloatType aces_tonemap(FloatType hdr_value) noexcept;
+    static Colour tonemap_and_gamma_correct(const ColourHDR& hdr, FloatType gamma, uint32_t& seed) noexcept;
+    static FloatType aces_tone_mapping(FloatType hdr_value) noexcept;
     
     // Coordinate axis visualization
     void draw_coordinate_axes() noexcept;

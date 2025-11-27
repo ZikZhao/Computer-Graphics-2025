@@ -115,10 +115,12 @@ void Renderer::process_rows(int y0, int y1) noexcept {
             } else {
                 int w = static_cast<int>(window_.get_width());
                 int h = static_cast<int>(window_.get_height());
-                int sample_index = rendering_frame_count_ * (w * h) + y * w + x;
+                int pixel_index = y * w + x;
+                int sample_index = rendering_frame_count_ * (w * h) + pixel_index;
+                uint32_t seed = static_cast<uint32_t>(pixel_index + rendering_frame_count_ * 123457u) | 1u;
                 final_hdr = raytracer_->render_pixel(
                     camera, x, y, w, h,
-                    true, world_.light_intensity(), caustics_enabled_, sample_index
+                    true, world_.light_intensity(), caustics_enabled_, sample_index, seed
                 );
             }
             
@@ -133,7 +135,8 @@ void Renderer::process_rows(int y0, int y1) noexcept {
                 accumulation_buffer_[idx].green / static_cast<FloatType>(rendering_frame_count_),
                 accumulation_buffer_[idx].blue / static_cast<FloatType>(rendering_frame_count_)
             );
-            Colour final_colour = tonemap_and_gamma_correct(avg_hdr, gamma_);
+            uint32_t dither_seed = static_cast<uint32_t>(idx + rendering_frame_count_ * 91138233u) | 1u;
+            Colour final_colour = tonemap_and_gamma_correct(avg_hdr, gamma_, dither_seed);
             window_[{x, y}] = final_colour;
         }
     }
@@ -164,7 +167,7 @@ void Renderer::worker_thread(std::stop_token st) noexcept {
 }
 
 
-FloatType Renderer::aces_tonemap(FloatType hdr_value) noexcept {
+FloatType Renderer::aces_tone_mapping(FloatType hdr_value) noexcept {
     const FloatType a = 2.51f;
     const FloatType b = 0.03f;
     const FloatType c = 2.43f;
@@ -177,10 +180,10 @@ FloatType Renderer::aces_tonemap(FloatType hdr_value) noexcept {
     return std::clamp(numerator / denominator, 0.0f, 1.0f);
 }
 
-Colour Renderer::tonemap_and_gamma_correct(const ColourHDR& hdr, FloatType gamma) noexcept {
-    FloatType r_ldr = aces_tonemap(hdr.red);
-    FloatType g_ldr = aces_tonemap(hdr.green);
-    FloatType b_ldr = aces_tonemap(hdr.blue);
+Colour Renderer::tonemap_and_gamma_correct(const ColourHDR& hdr, FloatType gamma, uint32_t& seed) noexcept {
+    FloatType r_ldr = aces_tone_mapping(hdr.red * 0.6f);
+    FloatType g_ldr = aces_tone_mapping(hdr.green * 0.6f);
+    FloatType b_ldr = aces_tone_mapping(hdr.blue * 0.6f);
     
     FloatType r_out, g_out, b_out;
     if (gamma == 1.0f) {
@@ -192,6 +195,12 @@ Colour Renderer::tonemap_and_gamma_correct(const ColourHDR& hdr, FloatType gamma
         g_out = std::pow(g_ldr, 1.0f / gamma);
         b_out = std::pow(b_ldr, 1.0f / gamma);
     }
+    FloatType noise_r = (RayTracer::rand_float(seed) - 0.5f) / 255.0f;
+    FloatType noise_g = (RayTracer::rand_float(seed) - 0.5f) / 255.0f;
+    FloatType noise_b = (RayTracer::rand_float(seed) - 0.5f) / 255.0f;
+    r_out = std::clamp(r_out + noise_r, 0.0f, 1.0f);
+    g_out = std::clamp(g_out + noise_g, 0.0f, 1.0f);
+    b_out = std::clamp(b_out + noise_b, 0.0f, 1.0f);
     
     return Colour{
         static_cast<std::uint8_t>(std::clamp(r_out * 255.0f, 0.0f, 255.0f)),
