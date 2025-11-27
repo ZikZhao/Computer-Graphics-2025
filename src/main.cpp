@@ -37,6 +37,7 @@ int main(int argc, char *argv[]) {
             FloatType up = (ks[SDL_SCANCODE_SPACE] ? 1.0f : 0.0f) - (ks[SDL_SCANCODE_C] ? 1.0f : 0.0f);
             if (fwd != 0.0f || right != 0.0f || up != 0.0f) {
                 world.camera_.move(fwd * move_step, right * move_step, up * move_step, dt);
+                renderer.ResetAccumulation();
             }
         });
 
@@ -47,6 +48,7 @@ int main(int argc, char *argv[]) {
             } else {
                 world.camera_.stop_orbiting();
             }
+            renderer.ResetAccumulation();
         });
 
     window.register_key(
@@ -109,6 +111,7 @@ int main(int argc, char *argv[]) {
             FloatType dx = -static_cast<FloatType>(xrel) * world.camera_.mouse_sensitivity_;
             FloatType dy = static_cast<FloatType>(yrel) * world.camera_.mouse_sensitivity_;
             world.camera_.rotate(dx, dy);
+            renderer.ResetAccumulation();
         });
 
     auto last_print = std::chrono::steady_clock::now();

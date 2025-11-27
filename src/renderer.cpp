@@ -7,6 +7,7 @@ Renderer::Renderer(Window& window, const World& world)
     : window_(window),
       world_(world),
       hdr_buffer_(window.get_width() * window.get_height(), ColourHDR()),
+      accumulation_buffer_(window.get_width() * window.get_height(), ColourHDR()),
       frame_barrier_(std::thread::hardware_concurrency() + 1) {
     
     // Create sub-engines
@@ -32,14 +33,15 @@ void Renderer::clear() noexcept {
 }
 
 void Renderer::render() noexcept {
-    clear();
     aspect_ratio_ = static_cast<double>(window_.get_width()) / window_.get_height();
     
     switch (mode_) {
     case Wireframe:
+        clear();
         wireframe_render();
         break;
     case Rasterized:
+        clear();
         rasterized_render();
         break;
     case Raytraced:
@@ -65,19 +67,35 @@ void Renderer::rasterized_render() noexcept {
 void Renderer::raytraced_render() noexcept {
     current_camera_ = &world_.camera();
     tile_counter_.store(0, std::memory_order_relaxed);
+    glm::vec3 cur_pos = current_camera_->position_;
+    FloatType cur_yaw = current_camera_->yaw_;
+    FloatType cur_pitch = current_camera_->pitch_;
+    bool cam_changed = (glm::length(cur_pos - last_cam_pos_) > 1e-6f) ||
+                       (std::abs(cur_yaw - last_cam_yaw_) > 1e-6f) ||
+                       (std::abs(cur_pitch - last_cam_pitch_) > 1e-6f);
+    if (cam_changed) {
+        ResetAccumulation();
+    }
+    rendering_frame_count_ = frame_count_ + 1;
     
     // Signal workers to start and wait for completion
     frame_barrier_.arrive_and_wait();  // Start signal
     frame_barrier_.arrive_and_wait();  // Completion wait
+    frame_count_ = rendering_frame_count_;
+    last_cam_pos_ = cur_pos;
+    last_cam_yaw_ = cur_yaw;
+    last_cam_pitch_ = cur_pitch;
 }
 
 void Renderer::depth_of_field_render() noexcept {
     current_camera_ = &world_.camera();
     tile_counter_.store(0, std::memory_order_relaxed);
+    rendering_frame_count_ = frame_count_ + 1;
     
     // Signal workers to start and wait for completion
     frame_barrier_.arrive_and_wait();  // Start signal
     frame_barrier_.arrive_and_wait();  // Completion wait
+    frame_count_ = rendering_frame_count_;
 }
 
 void Renderer::process_rows(int y0, int y1) noexcept {
@@ -92,16 +110,30 @@ void Renderer::process_rows(int y0, int y1) noexcept {
                 final_hdr = raytracer_->render_pixel_dof(
                     camera, x, y, window_.get_width(), window_.get_height(),
                     focal_distance_, aperture_size_, dof_samples_,
-                    soft_shadows_enabled_, world_.light_intensity(), caustics_enabled_
+                    true, world_.light_intensity(), caustics_enabled_
                 );
             } else {
+                int w = static_cast<int>(window_.get_width());
+                int h = static_cast<int>(window_.get_height());
+                int sample_index = rendering_frame_count_ * (w * h) + y * w + x;
                 final_hdr = raytracer_->render_pixel(
-                    camera, x, y, window_.get_width(), window_.get_height(),
-                    soft_shadows_enabled_, world_.light_intensity(), caustics_enabled_
+                    camera, x, y, w, h,
+                    true, world_.light_intensity(), caustics_enabled_, sample_index
                 );
             }
             
-            Colour final_colour = tonemap_and_gamma_correct(final_hdr, gamma_);
+            std::size_t idx = static_cast<std::size_t>(y) * window_.get_width() + static_cast<std::size_t>(x);
+            accumulation_buffer_[idx] = ColourHDR(
+                accumulation_buffer_[idx].red + final_hdr.red,
+                accumulation_buffer_[idx].green + final_hdr.green,
+                accumulation_buffer_[idx].blue + final_hdr.blue
+            );
+            ColourHDR avg_hdr(
+                accumulation_buffer_[idx].red / static_cast<FloatType>(rendering_frame_count_),
+                accumulation_buffer_[idx].green / static_cast<FloatType>(rendering_frame_count_),
+                accumulation_buffer_[idx].blue / static_cast<FloatType>(rendering_frame_count_)
+            );
+            Colour final_colour = tonemap_and_gamma_correct(avg_hdr, gamma_);
             window_[{x, y}] = final_colour;
         }
     }
@@ -288,4 +320,9 @@ void Renderer::draw_coordinate_axes() noexcept {
         draw_line(origin_x, origin_y, axis.end_x, axis.end_y, axis.color);
         draw_arrow_head(origin_x, origin_y, axis.end_x, axis.end_y, axis.color);
     }
+}
+
+void Renderer::ResetAccumulation() noexcept {
+    std::fill(accumulation_buffer_.begin(), accumulation_buffer_.end(), ColourHDR());
+    frame_count_ = 0;
 }

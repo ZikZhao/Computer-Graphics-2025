@@ -41,6 +41,9 @@ private:
     
     // Frame buffer (HDR for ray tracing, tonemapped to LDR for display)
     std::vector<ColourHDR> hdr_buffer_;
+    std::vector<ColourHDR> accumulation_buffer_;
+    int frame_count_ = 0;
+    int rendering_frame_count_ = 0;
     double aspect_ratio_ = 1.0;
     
     // Multi-threading support
@@ -49,12 +52,16 @@ private:
     std::vector<std::jthread> workers_;
     std::atomic<int> tile_counter_ = 0;
     const Camera* current_camera_ = nullptr;
+    glm::vec3 last_cam_pos_ = glm::vec3(0.0f);
+    FloatType last_cam_yaw_ = 0.0f;
+    FloatType last_cam_pitch_ = 0.0f;
     
 public:
     Renderer(Window& window, const World& world);
     ~Renderer();
     
     void render() noexcept;
+    void ResetAccumulation() noexcept;
     
 private:
     void clear() noexcept;

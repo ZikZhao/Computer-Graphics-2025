@@ -150,6 +150,7 @@ struct Material {
     FloatType td = 1.0f;            // Transmission Depth: The distance at which the base_color is reached
     FloatType tw = 0.0f;            // Transparency weight (0 = opaque, 1 = fully transparent)
     glm::vec3 sigma_a = glm::vec3(0.0f, 0.0f, 0.0f);  // Absorption coefficient for Beer-Lambert (optional override)
+    glm::vec3 emission = glm::vec3(0.0f);             // Emissive radiance (area light)
 };
 
 // Vertex in clip space with attributes
@@ -253,6 +254,7 @@ private:
     FloatType light_intensity_ = 100.0f;  // Adjustable light intensity constant
     static constexpr FloatType light_radius_ = 0.05f;  // Sphere light radius for soft shadows
     EnvironmentMap env_map_;  // HDR environment map
+    std::vector<const Face*> emissive_faces_;
 public:
     Camera camera_;  // Now public for direct access
     
@@ -271,4 +273,5 @@ public:
     FloatType light_radius() const noexcept { return light_radius_; }
     void set_light_intensity(FloatType intensity) noexcept { light_intensity_ = intensity; }
     const EnvironmentMap& env_map() const noexcept { return env_map_; }
+    const std::vector<const Face*>& area_lights() const noexcept { return emissive_faces_; }
 };

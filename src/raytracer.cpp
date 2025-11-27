@@ -31,10 +31,10 @@ RayTracer::RayTracer(const World& world)
 }
 
 ColourHDR RayTracer::render_pixel(const Camera& cam, int x, int y, int width, int height,
-                                  bool soft_shadows, FloatType light_intensity, bool use_caustics) const noexcept {
+                                  bool soft_shadows, FloatType light_intensity, bool use_caustics, int sample_index) const noexcept {
     auto [ray_origin, ray_dir] = cam.generate_ray(x, y, width, height, 
                                                     static_cast<double>(width) / height);
-    return trace_ray(ray_origin, ray_dir, 0, MediumState{}, soft_shadows, light_intensity, use_caustics);
+    return trace_ray(ray_origin, ray_dir, 0, MediumState{}, soft_shadows, light_intensity, use_caustics, sample_index);
 }
 
 // Helper for DOF lens sampling
@@ -152,7 +152,7 @@ HitRecord RayTracer::hit(const glm::vec3& ro, const glm::vec3& rd) const noexcep
 }
 
 ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray_dir, int depth,
-                               const MediumState& medium, bool soft_shadows, FloatType light_intensity, bool use_caustics) const noexcept {
+                               const MediumState& medium, bool soft_shadows, FloatType light_intensity, bool use_caustics, int sample_index) const noexcept {
     constexpr int MAX_DEPTH = 5;
     
     if (depth >= MAX_DEPTH) {
@@ -206,7 +206,7 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
     
     const std::vector<Face>& all_faces = world_.all_faces();
     const Face& face = all_faces[intersection.triangleIndex];
-    const glm::vec3& light_pos = world_.light_position();
+    const auto& area_lights = world_.area_lights();
     
     // SHADER DISPATCH: Choose shader based on material properties
     // TODO: Eventually use shader system for pure path tracing
@@ -234,7 +234,7 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
         if (total_internal_reflection) {
             glm::vec3 reflected_dir = glm::reflect(ray_dir, normal);
             glm::vec3 offset_origin = intersection.intersectionPoint + normal * epsilon;
-            ColourHDR reflected = trace_ray(offset_origin, reflected_dir, depth + 1, medium, soft_shadows, light_intensity, use_caustics);
+            ColourHDR reflected = trace_ray(offset_origin, reflected_dir, depth + 1, medium, soft_shadows, light_intensity, use_caustics, sample_index);
             return reflected * medium_absorption;
         }
         
@@ -253,7 +253,7 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
         if (reflect_weight > 0.01f) {
             glm::vec3 reflected_dir = glm::reflect(ray_dir, normal);
             glm::vec3 offset_origin = intersection.intersectionPoint + normal * epsilon;
-            ColourHDR reflected_color = trace_ray(offset_origin, reflected_dir, depth + 1, medium, soft_shadows, light_intensity, use_caustics);
+            ColourHDR reflected_color = trace_ray(offset_origin, reflected_dir, depth + 1, medium, soft_shadows, light_intensity, use_caustics, sample_index);
             result_color = result_color + reflected_color * reflect_weight;
         }
         
@@ -269,7 +269,7 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
                 new_medium.entry_point = glm::vec3(0.0f);
                 new_medium.entry_distance = 0.0f;
             }
-            ColourHDR refracted_color = trace_ray(offset_origin, refracted_dir, depth + 1, new_medium, soft_shadows, light_intensity, use_caustics);
+            ColourHDR refracted_color = trace_ray(offset_origin, refracted_dir, depth + 1, new_medium, soft_shadows, light_intensity, use_caustics, sample_index);
             result_color = result_color + refracted_color * refract_weight;
         }
         
@@ -284,75 +284,88 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
     }
     
     // Standard lighting for opaque materials
-    glm::vec3 to_light_hit = light_pos - intersection.intersectionPoint;
-    FloatType dist_light_hit = glm::length(to_light_hit);
     glm::vec3 to_camera_hit = -ray_dir;
     
     ColourHDR shadow_color;
     bool backface_view_gate = false;
     {
-        glm::vec3 light_dir = glm::normalize(to_light_hit);
-        glm::vec3 n_to_light = face.face_normal;
-        if (glm::dot(n_to_light, light_dir) < 0.0f) {
-            n_to_light = -n_to_light;
-        }
-        glm::vec3 v_cam_point = glm::normalize(ray_dir);
-        FloatType nl_view_dot = glm::dot(n_to_light, v_cam_point);
-        if (nl_view_dot > 0.0f) {
-            backface_view_gate = true;
-            shadow_color = ColourHDR(1.0f, 1.0f, 1.0f);
-        } else {
-            if (soft_shadows) {
-                constexpr int shadow_samples = 16;
-                FloatType light_radius = world_.light_radius();
-                FloatType shadow_factor = compute_soft_shadow(intersection.intersectionPoint, light_pos, light_radius, shadow_samples);
-                shadow_color = ColourHDR(shadow_factor, shadow_factor, shadow_factor);
-            } else {
-                glm::vec3 transmittance = compute_transmittance_bvh(intersection.intersectionPoint, light_pos);
-                shadow_color = ColourHDR(transmittance.r, transmittance.g, transmittance.b);
-            }
-        }
+        backface_view_gate = false;
+        shadow_color = ColourHDR(1.0f, 1.0f, 1.0f);
     }
     
     ColourHDR hdr_colour = ColourHDR(intersection.color.r, intersection.color.g, intersection.color.b);
     FloatType ambient = 0.025f;
     FloatType lambertian = 0.0f;
     FloatType specular = 0.0f;
+    ColourHDR diffuse_component(0.0f, 0.0f, 0.0f);
+    ColourHDR specular_component(0.0f, 0.0f, 0.0f);
     
     FloatType w = 1.0f - intersection.u - intersection.v;
     if (!backface_view_gate) {
-        if (face.material.shading == Material::Shading::Flat) {
-            lambertian = compute_lambertian_lighting(face.face_normal, to_light_hit, dist_light_hit, light_intensity);
-            if (lambertian > 0.0f) {
-                specular = compute_specular_lighting(face.face_normal, to_light_hit, to_camera_hit, dist_light_hit, light_intensity, face.material.shininess);
+        // Direct lighting from emissive triangles (area lights)
+        glm::vec3 n_shade = (face.material.shading == Material::Shading::Flat)
+            ? face.face_normal
+            : glm::normalize(w * face.vertex_normals[0] + intersection.u * face.vertex_normals[1] + intersection.v * face.vertex_normals[2]);
+        lambertian = 0.0f;
+        specular = 0.0f;
+        if (!area_lights.empty()) {
+            uint32_t seed_base = static_cast<uint32_t>(sample_index * 2654435761u);
+            glm::vec3 diffuse_rgb_accum(0.0f);
+            for (const Face* lf : area_lights) {
+                glm::vec3 e0 = lf->vertices[1] - lf->vertices[0];
+                glm::vec3 e1 = lf->vertices[2] - lf->vertices[0];
+                FloatType area = 0.5f * glm::length(glm::cross(e0, e1));
+                if (area < 1e-6f) continue;
+                uint32_t seed = seed_base ^ static_cast<uint32_t>(reinterpret_cast<uintptr_t>(lf));
+                FloatType u1 = std::fmod(halton(sample_index, 2) + rand01(seed), 1.0f);
+                FloatType u2 = std::fmod(halton(sample_index, 3) + rand01(seed * 1664525u + 1013904223u), 1.0f);
+                FloatType su = std::sqrt(u1);
+                FloatType b0 = 1.0f - su;
+                FloatType b1 = su * (1.0f - u2);
+                FloatType b2 = su * u2;
+                glm::vec3 light_p = lf->vertices[0] + b1 * e0 + b2 * e1;
+                glm::vec3 to_light = light_p - intersection.intersectionPoint;
+                FloatType dist = glm::length(to_light);
+                if (dist < 1e-4f) continue;
+                glm::vec3 L = glm::normalize(to_light);
+                glm::vec3 n_light = glm::normalize(lf->face_normal);
+                FloatType cos_surf = std::max(0.0f, glm::dot(n_shade, L));
+                FloatType cos_light = std::max(0.0f, glm::dot(n_light, -L));
+                glm::vec3 transmittance = compute_transmittance_bvh(intersection.intersectionPoint, light_p);
+                FloatType vis = (transmittance.r + transmittance.g + transmittance.b) / 3.0f;
+                glm::vec3 Le = lf->material.emission;
+                FloatType G = (cos_surf * cos_light) / (dist * dist + 1e-6f);
+                FloatType contrib = G * area * vis;
+                glm::vec3 albedo = glm::vec3(hdr_colour.red, hdr_colour.green, hdr_colour.blue);
+                FloatType inv_pi = 1.0f / static_cast<FloatType>(std::numbers::pi);
+                diffuse_rgb_accum += (albedo * (Le * (contrib * inv_pi)));
+                // Simple Phong-like specular towards light
+                glm::vec3 halfway = glm::normalize(L + to_camera_hit);
+                FloatType cos_alpha = std::max(0.0f, glm::dot(n_shade, halfway));
+                FloatType le_lum = 0.2126f * Le.r + 0.7152f * Le.g + 0.0722f * Le.b;
+                specular += le_lum * std::pow(cos_alpha, face.material.shininess) * area * vis / (dist * dist + 1e-6f);
             }
-        } else if (face.material.shading == Material::Shading::Gouraud) {
-            FloatType lam_v[3] = {0.0f, 0.0f, 0.0f};
-            FloatType spec_v[3] = {0.0f, 0.0f, 0.0f};
-            for (int k = 0; k < 3; ++k) {
-                glm::vec3 to_light_v = light_pos - face.vertices[k];
-                FloatType dist_v = glm::length(to_light_v);
-                glm::vec3 to_camera_v = -ray_dir;
-                lam_v[k] = compute_lambertian_lighting(face.vertex_normals[k], to_light_v, dist_v, light_intensity);
-                if (lam_v[k] > 0.0f) {
-                    spec_v[k] = compute_specular_lighting(face.vertex_normals[k], to_light_v, to_camera_v, dist_v, light_intensity, face.material.shininess);
-                }
-            }
-            lambertian = w * lam_v[0] + intersection.u * lam_v[1] + intersection.v * lam_v[2];
-            specular = w * spec_v[0] + intersection.u * spec_v[1] + intersection.v * spec_v[2];
+            diffuse_component = ColourHDR(diffuse_rgb_accum.r, diffuse_rgb_accum.g, diffuse_rgb_accum.b);
+            lambertian = 0.0f; // already baked into diffuse_component
         } else {
-            glm::vec3 n_interp = glm::normalize(w * face.vertex_normals[0] + intersection.u * face.vertex_normals[1] + intersection.v * face.vertex_normals[2]);
-            lambertian = compute_lambertian_lighting(n_interp, to_light_hit, dist_light_hit, light_intensity);
+            // Fallback to legacy point light if no emissive surfaces exist
+            const glm::vec3& light_pos = world_.light_position();
+            glm::vec3 to_light_hit = light_pos - intersection.intersectionPoint;
+            FloatType dist_light_hit = glm::length(to_light_hit);
+            lambertian = compute_lambertian_lighting(n_shade, to_light_hit, dist_light_hit, light_intensity);
             if (lambertian > 0.0f) {
-                specular = compute_specular_lighting(n_interp, to_light_hit, to_camera_hit, dist_light_hit, light_intensity, face.material.shininess);
+                specular = compute_specular_lighting(n_shade, to_light_hit, to_camera_hit, dist_light_hit, light_intensity, face.material.shininess);
             }
+            diffuse_component = hdr_colour * lambertian;
         }
     }
     
     // Separate ambient (not affected by shadows) and direct lighting (affected by shadows)
     ColourHDR ambient_component = hdr_colour * ambient;
-    ColourHDR diffuse_component = hdr_colour * lambertian * shadow_color;
-    ColourHDR specular_component = ColourHDR(specular, specular, specular) * shadow_color;
+    if (area_lights.empty()) {
+        diffuse_component = hdr_colour * lambertian;
+    }
+    specular_component = ColourHDR(specular, specular, specular);
     
     ColourHDR direct_lighting;
     if (face.material.metallic > 0.0f) {
@@ -365,7 +378,7 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
         glm::vec3 reflected_dir = glm::reflect(ray_dir, intersection.normal);
         constexpr FloatType epsilon = 0.001f;
         glm::vec3 offset_origin = intersection.intersectionPoint + intersection.normal * epsilon;
-        ColourHDR reflected_color = trace_ray(offset_origin, reflected_dir, depth + 1, medium, soft_shadows, light_intensity, use_caustics);
+        ColourHDR reflected_color = trace_ray(offset_origin, reflected_dir, depth + 1, medium, soft_shadows, light_intensity, use_caustics, sample_index);
         ColourHDR metallic_reflection = ColourHDR(
             reflected_color.red * hdr_colour.red,
             reflected_color.green * hdr_colour.green,
@@ -500,13 +513,20 @@ bool RayTracer::is_in_shadow_bvh(const glm::vec3& point, const glm::vec3& light_
 }
 
 FloatType RayTracer::compute_soft_shadow(const glm::vec3& point, const glm::vec3& light_center, 
-                                         FloatType light_radius, int num_samples) const noexcept {
+                                         FloatType light_radius, int num_samples, int start_index) const noexcept {
     FloatType visible_light = 0.0f;
     constexpr int early_test_samples = 4;
     FloatType early_visible = 0.0f;
+    if (num_samples <= 1) {
+        uint32_t seed = static_cast<uint32_t>(start_index * 73856093 ^ 19349663);
+        glm::vec3 light_sample = sample_sphere_halton_scrambled(start_index, seed, light_radius, light_center);
+        glm::vec3 transmittance = compute_transmittance_bvh(point, light_sample);
+        return (transmittance.r + transmittance.g + transmittance.b) / 3.0f;
+    }
     
     for (int i = 0; i < early_test_samples; ++i) {
-        glm::vec3 light_sample = sample_sphere_halton(i, light_radius, light_center);
+        uint32_t seed = static_cast<uint32_t>((start_index + i) * 73856093 ^ 19349663);
+        glm::vec3 light_sample = sample_sphere_halton_scrambled(start_index + i, seed, light_radius, light_center);
         glm::vec3 transmittance = compute_transmittance_bvh(point, light_sample);
         early_visible += (transmittance.r + transmittance.g + transmittance.b) / 3.0f;
     }
@@ -516,7 +536,8 @@ FloatType RayTracer::compute_soft_shadow(const glm::vec3& point, const glm::vec3
     
     visible_light = early_visible;
     for (int i = early_test_samples; i < num_samples; ++i) {
-        glm::vec3 light_sample = sample_sphere_halton(i, light_radius, light_center);
+        uint32_t seed = static_cast<uint32_t>((start_index + i) * 91548863 ^ 1920119);
+        glm::vec3 light_sample = sample_sphere_halton_scrambled(start_index + i, seed, light_radius, light_center);
         glm::vec3 transmittance = compute_transmittance_bvh(point, light_sample);
         visible_light += (transmittance.r + transmittance.g + transmittance.b) / 3.0f;
     }
@@ -576,6 +597,32 @@ FloatType RayTracer::halton(int index, int base) noexcept {
 glm::vec3 RayTracer::sample_sphere_halton(int index, FloatType radius, const glm::vec3& center) noexcept {
     FloatType u = halton(index, 2);
     FloatType v = halton(index, 3);
+    
+    FloatType theta = 2.0f * std::numbers::pi * u;
+    FloatType phi = std::acos(2.0f * v - 1.0f);
+    
+    FloatType sin_phi = std::sin(phi);
+    FloatType x = radius * sin_phi * std::cos(theta);
+    FloatType y = radius * sin_phi * std::sin(theta);
+    FloatType z = radius * std::cos(phi);
+    
+    return center + glm::vec3(x, y, z);
+}
+
+FloatType RayTracer::rand01(uint32_t seed) noexcept {
+    seed ^= seed << 13;
+    seed ^= seed >> 17;
+    seed ^= seed << 5;
+    return static_cast<FloatType>((seed & 0x00FFFFFFu) / 16777216.0f);
+}
+
+glm::vec3 RayTracer::sample_sphere_halton_scrambled(int index, uint32_t seed, FloatType radius, const glm::vec3& center) noexcept {
+    FloatType u = halton(index, 2);
+    FloatType v = halton(index, 3);
+    FloatType ru = rand01(seed * 1664525u + 1013904223u);
+    FloatType rv = rand01(seed * 362437u + 12345u);
+    u = std::fmod(u + ru, 1.0f);
+    v = std::fmod(v + rv, 1.0f);
     
     FloatType theta = 2.0f * std::numbers::pi * u;
     FloatType phi = std::acos(2.0f * v - 1.0f);

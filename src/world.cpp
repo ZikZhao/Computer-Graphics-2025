@@ -367,6 +367,12 @@ void Model::load_scene_txt(std::string filename) {
                 iss >> tw;
                 current_material->second.tw = std::clamp(tw, 0.0f, 1.0f);
             }
+        } else if (type == "Emission") {
+            if (current_material != materials_.end()) {
+                FloatType r, g, b;
+                iss >> r >> g >> b;
+                current_material->second.emission = glm::vec3(std::max(0.0f, r), std::max(0.0f, g), std::max(0.0f, b));
+            }
         } else if (type == "Texture") {
             if (current_material != materials_.end()) {
                 std::string tex_name;
@@ -588,6 +594,11 @@ void Model::load_materials(std::string filename) {
             FloatType tw_value;
             iss >> tw_value;
             current_material->second.tw = std::clamp(tw_value, 0.0f, 1.0f);
+        } else if (type == "Ke") {
+            assert(current_material != materials_.end());
+            FloatType r, g, b;
+            iss >> r >> g >> b;
+            current_material->second.emission = glm::vec3(std::max(0.0f, r), std::max(0.0f, g), std::max(0.0f, b));
         } else if (type == "sigma_a") {
             assert(current_material != materials_.end());
             FloatType r, g, b;
@@ -773,11 +784,6 @@ void World::load_files(const std::vector<std::string>& filenames) {
             break;
         }
     }
-    
-    if (!found_light) {
-        light_pos = glm::vec3(0.0f, 2.0f, 0.0f);
-    }
-    
     const_cast<glm::vec3&>(light_position_) = light_pos;
     const_cast<bool&>(has_light_) = found_light;
     
@@ -788,6 +794,13 @@ void World::load_files(const std::vector<std::string>& filenames) {
     all_faces_.reserve(total_faces);
     for (const auto& model : models_) {
         all_faces_.insert(all_faces_.end(), model.all_faces().begin(), model.all_faces().end());
+    }
+
+    emissive_faces_.clear();
+    for (const auto& f : all_faces_) {
+        if (glm::length(f.material.emission) > 1e-6f) {
+            emissive_faces_.push_back(&f);
+        }
     }
 }
 

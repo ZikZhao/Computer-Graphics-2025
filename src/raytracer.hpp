@@ -48,7 +48,7 @@ public:
     
     // Core rendering entry point
     ColourHDR render_pixel(const Camera& cam, int x, int y, int width, int height, 
-                           bool soft_shadows, FloatType light_intensity, bool use_caustics = false) const noexcept;
+                           bool soft_shadows, FloatType light_intensity, bool use_caustics = false, int sample_index = 0) const noexcept;
     
     // Depth of field rendering
     ColourHDR render_pixel_dof(const Camera& cam, int x, int y, int width, int height,
@@ -64,7 +64,7 @@ public:
 private:
     // Ray tracing core (no longer contains material logic)
     ColourHDR trace_ray(const glm::vec3& ro, const glm::vec3& rd, int depth, 
-                        const MediumState& medium, bool soft_shadows, FloatType light_intensity, bool use_caustics) const noexcept;
+                        const MediumState& medium, bool soft_shadows, FloatType light_intensity, bool use_caustics, int sample_index = 0) const noexcept;
     
     // BVH intersection
     HitRecord hit(const glm::vec3& ro, const glm::vec3& rd) const noexcept;
@@ -73,7 +73,7 @@ private:
     bool is_in_shadow_bvh(const glm::vec3& point, const glm::vec3& light_pos) const noexcept;
     glm::vec3 compute_transmittance_bvh(const glm::vec3& point, const glm::vec3& light_pos) const noexcept;
     FloatType compute_soft_shadow(const glm::vec3& point, const glm::vec3& light_center, 
-                                   FloatType light_radius, int num_samples) const noexcept;
+                                   FloatType light_radius, int num_samples, int start_index) const noexcept;
     
     // Lighting calculations
     static FloatType compute_lambertian_lighting(const glm::vec3& normal, const glm::vec3& to_light, 
@@ -88,5 +88,7 @@ private:
     
     // Sampling utilities
     static glm::vec3 sample_sphere_halton(int index, FloatType radius, const glm::vec3& center) noexcept;
+    static glm::vec3 sample_sphere_halton_scrambled(int index, uint32_t seed, FloatType radius, const glm::vec3& center) noexcept;
+    static FloatType rand01(uint32_t seed) noexcept;
     static FloatType halton(int index, int base) noexcept;
 };
