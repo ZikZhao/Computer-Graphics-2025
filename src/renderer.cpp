@@ -62,8 +62,6 @@ Renderer::~Renderer() {
     frame_barrier_.arrive_and_wait();
 }
 
- 
-
 void Renderer::render() noexcept {
     aspect_ratio_ = static_cast<double>(window_.get_width()) / window_.get_height();
     
@@ -203,7 +201,6 @@ void Renderer::worker_thread(std::stop_token st) noexcept {
         
         // Signal frame completion
         frame_barrier_.arrive_and_wait();
-        if (st.stop_requested()) break;
     }
 }
 

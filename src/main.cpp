@@ -41,6 +41,18 @@ int main(int argc, char *argv[]) {
             }
         });
 
+    window.register_key(
+        {SDL_SCANCODE_Q, SDL_SCANCODE_E},
+        Window::Trigger::ANY_PRESSED_NO_MODIFIER,
+        [&](const Window::KeyState& ks, float dt) {
+            constexpr FloatType roll_speed = 2.0f;
+            FloatType r = (ks[SDL_SCANCODE_E] ? 1.0f : 0.0f) - (ks[SDL_SCANCODE_Q] ? 1.0f : 0.0f);
+            if (r != 0.0f) {
+                world.camera_.roll(r * roll_speed * dt);
+                renderer.reset_accumulation();
+            }
+        });
+
     window.register_key({SDL_SCANCODE_O}, Window::Trigger::ANY_JUST_PRESSED,
         [&](const Window::KeyState&, float) {
             if (!world.camera_.is_orbiting_) {
@@ -103,9 +115,14 @@ int main(int argc, char *argv[]) {
     window.register_mouse(SDL_BUTTON_LEFT, Window::Trigger::ANY_PRESSED,
         [&](int xrel, int yrel, float dt) {
             if (xrel == 0 && yrel == 0) return;
-            FloatType dx = -static_cast<FloatType>(xrel) * world.camera_.mouse_sensitivity_;
-            FloatType dy = static_cast<FloatType>(yrel) * world.camera_.mouse_sensitivity_;
-            world.camera_.rotate(dx, dy);
+            FloatType dx0 = -static_cast<FloatType>(xrel) * world.camera_.mouse_sensitivity_;
+            FloatType dy0 = static_cast<FloatType>(yrel) * world.camera_.mouse_sensitivity_;
+            FloatType roll = world.camera_.roll_;
+            FloatType c = std::cos(roll);
+            FloatType s = std::sin(roll);
+            FloatType d_yaw = dx0 * c + dy0 * s;
+            FloatType d_pitch = -dx0 * s + dy0 * c;
+            world.camera_.rotate(d_yaw, d_pitch);
             renderer.reset_accumulation();
         });
 
@@ -113,17 +130,16 @@ int main(int argc, char *argv[]) {
     std::size_t fps = 0;
     
     while (true) {
-        // Render frame
+
         world.orbiting();
         renderer.render();
 
         if (!window.process_events()) break;
-        
-        // Capture frame if recording (capture pixel_buffer_ before presenting)
+
         if (video_recorder.is_recording()) {
             video_recorder.capture_frame();
         }
-        
+
         window.update();
         
         // FPS counter

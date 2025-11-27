@@ -167,6 +167,7 @@ public:
     glm::vec3 position_ = { 0.0f, 0.0f, 12.0f };
     FloatType yaw_ = 0.0f;      // Horizontal rotation (around world Y axis)
     FloatType pitch_ = 0.0f;    // Vertical rotation (clamped to ±89 degrees)
+    FloatType roll_ = 0.0f;
     glm::vec3 orbit_target_ = { 0.0f, 0.0f, 0.0f };
     bool is_orbiting_ = false;
     FloatType orbit_radius_ = 0.0f;
@@ -184,6 +185,7 @@ public:
     void orbiting() noexcept;
     void stop_orbiting() noexcept;
     void rotate(FloatType delta_yaw, FloatType delta_pitch) noexcept;
+    void roll(FloatType delta_roll) noexcept;
     void move(FloatType forward_delta, FloatType right_delta, FloatType up_delta, FloatType dt) noexcept;
     void update_movement() noexcept;  // Update camera position based on keyboard state
     void update() noexcept;  // Legacy update function (calls update_movement)

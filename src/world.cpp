@@ -64,6 +64,13 @@ glm::mat3 Camera::orientation() const noexcept {
     glm::vec3 world_up(0.0f, 1.0f, 0.0f);
     glm::vec3 r = glm::normalize(glm::cross(f, world_up));
     glm::vec3 u = glm::normalize(glm::cross(r, f));
+    FloatType c = std::cos(roll_);
+    FloatType s = std::sin(roll_);
+    auto rotate_axis = [&](const glm::vec3& v) -> glm::vec3 {
+        return v * c + glm::cross(f, v) * s + f * glm::dot(f, v) * (1.0f - c);
+    };
+    r = rotate_axis(r);
+    u = rotate_axis(u);
     glm::mat3 o;
     o[0] = r;
     o[1] = u;
@@ -84,15 +91,13 @@ glm::vec3 Camera::forward() const noexcept {
 }
 
 glm::vec3 Camera::right() const noexcept {
-    glm::vec3 f = forward();
-    glm::vec3 world_up(0.0f, 1.0f, 0.0f);
-    return glm::normalize(glm::cross(f, world_up));
+    glm::mat3 o = orientation();
+    return glm::normalize(o[0]);
 }
 
 glm::vec3 Camera::up() const noexcept {
-    glm::vec3 r = right();
-    glm::vec3 f = forward();
-    return glm::normalize(glm::cross(r, f));
+    glm::mat3 o = orientation();
+    return glm::normalize(o[1]);
 }
 
 void Camera::start_orbiting(glm::vec3 target) noexcept {
@@ -119,6 +124,10 @@ void Camera::rotate(FloatType delta_yaw, FloatType delta_pitch) noexcept {
     
     constexpr FloatType max_pitch = glm::radians(89.0f);
     pitch_ = std::clamp(pitch_, -max_pitch, max_pitch);
+}
+
+void Camera::roll(FloatType delta_roll) noexcept {
+    roll_ += delta_roll;
 }
 
 void Camera::move(FloatType forward_delta, FloatType right_delta, FloatType up_delta, FloatType dt) noexcept {
