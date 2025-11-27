@@ -11,22 +11,24 @@ PhotonMap::PhotonMap(const World& world)
 }
 
 void PhotonMap::trace_photons() {
-    if (!world_.has_light()) {
-        std::cerr << "PhotonMap: No light source found in scene, skipping photon tracing\n";
+    const auto& area_lights = world_.area_lights();
+    if (area_lights.empty()) {
+        std::cerr << "PhotonMap: No area lights found, skipping photon tracing\n";
         is_ready_.store(true, std::memory_order_release);
         return;
     }
     
-    std::cout << "PhotonMap: Starting photon tracing from light at " 
-              << world_.light_position().x << ", " 
-              << world_.light_position().y << ", " 
-              << world_.light_position().z << "\n";
-    
-    // Find all transparent (refractive) objects in the scene
+    // Find all transparent (refractive) objects in the scene and compute global AABB
     std::vector<const Face*> transparent_faces;
+    glm::vec3 aabb_min(std::numeric_limits<FloatType>::infinity());
+    glm::vec3 aabb_max(-std::numeric_limits<FloatType>::infinity());
     for (const auto& face : world_.all_faces()) {
         if (is_transparent(face.material)) {
             transparent_faces.push_back(&face);
+            for (int k = 0; k < 3; ++k) {
+                aabb_min = glm::min(aabb_min, face.vertices[k]);
+                aabb_max = glm::max(aabb_max, face.vertices[k]);
+            }
         }
     }
     
@@ -37,13 +39,33 @@ void PhotonMap::trace_photons() {
     }
     
     std::cout << "PhotonMap: Found " << transparent_faces.size() << " transparent faces\n";
+    std::cout << "PhotonMap: Emitting photons from " << area_lights.size() << " area lights\n";
     
-    // Emit photons toward each transparent object
+    // Compute bounding sphere for transparent region
+    glm::vec3 target_center = (aabb_min + aabb_max) * 0.5f;
+    FloatType target_radius = glm::length(aabb_max - target_center);
+    
+    // Distribute photons across area lights based on area * luminance
+    std::vector<FloatType> weights(area_lights.size());
+    FloatType weight_sum = 0.0f;
+    for (std::size_t i = 0; i < area_lights.size(); ++i) {
+        const Face* lf = area_lights[i];
+        glm::vec3 e0 = lf->vertices[1] - lf->vertices[0];
+        glm::vec3 e1 = lf->vertices[2] - lf->vertices[0];
+        FloatType area = 0.5f * glm::length(glm::cross(e0, e1));
+        glm::vec3 Le = lf->material.emission;
+        FloatType lum = 0.2126f * Le.x + 0.7152f * Le.y + 0.0722f * Le.z;
+        FloatType w = std::max<FloatType>(1e-6f, area * lum);
+        weights[i] = w;
+        weight_sum += w;
+    }
+    
     int photons_emitted = 0;
-    for (const auto* face : transparent_faces) {
-        int photons_for_face = PHOTONS_PER_LIGHT / transparent_faces.size();
-        emit_photons_to_object(*face, photons_for_face);
-        photons_emitted += photons_for_face;
+    for (std::size_t i = 0; i < area_lights.size(); ++i) {
+        int photons_for_light = static_cast<int>(PHOTONS_PER_LIGHT * (weights[i] / weight_sum));
+        if (photons_for_light <= 0) continue;
+        emit_photons_from_area_light(*area_lights[i], target_center, target_radius, photons_for_light);
+        photons_emitted += photons_for_light;
     }
     
     std::cout << "PhotonMap: Emitted " << photons_emitted << " photons\n";
@@ -69,6 +91,34 @@ void PhotonMap::emit_photons_to_object(const Face& target_face, int num_photons)
         // Use Halton sequence for stratified sampling instead of random
         glm::vec3 direction = sample_cone_halton(i, to_face, cone_angle);
         trace_single_photon(light_pos, direction, photon_power, 0);
+    }
+}
+
+void PhotonMap::emit_photons_from_area_light(const Face& light_face, const glm::vec3& target_center, FloatType target_radius, int num_photons) {
+    glm::vec3 e0 = light_face.vertices[1] - light_face.vertices[0];
+    glm::vec3 e1 = light_face.vertices[2] - light_face.vertices[0];
+    FloatType area = 0.5f * glm::length(glm::cross(e0, e1));
+    glm::vec3 Le = light_face.material.emission;
+    glm::vec3 n_light = glm::normalize(light_face.face_normal);
+    
+    glm::vec3 photon_power = Le * (area / static_cast<FloatType>(std::max(1, num_photons)));
+    photon_power *= 5.0f; // artistic boost
+    
+    
+    for (int i = 0; i < num_photons; ++i) {
+        FloatType u1 = halton(i, 2);
+        FloatType u2 = halton(i, 3);
+        FloatType su = std::sqrt(u1);
+        FloatType b0 = 1.0f - su;
+        FloatType b1 = su * (1.0f - u2);
+        FloatType b2 = su * u2;
+        glm::vec3 light_p = light_face.vertices[0] + b1 * e0 + b2 * e1;
+        glm::vec3 origin = light_p + n_light * 1e-4f;
+        glm::vec3 to_center = glm::normalize(target_center - origin);
+        FloatType dist = glm::length(target_center - origin);
+        FloatType cone_angle = std::atan(target_radius / std::max<FloatType>(dist, 1e-4f)) * 1.5f;
+        glm::vec3 direction = sample_cone_halton(i, to_center, cone_angle);
+        trace_single_photon(origin, direction, photon_power, 0);
     }
 }
 

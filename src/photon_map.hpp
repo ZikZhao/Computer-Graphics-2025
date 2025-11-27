@@ -36,10 +36,10 @@ struct GridCellHash {
 class PhotonMap {
 public:
     // Configuration
-    static constexpr int PHOTONS_PER_LIGHT = 100000;     // Number of photons to emit from light source
+    static constexpr int PHOTONS_PER_LIGHT = 200000;     // Number of photons to emit from light source
     static constexpr int MAX_PHOTON_BOUNCES = 5;        // Maximum number of bounces per photon
     static constexpr FloatType MIN_PHOTON_POWER = 0.01f; // Minimum power threshold for Russian roulette
-    static constexpr FloatType CAUSTIC_SEARCH_RADIUS = 0.12f;  // Search radius for caustic photon gathering
+    static constexpr FloatType CAUSTIC_SEARCH_RADIUS = 0.4f;  // Search radius for caustic photon gathering
     static constexpr FloatType GRID_CELL_SIZE = CAUSTIC_SEARCH_RADIUS;  // Grid cell size = search radius for exact 27-cell coverage
     
 private:
@@ -78,8 +78,11 @@ private:
     // Main photon tracing worker (runs in jthread)
     void trace_photons();
     
-    // Emit photons from light source toward transparent objects
+    // Emit photons from legacy point light toward transparent objects
     void emit_photons_to_object(const Face& target_face, int num_photons);
+
+    // Emit photons from an area light toward transparent targets
+    void emit_photons_from_area_light(const Face& light_face, const glm::vec3& target_center, FloatType target_radius, int num_photons);
     
     // Trace a single photon through the scene
     void trace_single_photon(const glm::vec3& origin, const glm::vec3& direction, 

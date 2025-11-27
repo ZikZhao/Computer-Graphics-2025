@@ -308,7 +308,7 @@ void Model::load_file(std::string filename) {
     }
     
     compute_face_normals();
-    smooth_missing_vertex_normals();
+    
     cache_faces();
 }
 
@@ -488,6 +488,12 @@ void Model::load_scene_txt(std::string filename) {
                         }
                     }
                 }
+                glm::vec3 fn = CalculateNormal(vpos[0], vpos[1], vpos[2]);
+                for (int i = 0; i < 3; ++i) {
+                    if (glm::length(vnorm_out[i]) < 0.001f) {
+                        vnorm_out[i] = fn;
+                    }
+                }
             }
             Face new_face{
                 { vpos[0], vpos[1], vpos[2] },
@@ -502,7 +508,7 @@ void Model::load_scene_txt(std::string filename) {
         }
     }
     compute_face_normals();
-    smooth_missing_vertex_normals();
+    
     cache_faces();
 }
 
@@ -514,45 +520,7 @@ void Model::compute_face_normals() noexcept {
     }
 }
 
-void Model::smooth_missing_vertex_normals() noexcept {
-    std::vector<glm::vec3> accum_normals(vertices_.size(), glm::vec3(0.0f));
-    for (auto& obj : objects_) {
-        for (auto& f : obj.faces) {
-            bool needs_computed = false;
-            for (int k = 0; k < 3; ++k) {
-                if (glm::length(f.vertex_normals[k]) < 0.001f) { needs_computed = true; break; }
-            }
-            if (needs_computed) {
-                glm::vec3 n = f.face_normal;
-                glm::vec3 e0 = f.vertices[1] - f.vertices[0];
-                glm::vec3 e1 = f.vertices[2] - f.vertices[0];
-                FloatType area2 = glm::length(glm::cross(e0, e1));
-                glm::vec3 weighted = n * area2;
-                for (int k = 0; k < 3; ++k) {
-                    int idx = f.vertex_indices[k];
-                    if (idx >= 0 && static_cast<std::size_t>(idx) < accum_normals.size()) {
-                        accum_normals[idx] += weighted;
-                    }
-                }
-            }
-        }
-    }
-    for (auto& acc : accum_normals) {
-        if (glm::length(acc) > 0.0f) acc = glm::normalize(acc);
-    }
-    for (auto& obj : objects_) {
-        for (auto& f : obj.faces) {
-            for (int k = 0; k < 3; ++k) {
-                if (glm::length(f.vertex_normals[k]) < 0.001f) {
-                    int idx = f.vertex_indices[k];
-                    f.vertex_normals[k] = (idx >= 0 && static_cast<std::size_t>(idx) < accum_normals.size()) 
-                        ? accum_normals[idx] 
-                        : CalculateNormal(f.vertices[0], f.vertices[1], f.vertices[2]);
-                }
-            }
-        }
-    }
-}
+// Removed smooth_missing_vertex_normals as part of code cleanup
 
 void Model::cache_faces() noexcept {
     all_faces_.clear();

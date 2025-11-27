@@ -244,6 +244,7 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
     if (face.material.tw > 0.0f) {
         constexpr FloatType epsilon = 0.001f;
         glm::vec3 normal = intersection.normal;
+        if (glm::length(normal) < 0.001f) normal = face.face_normal;
         FloatType cos_theta_i = glm::dot(-ray_dir, normal);
         bool entering = cos_theta_i > 0.0f;
         
@@ -331,7 +332,7 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
     }
     
     ColourHDR hdr_colour = ColourHDR(intersection.color.r, intersection.color.g, intersection.color.b);
-    FloatType ambient = 0.025f;
+    FloatType ambient = debug_visualize_caustics_only ? 0.0f : 0.025f;
     FloatType lambertian = 0.0f;
     FloatType specular = 0.0f;
     ColourHDR diffuse_component(0.0f, 0.0f, 0.0f);
@@ -339,60 +340,62 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
     
     FloatType w = 1.0f - intersection.u - intersection.v;
     if (!backface_view_gate) {
-        // Direct lighting from emissive triangles (area lights)
-        glm::vec3 n_shade = (face.material.shading == Material::Shading::Flat)
-            ? face.face_normal
-            : glm::normalize(w * face.vertex_normals[0] + intersection.u * face.vertex_normals[1] + intersection.v * face.vertex_normals[2]);
-        lambertian = 0.0f;
-        specular = 0.0f;
-        if (!area_lights.empty()) {
-            glm::vec3 diffuse_rgb_accum(0.0f);
-            for (const Face* lf : area_lights) {
-                glm::vec3 e0 = lf->vertices[1] - lf->vertices[0];
-                glm::vec3 e1 = lf->vertices[2] - lf->vertices[0];
-                FloatType area = 0.5f * glm::length(glm::cross(e0, e1));
-                if (area < 1e-6f) continue;
-                FloatType u1 = rand_float(rng);
-                FloatType u2 = rand_float(rng);
-                FloatType su = std::sqrt(u1);
-                FloatType b0 = 1.0f - su;
-                FloatType b1 = su * (1.0f - u2);
-                FloatType b2 = su * u2;
-                glm::vec3 light_p = lf->vertices[0] + b1 * e0 + b2 * e1;
-                glm::vec3 shadow_origin = intersection.intersectionPoint + n_shade * 1e-4f;
-                glm::vec3 to_light = light_p - shadow_origin;
-                FloatType dist = glm::length(to_light);
-                if (dist < 1e-4f) continue;
-                glm::vec3 L = glm::normalize(to_light);
-                glm::vec3 n_light = glm::normalize(lf->face_normal);
-                FloatType cos_surf = std::max(0.0f, glm::dot(n_shade, L));
-                FloatType cos_light = std::max(0.0f, glm::dot(n_light, -L));
-                glm::vec3 transmittance = compute_transmittance_bvh(shadow_origin, light_p);
-                FloatType vis = (transmittance.r + transmittance.g + transmittance.b) / 3.0f;
-                glm::vec3 Le = lf->material.emission;
-                FloatType G = (cos_surf * cos_light) / (dist * dist + 1e-6f);
-                FloatType contrib = G * area * vis;
-                glm::vec3 albedo = glm::vec3(hdr_colour.red, hdr_colour.green, hdr_colour.blue);
-                FloatType inv_pi = 1.0f / static_cast<FloatType>(std::numbers::pi);
-                diffuse_rgb_accum += (albedo * (Le * (contrib * inv_pi)));
-                // Simple Phong-like specular towards light
-                glm::vec3 halfway = glm::normalize(L + to_camera_hit);
-                FloatType cos_alpha = std::max(0.0f, glm::dot(n_shade, halfway));
-                FloatType le_lum = 0.2126f * Le.r + 0.7152f * Le.g + 0.0722f * Le.b;
-                specular += le_lum * std::pow(cos_alpha, face.material.shininess) * area * vis / (dist * dist + 1e-6f);
+        if (!debug_visualize_caustics_only) {
+            glm::vec3 n_shade = (face.material.shading == Material::Shading::Flat)
+                ? face.face_normal
+                : glm::normalize(w * face.vertex_normals[0] + intersection.u * face.vertex_normals[1] + intersection.v * face.vertex_normals[2]);
+            lambertian = 0.0f;
+            specular = 0.0f;
+            if (!area_lights.empty()) {
+                glm::vec3 diffuse_rgb_accum(0.0f);
+                for (const Face* lf : area_lights) {
+                    glm::vec3 e0 = lf->vertices[1] - lf->vertices[0];
+                    glm::vec3 e1 = lf->vertices[2] - lf->vertices[0];
+                    FloatType area = 0.5f * glm::length(glm::cross(e0, e1));
+                    if (area < 1e-6f) continue;
+                    FloatType u1 = rand_float(rng);
+                    FloatType u2 = rand_float(rng);
+                    FloatType su = std::sqrt(u1);
+                    FloatType b0 = 1.0f - su;
+                    FloatType b1 = su * (1.0f - u2);
+                    FloatType b2 = su * u2;
+                    glm::vec3 light_p = lf->vertices[0] + b1 * e0 + b2 * e1;
+                    glm::vec3 shadow_origin = intersection.intersectionPoint + n_shade * 1e-4f;
+                    glm::vec3 to_light = light_p - shadow_origin;
+                    FloatType dist = glm::length(to_light);
+                    if (dist < 1e-4f) continue;
+                    glm::vec3 L = glm::normalize(to_light);
+                    glm::vec3 n_light = glm::normalize(lf->face_normal);
+                    FloatType cos_surf = std::max(0.0f, glm::dot(n_shade, L));
+                    FloatType cos_light = std::max(0.0f, glm::dot(n_light, -L));
+                    glm::vec3 transmittance = compute_transmittance_bvh(shadow_origin, light_p);
+                    FloatType vis = (transmittance.r + transmittance.g + transmittance.b) / 3.0f;
+                    glm::vec3 Le = lf->material.emission;
+                    FloatType G = (cos_surf * cos_light) / (dist * dist + 1e-6f);
+                    FloatType contrib = G * area * vis;
+                    glm::vec3 albedo = glm::vec3(hdr_colour.red, hdr_colour.green, hdr_colour.blue);
+                    FloatType inv_pi = 1.0f / static_cast<FloatType>(std::numbers::pi);
+                    diffuse_rgb_accum += (albedo * (Le * (contrib * inv_pi)));
+                    glm::vec3 halfway = glm::normalize(L + to_camera_hit);
+                    FloatType cos_alpha = std::max(0.0f, glm::dot(n_shade, halfway));
+                    FloatType le_lum = 0.2126f * Le.r + 0.7152f * Le.g + 0.0722f * Le.b;
+                    specular += le_lum * std::pow(cos_alpha, face.material.shininess) * area * vis / (dist * dist + 1e-6f);
+                }
+                diffuse_component = ColourHDR(diffuse_rgb_accum.r, diffuse_rgb_accum.g, diffuse_rgb_accum.b);
+                lambertian = 0.0f;
+            } else {
+                const glm::vec3& light_pos = world_.light_position();
+                glm::vec3 to_light_hit = light_pos - intersection.intersectionPoint;
+                FloatType dist_light_hit = glm::length(to_light_hit);
+                glm::vec3 n_shade = (face.material.shading == Material::Shading::Flat)
+                    ? face.face_normal
+                    : glm::normalize(w * face.vertex_normals[0] + intersection.u * face.vertex_normals[1] + intersection.v * face.vertex_normals[2]);
+                lambertian = compute_lambertian_lighting(n_shade, to_light_hit, dist_light_hit, light_intensity);
+                if (lambertian > 0.0f) {
+                    specular = compute_specular_lighting(n_shade, to_light_hit, to_camera_hit, dist_light_hit, light_intensity, face.material.shininess);
+                }
+                diffuse_component = hdr_colour * lambertian;
             }
-            diffuse_component = ColourHDR(diffuse_rgb_accum.r, diffuse_rgb_accum.g, diffuse_rgb_accum.b);
-            lambertian = 0.0f; // already baked into diffuse_component
-        } else {
-            // Fallback to legacy point light if no emissive surfaces exist
-            const glm::vec3& light_pos = world_.light_position();
-            glm::vec3 to_light_hit = light_pos - intersection.intersectionPoint;
-            FloatType dist_light_hit = glm::length(to_light_hit);
-            lambertian = compute_lambertian_lighting(n_shade, to_light_hit, dist_light_hit, light_intensity);
-            if (lambertian > 0.0f) {
-                specular = compute_specular_lighting(n_shade, to_light_hit, to_camera_hit, dist_light_hit, light_intensity, face.material.shininess);
-            }
-            diffuse_component = hdr_colour * lambertian;
         }
     }
     
@@ -404,10 +407,14 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
     specular_component = ColourHDR(specular, specular, specular);
     
     ColourHDR direct_lighting;
-    if (face.material.metallic > 0.0f) {
-        direct_lighting = ambient_component + diffuse_component + hdr_colour * specular_component.red;
+    if (debug_visualize_caustics_only) {
+        direct_lighting = ColourHDR(0.0f, 0.0f, 0.0f);
     } else {
-        direct_lighting = ambient_component + diffuse_component + specular_component;
+        if (face.material.metallic > 0.0f) {
+            direct_lighting = ambient_component + diffuse_component + hdr_colour * specular_component.red;
+        } else {
+            direct_lighting = ambient_component + diffuse_component + specular_component;
+        }
     }
     
     if (face.material.metallic > 0.0f) {
@@ -443,12 +450,6 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
         // Estimate caustic radiance at this point
         caustics_contribution = photon_map_->estimate_caustic(&face, intersection.intersectionPoint, intersection.normal, PhotonMap::CAUSTIC_SEARCH_RADIUS);
         
-        // DEBUG MODE: Show only caustics RAW COLOR (no material modulation) for verification
-        if (debug_visualize_caustics_only) {
-            // Boost by 40x and show raw photon color (before material modulation)
-            return caustics_contribution * 40.0f;
-        }
-        
         // Modulate caustics by surface albedo (diffuse color) to get final color
         caustics_contribution = ColourHDR(
             caustics_contribution.red * hdr_colour.red,
@@ -456,13 +457,8 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
             caustics_contribution.blue * hdr_colour.blue
         );
         
-        // Scale down to 12.5% to reduce brightness
-        caustics_contribution = caustics_contribution * 0.025f;
-    }
-    
-    // DEBUG MODE: Non-caustic surfaces return black
-    if (debug_visualize_caustics_only) {
-        return ColourHDR(0.0f, 0.0f, 0.0f);
+        // Scale caustics intensity to 50% of current value
+        caustics_contribution = caustics_contribution * 0.25f;
     }
     
     {

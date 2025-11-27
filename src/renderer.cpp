@@ -135,8 +135,7 @@ void Renderer::process_rows(int y0, int y1) noexcept {
                 accumulation_buffer_[idx].green / static_cast<FloatType>(rendering_frame_count_),
                 accumulation_buffer_[idx].blue / static_cast<FloatType>(rendering_frame_count_)
             );
-            uint32_t dither_seed = static_cast<uint32_t>(idx + rendering_frame_count_ * 91138233u) | 1u;
-            Colour final_colour = tonemap_and_gamma_correct(avg_hdr, gamma_, dither_seed);
+            Colour final_colour = tonemap_and_gamma_correct(avg_hdr, gamma_);
             window_[{x, y}] = final_colour;
         }
     }
@@ -180,7 +179,7 @@ FloatType Renderer::aces_tone_mapping(FloatType hdr_value) noexcept {
     return std::clamp(numerator / denominator, 0.0f, 1.0f);
 }
 
-Colour Renderer::tonemap_and_gamma_correct(const ColourHDR& hdr, FloatType gamma, uint32_t& seed) noexcept {
+Colour Renderer::tonemap_and_gamma_correct(const ColourHDR& hdr, FloatType gamma) noexcept {
     FloatType r_ldr = aces_tone_mapping(hdr.red * 0.6f);
     FloatType g_ldr = aces_tone_mapping(hdr.green * 0.6f);
     FloatType b_ldr = aces_tone_mapping(hdr.blue * 0.6f);

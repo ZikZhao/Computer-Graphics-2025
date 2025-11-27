@@ -71,16 +71,24 @@ int main(int argc, char *argv[]) {
                 renderer.caustics_enabled_ = !renderer.caustics_enabled_;
                 std::cout << "Caustics (photon mapping): "
                           << (renderer.caustics_enabled_ ? "ENABLED" : "DISABLED") << std::endl;
+                renderer.ResetAccumulation();
             } else {
                 std::cout << "Photon map not ready yet, please wait..." << std::endl;
             }
         });
     window.register_key({SDL_SCANCODE_V}, Window::Trigger::ANY_JUST_PRESSED,
         [&](const Window::KeyState&, float) {
+            static FloatType prev_intensity = world.light_intensity();
             RayTracer::debug_visualize_caustics_only = !RayTracer::debug_visualize_caustics_only;
-            std::cout << "DEBUG Caustics-only mode: "
-                      << (RayTracer::debug_visualize_caustics_only ? "ON (verify Beer-Lambert color)" : "OFF")
-                      << std::endl;
+            if (RayTracer::debug_visualize_caustics_only) {
+                prev_intensity = world.light_intensity();
+                world.set_light_intensity(0.0f);
+                std::cout << "DEBUG Caustics-only mode: ON (direct light intensity set to 0)" << std::endl;
+            } else {
+                world.set_light_intensity(prev_intensity);
+                std::cout << "DEBUG Caustics-only mode: OFF (direct light intensity restored)" << std::endl;
+            }
+            renderer.ResetAccumulation();
         });
     
     // Screenshot Save (Ctrl+S)
