@@ -410,6 +410,13 @@ void Model::load_scene_txt(std::string filename) {
             vertex_offset = static_cast<int>(vertices_.size());
             tex_offset = static_cast<int>(texture_coords_.size());
             normal_offset = static_cast<int>(vertex_normals_.size());
+        } else if (type == "Include") {
+            std::string rel;
+            iss >> rel;
+            if (!rel.empty()) {
+                std::string inc_path = (std::filesystem::path(filename).parent_path() / rel).string();
+                load_scene_txt(inc_path);
+            }
         } else if (type == "Use") {
             if (current_obj != objects_.end()) {
                 std::string mat_name;

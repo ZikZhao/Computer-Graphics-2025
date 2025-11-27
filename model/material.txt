@@ -1,0 +1,45 @@
+Material light
+    Colour 1.000000 1.000000 1.000000
+    Emission 15 15 15
+
+Material white
+    Colour 1.000000 1.000000 1.000000
+
+Material grey
+    Colour 0.700000 0.700000 0.700000
+
+Material grey_metallic
+    Metallic 1.0
+    Colour 0.700000 0.700000 0.700000
+
+Material red
+    Colour 1.000000 0.000000 0.000000
+
+Material green
+    Colour 0.000000 1.000000 0.000000
+
+Material blue
+    Colour 0.000000 0.000000 1.000000
+
+Material yellow
+    Colour 1.000000 1.000000 0.000000
+
+Material magenta
+    Colour 1.000000 0.000000 1.000000
+
+Material cyan
+    Colour 0.000000 1.000000 1.000000
+
+Material cobbles
+    Colour 1.000000 1.000000 1.000000
+    Texture texture.ppm
+
+Material mirror
+    Metallic 1.0
+    Colour 1.000000 1.000000 1.000000
+
+Material light_blue_glass
+    Colour 0.7 0.95 0.98
+    AtDistance 0.1
+    TransimissionWeight 0.9
+    IOR 1.5
