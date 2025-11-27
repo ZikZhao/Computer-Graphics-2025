@@ -206,6 +206,13 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
     
     const std::vector<Face>& all_faces = world_.all_faces();
     const Face& face = all_faces[intersection.triangleIndex];
+
+    if (depth == 0) {
+        glm::vec3 Le = face.material.emission;
+        if (glm::length(Le) > 1e-6f) {
+            return ColourHDR(Le.r, Le.g, Le.b) * medium_absorption;
+        }
+    }
     const auto& area_lights = world_.area_lights();
     
     // SHADER DISPATCH: Choose shader based on material properties
