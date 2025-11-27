@@ -55,22 +55,22 @@ int main(int argc, char *argv[]) {
         {SDL_SCANCODE_1, SDL_SCANCODE_2, SDL_SCANCODE_3, SDL_SCANCODE_4},
         Window::Trigger::ANY_JUST_PRESSED,
         [&](const Window::KeyState& ks, float) {
-            if (ks[SDL_SCANCODE_1]) renderer.mode_ = Renderer::Mode::WIREFRAME;
-            else if (ks[SDL_SCANCODE_2]) renderer.mode_ = Renderer::Mode::RASTERIZED;
-            else if (ks[SDL_SCANCODE_3]) renderer.mode_ = Renderer::Mode::RAYTRACED;
-            else if (ks[SDL_SCANCODE_4]) renderer.mode_ = Renderer::Mode::DEPTH_OF_FIELD;
+            if (ks[SDL_SCANCODE_1]) renderer.set_mode(Renderer::Mode::WIREFRAME);
+            else if (ks[SDL_SCANCODE_2]) renderer.set_mode(Renderer::Mode::RASTERIZED);
+            else if (ks[SDL_SCANCODE_3]) renderer.set_mode(Renderer::Mode::RAYTRACED);
+            else if (ks[SDL_SCANCODE_4]) renderer.set_mode(Renderer::Mode::DEPTH_OF_FIELD);
         });
 
     window.register_key({SDL_SCANCODE_G}, Window::Trigger::ANY_JUST_PRESSED,
-        [&](const Window::KeyState&, float) { renderer.gamma_ = (renderer.gamma_ == 2.2f) ? 1.0f : 2.2f; });
+        [&](const Window::KeyState&, float) { renderer.set_gamma((renderer.gamma() == 2.2f) ? 1.0f : 2.2f); });
     window.register_key({SDL_SCANCODE_H}, Window::Trigger::ANY_JUST_PRESSED,
-        [&](const Window::KeyState&, float) { renderer.soft_shadows_enabled_ = !renderer.soft_shadows_enabled_; });
+        [&](const Window::KeyState&, float) { renderer.set_soft_shadows_enabled(!renderer.soft_shadows_enabled()); });
     window.register_key({SDL_SCANCODE_P}, Window::Trigger::ANY_JUST_PRESSED,
         [&](const Window::KeyState&, float) {
-            if (renderer.raytracer_->is_photon_map_ready()) {
-                renderer.caustics_enabled_ = !renderer.caustics_enabled_;
+            if (renderer.is_photon_map_ready()) {
+                renderer.set_caustics_enabled(!renderer.caustics_enabled());
                 std::cout << "Caustics (photon mapping): "
-                          << (renderer.caustics_enabled_ ? "ENABLED" : "DISABLED") << std::endl;
+                          << (renderer.caustics_enabled() ? "ENABLED" : "DISABLED") << std::endl;
                 renderer.reset_accumulation();
             } else {
                 std::cout << "Photon map not ready yet, please wait..." << std::endl;
