@@ -10,6 +10,26 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "../libs/stb_image.h"
 
+namespace {
+struct IndexTriple { int v; int vt; int vn; };
+static IndexTriple parse_index_token(const std::string& t) {
+    IndexTriple idx{-1, -1, -1};
+    if (t.find('/') != std::string::npos) {
+        std::vector<std::string> parts;
+        std::stringstream ss(t);
+        std::string p;
+        while (std::getline(ss, p, '/')) parts.push_back(p);
+        if (!parts.empty() && !parts[0].empty()) idx.v = std::stoi(parts[0]);
+        if (parts.size() >= 2 && !parts[1].empty()) idx.vt = std::stoi(parts[1]);
+        if (parts.size() >= 3 && !parts[2].empty()) idx.vn = std::stoi(parts[2]);
+    } else {
+        bool digits_only = !t.empty() && std::all_of(t.begin(), t.end(), [](char c){ return c >= '0' && c <= '9'; });
+        if (digits_only) idx.v = std::stoi(t);
+    }
+    return idx;
+}
+}
+
 // Camera implementation
 glm::mat3 Camera::orientation() const noexcept {
     FloatType cos_pitch = std::cos(pitch_);
@@ -283,61 +303,8 @@ void Model::load_file(std::string filename) {
         }
     }
     
-    // Compute face normals
-    for (auto& obj : objects_) {
-        for (auto& f : obj.faces) {
-            f.face_normal = CalculateNormal(f.vertices[0], f.vertices[1], f.vertices[2]);
-        }
-    }
-    
-    // Compute vertex normals only for faces that don't have them from the file
-    std::vector<glm::vec3> accum_normals(vertices_.size(), glm::vec3(0.0f));
-    for (auto& obj : objects_) {
-        for (auto& f : obj.faces) {
-            // Check if this face needs computed normals
-            bool needs_computed = false;
-            for (int k = 0; k < 3; ++k) {
-                if (glm::length(f.vertex_normals[k]) < 0.001f) {
-                    needs_computed = true;
-                    break;
-                }
-            }
-            
-            if (needs_computed) {
-                glm::vec3 n = f.face_normal;
-                glm::vec3 e0 = f.vertices[1] - f.vertices[0];
-                glm::vec3 e1 = f.vertices[2] - f.vertices[0];
-                FloatType area2 = glm::length(glm::cross(e0, e1));
-                glm::vec3 weighted = n * area2;
-                for (int k = 0; k < 3; ++k) {
-                    int idx = f.vertex_indices[k];
-                    if (idx >= 0 && static_cast<std::size_t>(idx) < accum_normals.size()) {
-                        accum_normals[idx] += weighted;
-                    }
-                }
-            }
-        }
-    }
-    
-    // Normalize accumulated normals
-    for (auto& acc : accum_normals) {
-        if (glm::length(acc) > 0.0f) acc = glm::normalize(acc);
-    }
-    
-    // Apply computed normals to faces that need them
-    for (auto& obj : objects_) {
-        for (auto& f : obj.faces) {
-            for (int k = 0; k < 3; ++k) {
-                // Only set if not already set from file
-                if (glm::length(f.vertex_normals[k]) < 0.001f) {
-                    int idx = f.vertex_indices[k];
-                    f.vertex_normals[k] = (idx >= 0 && static_cast<std::size_t>(idx) < accum_normals.size()) 
-                        ? accum_normals[idx] 
-                        : CalculateNormal(f.vertices[0], f.vertices[1], f.vertices[2]);
-                }
-            }
-        }
-    }
+    compute_face_normals();
+    smooth_missing_vertex_normals();
     cache_faces();
 }
 
@@ -356,7 +323,17 @@ void Model::load_scene_txt(std::string filename) {
         std::istringstream iss(line);
         std::string type;
         iss >> type;
-        if (type == "Material") {
+        if (type == "Environ") {
+            std::string hdr;
+            iss >> hdr;
+        } else if (type == "Include") {
+            std::string rel;
+            iss >> rel;
+            if (!rel.empty()) {
+                std::string inc_path = (std::filesystem::path(filename).parent_path() / rel).string();
+                load_scene_txt(inc_path);
+            }
+        } else if (type == "Material") {
             std::string name;
             iss >> name;
             current_material = materials_.emplace(name, Material{}).first;
@@ -410,13 +387,6 @@ void Model::load_scene_txt(std::string filename) {
             vertex_offset = static_cast<int>(vertices_.size());
             tex_offset = static_cast<int>(texture_coords_.size());
             normal_offset = static_cast<int>(vertex_normals_.size());
-        } else if (type == "Include") {
-            std::string rel;
-            iss >> rel;
-            if (!rel.empty()) {
-                std::string inc_path = (std::filesystem::path(filename).parent_path() / rel).string();
-                load_scene_txt(inc_path);
-            }
         } else if (type == "Use") {
             if (current_obj != objects_.end()) {
                 std::string mat_name;
@@ -433,6 +403,17 @@ void Model::load_scene_txt(std::string filename) {
                 FloatType x, y, z;
                 iss >> x >> y >> z;
                 vertices_.emplace_back(x, y, z);
+                vertex_normals_by_vertex_.emplace_back(glm::vec3(0.0f));
+                char c;
+                if (iss >> c) {
+                    if (c == '/') {
+                        FloatType xn, yn, zn;
+                        iss >> xn >> yn >> zn;
+                        vertex_normals_by_vertex_.back() = glm::normalize(glm::vec3(xn, yn, zn));
+                    } else {
+                        iss.putback(c);
+                    }
+                }
             }
         } else if (type == "TextureCoord") {
             FloatType u, v;
@@ -453,22 +434,12 @@ void Model::load_scene_txt(std::string filename) {
             glm::vec3 vnorm_out[3] = {glm::vec3(0.0f), glm::vec3(0.0f), glm::vec3(0.0f)};
             bool has_vn = false;
             for (int i = 0; i < 3; ++i) {
-                int v_i = -1, vt_i = -1, vn_i = -1;
                 const std::string& t = tok[i];
-                if (t.find('/') != std::string::npos) {
-                    std::vector<std::string> parts;
-                    std::stringstream ss(t);
-                    std::string p;
-                    while (std::getline(ss, p, '/')) parts.push_back(p);
-                    if (!parts.empty() && !parts[0].empty()) v_i = std::stoi(parts[0]);
-                    if (parts.size() >= 2 && !parts[1].empty()) vt_i = std::stoi(parts[1]);
-                    if (parts.size() >= 3 && !parts[2].empty()) { vn_i = std::stoi(parts[2]); has_vn = true; }
-                } else {
-                    bool digits_only = !t.empty() && std::all_of(t.begin(), t.end(), [](char c){ return c >= '0' && c <= '9'; });
-                    if (digits_only) {
-                        v_i = std::stoi(t);
-                    }
-                }
+                IndexTriple tri = parse_index_token(t);
+                int v_i = tri.v;
+                int vt_i = tri.vt;
+                int vn_i = tri.vn;
+                if (vn_i >= 0) has_vn = true;
                 int v_global = vertex_offset + (v_i >= 0 ? v_i : 0);
                 vpos[i] = vertices_[v_global];
                 vi_out[i] = v_global;
@@ -486,6 +457,16 @@ void Model::load_scene_txt(std::string filename) {
                     }
                 }
             }
+            if (!has_vn) {
+                for (int i = 0; i < 3; ++i) {
+                    int vidx = vi_out[i];
+                    if (vidx >= 0 && static_cast<std::size_t>(vidx) < vertex_normals_by_vertex_.size()) {
+                        if (glm::length(vertex_normals_by_vertex_[vidx]) > 0.001f) {
+                            vnorm_out[i] = vertex_normals_by_vertex_[vidx];
+                        }
+                    }
+                }
+            }
             Face new_face{
                 { vpos[0], vpos[1], vpos[2] },
                 { tex_idx_out[0], tex_idx_out[1], tex_idx_out[2] },
@@ -498,11 +479,20 @@ void Model::load_scene_txt(std::string filename) {
             current_obj->faces.emplace_back(std::move(new_face));
         }
     }
+    compute_face_normals();
+    smooth_missing_vertex_normals();
+    cache_faces();
+}
+
+void Model::compute_face_normals() noexcept {
     for (auto& obj : objects_) {
         for (auto& f : obj.faces) {
             f.face_normal = CalculateNormal(f.vertices[0], f.vertices[1], f.vertices[2]);
         }
     }
+}
+
+void Model::smooth_missing_vertex_normals() noexcept {
     std::vector<glm::vec3> accum_normals(vertices_.size(), glm::vec3(0.0f));
     for (auto& obj : objects_) {
         for (auto& f : obj.faces) {
@@ -540,7 +530,6 @@ void Model::load_scene_txt(std::string filename) {
             }
         }
     }
-    cache_faces();
 }
 
 void Model::cache_faces() noexcept {

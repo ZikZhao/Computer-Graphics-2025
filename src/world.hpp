@@ -224,6 +224,7 @@ private:
     std::vector<glm::vec3> vertices_;
     std::vector<glm::vec2> texture_coords_;  // vt coordinates from OBJ
     std::vector<glm::vec3> vertex_normals_;  // vn normals from OBJ
+    std::vector<glm::vec3> vertex_normals_by_vertex_;
     bool has_light_ = false;
     glm::vec3 light_position_ = glm::vec3(0.0f, 0.0f, 0.0f);
 public:
@@ -239,6 +240,8 @@ private:
     void load_materials(std::string filename);
     Texture load_texture(std::string filename);
     void cache_faces() noexcept;  // Build all_faces_ from objects_
+    void compute_face_normals() noexcept;
+    void smooth_missing_vertex_normals() noexcept;
 };
 
 class World {
