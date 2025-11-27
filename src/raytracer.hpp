@@ -27,9 +27,6 @@ public:
     };
 
 public:
-    static bool DebugVisualizeCausticsOnly;
-
-public:
     static uint32_t PcgHash(uint32_t v) noexcept;
     static FloatType RandFloat(uint32_t& seed) noexcept;
     static FloatType ComputeLambertianLighting(const glm::vec3& normal, const glm::vec3& to_light,

@@ -7,8 +7,7 @@
 #include "photon_map.hpp"
 #include "raytracer.hpp"
 
-// DEBUG: Set to true to only show caustics (black background)
-bool RayTracer::DebugVisualizeCausticsOnly = false;
+ 
 
 uint32_t RayTracer::PcgHash(uint32_t v) noexcept {
     uint32_t state = v * 747796405u + 2891336453u;
@@ -146,11 +145,6 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
     }
     
     if (intersection.triangleIndex == static_cast<std::size_t>(-1)) {
-        // DEBUG MODE: return black for background
-        if (DebugVisualizeCausticsOnly) {
-            return ColourHDR(0.0f, 0.0f, 0.0f);
-        }
-        
         ColourHDR env_color;
         if (world_.env_map().is_loaded()) {
             env_color = world_.env_map().sample(ray_dir);
@@ -273,7 +267,7 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
     }
     
     ColourHDR hdr_colour = ColourHDR(intersection.color.r, intersection.color.g, intersection.color.b);
-    FloatType ambient = DebugVisualizeCausticsOnly ? 0.0f : 0.025f;
+    FloatType ambient = 0.025f;
     FloatType lambertian = 0.0f;
     FloatType specular = 0.0f;
     ColourHDR diffuse_component(0.0f, 0.0f, 0.0f);
@@ -281,7 +275,7 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
     
     FloatType w = 1.0f - intersection.u - intersection.v;
     if (!backface_view_gate) {
-        if (!DebugVisualizeCausticsOnly) {
+        {
             glm::vec3 n_shade = (face.material.shading == Material::Shading::FLAT)
                 ? face.face_normal
                 : glm::normalize(w * face.vertex_normals[0] + intersection.u * face.vertex_normals[1] + intersection.v * face.vertex_normals[2]);
@@ -348,14 +342,10 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
     specular_component = ColourHDR(specular, specular, specular);
     
     ColourHDR direct_lighting;
-    if (DebugVisualizeCausticsOnly) {
-        direct_lighting = ColourHDR(0.0f, 0.0f, 0.0f);
+    if (face.material.metallic > 0.0f) {
+        direct_lighting = ambient_component + diffuse_component + hdr_colour * specular_component.red;
     } else {
-        if (face.material.metallic > 0.0f) {
-            direct_lighting = ambient_component + diffuse_component + hdr_colour * specular_component.red;
-        } else {
-            direct_lighting = ambient_component + diffuse_component + specular_component;
-        }
+        direct_lighting = ambient_component + diffuse_component + specular_component;
     }
     
     if (face.material.metallic > 0.0f) {

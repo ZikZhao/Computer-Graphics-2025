@@ -76,20 +76,7 @@ int main(int argc, char *argv[]) {
                 std::cout << "Photon map not ready yet, please wait..." << std::endl;
             }
         });
-    window.register_key({SDL_SCANCODE_V}, Window::Trigger::ANY_JUST_PRESSED,
-        [&](const Window::KeyState&, float) {
-            static FloatType prev_intensity = world.light_intensity();
-            RayTracer::DebugVisualizeCausticsOnly = !RayTracer::DebugVisualizeCausticsOnly;
-            if (RayTracer::DebugVisualizeCausticsOnly) {
-                prev_intensity = world.light_intensity();
-                world.set_light_intensity(0.0f);
-                std::cout << "DEBUG Caustics-only mode: ON (direct light intensity set to 0)" << std::endl;
-            } else {
-                world.set_light_intensity(prev_intensity);
-                std::cout << "DEBUG Caustics-only mode: OFF (direct light intensity restored)" << std::endl;
-            }
-            renderer.reset_accumulation();
-        });
+    
     
     // Screenshot Save (Ctrl+S)
     window.register_key({SDL_SCANCODE_LCTRL, SDL_SCANCODE_S}, Window::Trigger::ALL_JUST_PRESSED,
@@ -126,17 +113,18 @@ int main(int argc, char *argv[]) {
     std::size_t fps = 0;
     
     while (true) {
-        if (!window.process_events()) break;
-        
         // Render frame
         world.orbiting();
         renderer.render();
-        window.update();
+
+        if (!window.process_events()) break;
         
-        // Capture frame if recording
+        // Capture frame if recording (capture pixel_buffer_ before presenting)
         if (video_recorder.is_recording()) {
             video_recorder.capture_frame();
         }
+        
+        window.update();
         
         // FPS counter
         fps++;
