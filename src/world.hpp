@@ -1,21 +1,22 @@
 #pragma once
-#include <fstream>
-#include <vector>
-#include <sstream>
 #include <algorithm>
-#include <functional>
-#include <numeric>
-#include <map>
-#include <stdexcept>
-#include <memory>
-#include <chrono>
 #include <array>
-#include <filesystem>
-#include <numbers>
-#include <optional>
-#include <barrier>
 #include <atomic>
+#include <barrier>
+#include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <functional>
+#include <map>
+#include <memory>
+#include <numbers>
+#include <numeric>
+#include <optional>
+#include <sstream>
+#include <stdexcept>
 #include <thread>
+#include <vector>
+
 #include "utils.hpp"
 
 // Clipping planes for frustum
@@ -23,28 +24,26 @@
  * @brief Frustum clip planes in homogeneous clip space.
  */
 enum class ClipPlane {
-    LEFT,   // x >= -w
-    RIGHT,  // x <= w
-    BOTTOM, // y >= -w
-    TOP,    // y <= w
-    NEAR,   // z >= 0
-    FAR     // z <= w
+    LEFT,    // x >= -w
+    RIGHT,   // x <= w
+    BOTTOM,  // y >= -w
+    TOP,     // y <= w
+    NEAR,    // z >= 0
+    FAR      // z <= w
 };
 
 struct Colour {
     std::uint8_t red;
     std::uint8_t green;
     std::uint8_t blue;
-    constexpr operator std::uint32_t () const {
-        return (255 << 24) + (red << 16) + (green << 8) + blue;
-    }
+    constexpr operator std::uint32_t() const { return (255 << 24) + (red << 16) + (green << 8) + blue; }
 };
 
 struct ColourHDR {
     FloatType red;
     FloatType green;
     FloatType blue;
-    
+
     /**
      * @brief Converts 8-bit sRGB to linear HDR using gamma.
      * @param srgb Source colour.
@@ -52,23 +51,23 @@ struct ColourHDR {
      * @return Linear HDR colour.
      */
     static ColourHDR from_srgb(const Colour& srgb, FloatType gamma) noexcept;
-    
+
     constexpr ColourHDR operator*(FloatType scalar) const noexcept {
-        return ColourHDR{ .red = red * scalar, .green = green * scalar, .blue = blue * scalar };
+        return ColourHDR{.red = red * scalar, .green = green * scalar, .blue = blue * scalar};
     }
-    
+
     constexpr ColourHDR operator*(const ColourHDR& other) const noexcept {
-        return ColourHDR{ .red = red * other.red, .green = green * other.green, .blue = blue * other.blue };
+        return ColourHDR{.red = red * other.red, .green = green * other.green, .blue = blue * other.blue};
     }
-    
+
     constexpr ColourHDR operator+(const ColourHDR& other) const noexcept {
-        return ColourHDR{ .red = red + other.red, .green = green + other.green, .blue = blue + other.blue };
+        return ColourHDR{.red = red + other.red, .green = green + other.green, .blue = blue + other.blue};
     }
 };
 
 struct Face;
 struct RayTriangleIntersection;
-class BVHAccelerator; // forward declaration
+class BVHAccelerator;  // forward declaration
 
 /**
  * @brief Lat-long HDR environment map with auto-exposure.
@@ -117,20 +116,23 @@ struct RayTriangleIntersection {
     glm::vec3 normal;
     glm::vec3 geom_normal;
     bool front_face;
-    FloatType u; // Barycentric coordinate for vertex 1
-    FloatType v; // Barycentric coordinate for vertex 2
+    FloatType u;  // Barycentric coordinate for vertex 1
+    FloatType v;  // Barycentric coordinate for vertex 2
 };
 
 class Texture {
     std::size_t width_;
     std::size_t height_;
     std::vector<Colour> data_;
+
 public:
     constexpr Texture(std::size_t w, std::size_t h, std::vector<Colour> data)
         : width_(w), height_(h), data_(std::move(data)) {}
     constexpr Colour sample(FloatType u, FloatType v) const {
-        std::size_t ix = static_cast<std::size_t>(std::clamp(u * static_cast<FloatType>(width_ - 1), 0.0f, static_cast<FloatType>(width_ - 1)));
-        std::size_t iy = static_cast<std::size_t>(std::clamp(v * static_cast<FloatType>(height_ - 1), 0.0f, static_cast<FloatType>(height_ - 1)));
+        std::size_t ix = static_cast<std::size_t>(
+            std::clamp(u * static_cast<FloatType>(width_ - 1), 0.0f, static_cast<FloatType>(width_ - 1)));
+        std::size_t iy = static_cast<std::size_t>(
+            std::clamp(v * static_cast<FloatType>(height_ - 1), 0.0f, static_cast<FloatType>(height_ - 1)));
         return data_[iy * width_ + ix];
     }
 };
@@ -141,9 +143,9 @@ struct Material {
     FloatType shininess = 64.0f;
     FloatType metallic = 0.0f;
     enum class Shading { FLAT, GOURAUD, PHONG } shading = Shading::FLAT;
-    FloatType ior = 1.0f;           // Index of refraction (1.0 = no refraction, 1.5 = glass)
-    FloatType td = 1.0f;            // Transmission Depth: The distance at which the base_color is reached
-    FloatType tw = 0.0f;            // Transparency weight (0 = opaque, 1 = fully transparent)
+    FloatType ior = 1.0f;  // Index of refraction (1.0 = no refraction, 1.5 = glass)
+    FloatType td = 1.0f;   // Transmission Depth: The distance at which the base_color is reached
+    FloatType tw = 0.0f;   // Transparency weight (0 = opaque, 1 = fully transparent)
     glm::vec3 sigma_a = glm::vec3(0.0f, 0.0f, 0.0f);  // Absorption coefficient for Beer-Lambert (optional override)
     glm::vec3 emission = glm::vec3(0.0f);             // Emissive radiance (area light)
 };
@@ -158,7 +160,7 @@ struct ScreenNdcCoord {
     FloatType x;
     FloatType y;
     FloatType z_ndc;
-    glm::vec2 uv;  // Texture coordinates (already divided by w)
+    glm::vec2 uv;     // Texture coordinates (already divided by w)
     FloatType inv_w;  // 1/w for perspective correction
 };
 
@@ -171,12 +173,13 @@ public:
     static constexpr double FOV = 45.0;
     static constexpr double NearPlane = 0.001;
     static constexpr double FarPlane = 100.0;
+
 public:
-    glm::vec3 position_ = { 0.0f, 0.0f, 12.0f };
-    FloatType yaw_ = 0.0f;      // Horizontal rotation (around world Y axis)
-    FloatType pitch_ = 0.0f;    // Vertical rotation (clamped to ±89 degrees)
+    glm::vec3 position_ = {0.0f, 0.0f, 12.0f};
+    FloatType yaw_ = 0.0f;    // Horizontal rotation (around world Y axis)
+    FloatType pitch_ = 0.0f;  // Vertical rotation (clamped to ±89 degrees)
     FloatType roll_ = 0.0f;
-    glm::vec3 orbit_target_ = { 0.0f, 0.0f, 0.0f };
+    glm::vec3 orbit_target_ = {0.0f, 0.0f, 0.0f};
     bool is_orbiting_ = false;
     FloatType orbit_radius_ = 0.0f;
     Camera() noexcept = default;
@@ -213,9 +216,11 @@ public:
     /** @brief Sets roll. */
     void set_roll(FloatType r) noexcept;
     /** @brief Generates a ray through a pixel center. */
-    std::pair<glm::vec3, glm::vec3> generate_ray(int pixel_x, int pixel_y, int screen_width, int screen_height, double aspect_ratio) const noexcept;
+    std::pair<glm::vec3, glm::vec3> generate_ray(
+        int pixel_x, int pixel_y, int screen_width, int screen_height, double aspect_ratio) const noexcept;
     /** @brief Generates a ray from normalized UV. */
-    std::pair<glm::vec3, glm::vec3> generate_ray_uv(FloatType u, FloatType v, int screen_width, int screen_height, double aspect_ratio) const noexcept;
+    std::pair<glm::vec3, glm::vec3> generate_ray_uv(
+        FloatType u, FloatType v, int screen_width, int screen_height, double aspect_ratio) const noexcept;
 };
 
 // Optimization: Store per-vertex indices instead of duplicating vertex data.
@@ -249,6 +254,7 @@ private:
     std::vector<glm::vec2> texture_coords_;  // vt coordinates from OBJ
     std::vector<glm::vec3> vertex_normals_;  // vn normals from OBJ
     std::vector<glm::vec3> vertex_normals_by_vertex_;
+
 public:
     Model() noexcept = default;
     /** @brief Loads an OBJ file into this model. */
@@ -266,7 +272,8 @@ public:
     const std::vector<glm::vec3>& vertex_normals() const noexcept { return vertex_normals_; }
     /** @brief Optional per-vertex normals authored inline. */
     const std::vector<glm::vec3>& vertex_normals_by_vertex() const noexcept { return vertex_normals_by_vertex_; }
-    private:
+
+private:
     void load_materials(std::string filename);
     Texture load_texture(std::string filename);
     void cache_faces() noexcept;
@@ -289,6 +296,7 @@ public:
         int start;
         int count;
     };
+
 private:
     std::vector<int> tri_indices_;
     std::vector<BVHNode> nodes_;
@@ -296,6 +304,7 @@ private:
     const std::vector<glm::vec2>* texcoords_ = nullptr;
     const std::vector<glm::vec3>* normals_ = nullptr;
     const std::vector<glm::vec3>* normals_by_vertex_ = nullptr;
+
 public:
     BVHAccelerator() noexcept = default;
     /** @brief Returns true if no nodes are built. */
@@ -313,9 +322,11 @@ public:
     /** @brief Ray–AABB test used by traversal. */
     static bool IntersectAABB(const glm::vec3& ro, const glm::vec3& rd, const AABB& box, FloatType tmax) noexcept;
     /** @brief Intersects ray with triangles; returns closest hit or miss. */
-    RayTriangleIntersection intersect(const glm::vec3& ro, const glm::vec3& rd, const std::vector<Face>& faces) const noexcept;
+    RayTriangleIntersection intersect(
+        const glm::vec3& ro, const glm::vec3& rd, const std::vector<Face>& faces) const noexcept;
     /** @brief Computes shadow transmittance along a segment to the light. */
-    glm::vec3 transmittance(const glm::vec3& point, const glm::vec3& light_pos, const std::vector<Face>& faces) const noexcept;
+    glm::vec3 transmittance(
+        const glm::vec3& point, const glm::vec3& light_pos, const std::vector<Face>& faces) const noexcept;
 };
 
 /**
@@ -332,9 +343,10 @@ private:
     EnvironmentMap env_map_;  // HDR environment map
     std::vector<const Face*> emissive_faces_;
     BVHAccelerator accelerator_;
+
 public:
     Camera camera_;
-    
+
     /** @brief Constructs an empty world. */
     World();
     /**

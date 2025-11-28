@@ -1,9 +1,9 @@
 #pragma once
 #include <cstdint>
-#include <vector>
-#include <string>
 #include <fstream>
+#include <string>
 #include <thread>
+#include <vector>
 
 /**
  * @brief Records frames to Y4M and converts to MP4 using ffmpeg.
@@ -31,6 +31,7 @@ public:
     void capture_frame();
     /** @brief Returns true when recording is active. */
     bool is_recording() const noexcept;
+
 private:
     const std::vector<uint32_t>& pixel_buffer_;
     std::ofstream file_stream_;

@@ -1,6 +1,7 @@
-#include <random>
-#include <numbers>
 #include "shader.hpp"
+
+#include <numbers>
+#include <random>
 
 static thread_local std::mt19937 rng(std::random_device{}());
 static thread_local std::uniform_real_distribution<FloatType> dist(0.0f, 1.0f);
@@ -59,23 +60,23 @@ static FloatType fresnel_schlick(FloatType cos_theta, FloatType ior_ratio) noexc
 
 bool ScatterDielectric(const Ray& r_in, const HitRecord& rec, const Material& mat, ScatterRecord& scattered) noexcept {
     constexpr FloatType epsilon = 0.001f;
-    
+
     glm::vec3 normal = rec.normal;
     FloatType cos_theta_i = glm::dot(-r_in.direction, normal);
     bool entering = cos_theta_i > 0.0f;
-    
+
     FloatType ior_from = entering ? 1.0f : mat.ior;
     FloatType ior_to = entering ? mat.ior : 1.0f;
     FloatType ior_ratio = ior_from / ior_to;
-    
+
     if (!entering) {
         normal = -normal;
         cos_theta_i = -cos_theta_i;
     }
-    
+
     glm::vec3 refracted = glm::refract(r_in.direction, normal, ior_ratio);
     bool total_internal_reflection = (glm::length(refracted) < 0.0001f);
-    
+
     if (total_internal_reflection) {
         glm::vec3 reflected = glm::reflect(r_in.direction, normal);
         scattered.attenuation = glm::vec3(1.0f, 1.0f, 1.0f);
@@ -87,19 +88,19 @@ bool ScatterDielectric(const Ray& r_in, const HitRecord& rec, const Material& ma
         scattered.pdf = 1.0f;
         return true;
     }
-    
+
     FloatType fresnel = fresnel_schlick(std::abs(cos_theta_i), ior_ratio);
-    
+
     FloatType reflect_prob = fresnel * (1.0f - mat.tw);
     FloatType refract_prob = (1.0f - fresnel) * mat.tw;
-    
+
     FloatType total_prob = reflect_prob + refract_prob;
     if (total_prob < 0.01f) {
         return false;  // Absorbed
     }
-    
+
     reflect_prob /= total_prob;
-    
+
     if (dist(rng) < reflect_prob) {
         glm::vec3 reflected = glm::reflect(r_in.direction, normal);
         scattered.attenuation = glm::vec3(1.0f, 1.0f, 1.0f);
@@ -120,4 +121,4 @@ bool ScatterDielectric(const Ray& r_in, const HitRecord& rec, const Material& ma
     }
 }
 
-}
+}  // namespace Shading

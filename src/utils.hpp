@@ -1,17 +1,18 @@
 #pragma once
-#include <array>
 #include <algorithm>
-#include <cmath>
-#include <numbers>
-#include <fstream>
-#include <string>
-#include <cstdint>
-#include <vector>
-#include <thread>
-#include <iostream>
-#include <utility>
-#include <cstddef>
+#include <array>
 #include <cassert>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <fstream>
+#include <iostream>
+#include <numbers>
+#include <string>
+#include <thread>
+#include <utility>
+#include <vector>
+
 #include <glm/glm.hpp>
 
 using FloatType = decltype(std::declval<glm::vec3>().x);
@@ -22,7 +23,6 @@ using FloatType = decltype(std::declval<glm::vec3>().x);
  * @param vertices_z_ndc Z components (NDC) for the two edge endpoints.
  * @return 1/z value suitable for depth comparison and perspective-correct interpolation.
  */
-
 constexpr FloatType ComputeInvZndc(FloatType progress, std::array<FloatType, 2> vertices_z_ndc) noexcept {
     return (1.0f - progress) / vertices_z_ndc[0] + progress / vertices_z_ndc[1];
 }
@@ -34,9 +34,7 @@ constexpr FloatType ComputeInvZndc(FloatType progress, std::array<FloatType, 2> 
  * @return 1/z value for perspective-correct interpolation and depth testing.
  */
 constexpr FloatType ComputeInvZndc(std::array<FloatType, 3> bary, std::array<FloatType, 3> vertices_z_ndc) noexcept {
-    return bary[0] / vertices_z_ndc[0] +
-           bary[1] / vertices_z_ndc[1] +
-           bary[2] / vertices_z_ndc[2];
+    return bary[0] / vertices_z_ndc[0] + bary[1] / vertices_z_ndc[1] + bary[2] / vertices_z_ndc[2];
 }
 
 /**
@@ -46,56 +44,33 @@ constexpr FloatType ComputeInvZndc(std::array<FloatType, 3> bary, std::array<Flo
  * Elements are constructed in a preallocated buffer and capacity is limited
  * to `N`. Intended for hot paths where heap allocation is undesirable.
  */
-template<typename T, std::size_t N>
+template <typename T, std::size_t N>
 class InplaceVector {
 private:
     alignas(T) std::byte data_[N * sizeof(T)];
     std::size_t size_ = 0;
-public:
-    /** @brief Default-construct an empty container. */
-    constexpr InplaceVector() noexcept = default;
 
-    /**
-     * @brief Variadic constructor that emplaces initial elements.
-     * @param args Elements to insert up to capacity `N`.
-     */
+public:
+    constexpr InplaceVector() noexcept = default;
     constexpr InplaceVector(auto&&... args) noexcept : InplaceVector() {
+        assert((sizeof...(args)) <= N);
         (emplace_back(std::forward<decltype(args)>(args)), ...);
     }
-    /**
-     * @brief Appends a copy of `value`.
-     * @param value Element to append.
-     */
     constexpr void push_back(const T& value) noexcept {
         assert(size_ < N);
         new (&data_[size_ * sizeof(T)]) T(value);
         size_++;
     }
-    /**
-     * @brief Appends by move construction.
-     * @param value Element to append by move.
-     */
     constexpr void emplace_back(T&& value) noexcept {
         assert(size_ < N);
         new (&data_[size_ * sizeof(T)]) T(std::move(value));
         size_++;
     }
-    /** @brief Current number of elements. */
     constexpr std::size_t size() const noexcept { return size_; }
-
-    /**
-     * @brief Access element by index.
-     * @param index Zero-based position (must be < size()).
-     * @return Reference to the element.
-     */
     constexpr T& operator[](std::size_t index) noexcept { return *reinterpret_cast<T*>(&data_[index * sizeof(T)]); }
-
-    /**
-     * @brief Const access by index.
-     * @param index Zero-based position (must be < size()).
-     * @return Const reference to the element.
-     */
-    constexpr const T& operator[](std::size_t index) const noexcept { return *reinterpret_cast<const T*>(&data_[index * sizeof(T)]); }
+    constexpr const T& operator[](std::size_t index) const noexcept {
+        return *reinterpret_cast<const T*>(&data_[index * sizeof(T)]);
+    }
 };
 
 /**
@@ -132,8 +107,7 @@ inline bool IntersectRayTriangle(
     const glm::vec3& v2,
     FloatType& out_t,
     FloatType& out_u,
-    FloatType& out_v
-) noexcept {
+    FloatType& out_v) noexcept {
     constexpr FloatType EPSILON = 1e-6f;
     glm::vec3 edge1 = v1 - v0;
     glm::vec3 edge2 = v2 - v0;
@@ -148,7 +122,9 @@ inline bool IntersectRayTriangle(
     FloatType v = f * glm::dot(ray_dir, q);
     if (v < 0.0f || u + v > 1.0f) return false;
     FloatType t = f * glm::dot(edge2, q);
-    out_t = t; out_u = u; out_v = v;
+    out_t = t;
+    out_u = u;
+    out_v = v;
     return t > EPSILON;
 }
 
@@ -177,7 +153,6 @@ inline glm::vec3 CalculateBarycentric(glm::vec2 v0, glm::vec2 v1, glm::vec2 v2, 
  * @param v Input value.
  * @return Pseudorandomly permuted integer.
  */
-
 constexpr uint32_t PCGHash(uint32_t v) noexcept {
     uint32_t state = v * 747796405u + 2891336453u;
     uint32_t word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
@@ -222,15 +197,15 @@ constexpr FloatType Halton(int index, int base) noexcept {
 inline glm::vec3 SampleSphereHalton(int index, FloatType radius, const glm::vec3& center) noexcept {
     FloatType u = Halton(index, 2);
     FloatType v = Halton(index, 3);
-    
+
     FloatType theta = 2.0f * std::numbers::pi * u;
     FloatType phi = std::acos(2.0f * v - 1.0f);
-    
+
     FloatType sin_phi = std::sin(phi);
     FloatType x = radius * sin_phi * std::cos(theta);
     FloatType y = radius * sin_phi * std::sin(theta);
     FloatType z = radius * std::cos(phi);
-    
+
     return center + glm::vec3(x, y, z);
 }
 
@@ -239,9 +214,7 @@ inline glm::vec3 SampleSphereHalton(int index, FloatType radius, const glm::vec3
  * @param index Sample index.
  * @return Unit-length direction vector.
  */
-inline glm::vec3 SampleUnitVectorHalton(int index) noexcept {
-    return SampleSphereHalton(index, 1.0f, glm::vec3(0.0f));
-}
+inline glm::vec3 SampleUnitVectorHalton(int index) noexcept { return SampleSphereHalton(index, 1.0f, glm::vec3(0.0f)); }
 
 /**
  * @brief Samples a direction within a cone around `direction` using Halton.
@@ -253,14 +226,14 @@ inline glm::vec3 SampleUnitVectorHalton(int index) noexcept {
 inline glm::vec3 SampleConeHalton(int index, const glm::vec3& direction, FloatType cone_angle) noexcept {
     FloatType u1 = Halton(index, 2);
     FloatType u2 = Halton(index, 3);
-    
+
     FloatType cos_angle = std::cos(cone_angle);
     FloatType z = cos_angle + (1.0f - cos_angle) * u1;
     FloatType phi = 2.0f * std::numbers::pi * u2;
-    
+
     FloatType sin_theta = std::sqrt(1.0f - z * z);
     glm::vec3 sample_dir(sin_theta * std::cos(phi), sin_theta * std::sin(phi), z);
-    
+
     // Basis construction: pick an 'up' that avoids degeneracy when direction
     // aligns with the world up, then build a stable orthonormal frame to map
     // local samples into world space without introducing skew.

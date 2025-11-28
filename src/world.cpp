@@ -1,14 +1,15 @@
-#include <numeric>
+#include "world.hpp"
+
 #include <algorithm>
+#include <cstdlib>
 #include <functional>
 #include <limits>
-#include <cstdlib>
+#include <numeric>
 #include <random>
-#include "world.hpp"
-#include "window.hpp"
-#include "scene_loader.hpp"
 
 #include "../libs/stb_image.h"
+#include "scene_loader.hpp"
+#include "window.hpp"
 
 // Parsing helpers moved to scene_loader.cpp
 
@@ -18,11 +19,7 @@ ColourHDR ColourHDR::from_srgb(const Colour& srgb, FloatType gamma) noexcept {
         if (gamma == 1.0f) return normalized;
         return std::pow(normalized, gamma);
     };
-    return ColourHDR{
-        .red = to_linear(srgb.red),
-        .green = to_linear(srgb.green),
-        .blue = to_linear(srgb.blue)
-    };
+    return ColourHDR{.red = to_linear(srgb.red), .green = to_linear(srgb.green), .blue = to_linear(srgb.blue)};
 }
 
 EnvironmentMap::EnvironmentMap() noexcept : width_(0), height_(0), intensity_(1.0f) {}
@@ -31,13 +28,15 @@ EnvironmentMap::EnvironmentMap(std::size_t w, std::size_t h, std::vector<ColourH
     : width_(w), height_(h), data_(std::move(data)), intensity_(intensity) {}
 
 ColourHDR EnvironmentMap::sample(const glm::vec3& direction) const noexcept {
-    if (!is_loaded()) return ColourHDR{ .red = 0.0f, .green = 0.0f, .blue = 0.0f };
+    if (!is_loaded()) return ColourHDR{.red = 0.0f, .green = 0.0f, .blue = 0.0f};
     FloatType theta = std::atan2(direction.x, -direction.z);
     FloatType phi = std::asin(std::clamp(direction.y, -1.0f, 1.0f));
     FloatType u = (theta / (2.0f * std::numbers::pi)) + 0.5f;
     FloatType v = (phi / std::numbers::pi) + 0.5f;
-    std::size_t x = static_cast<std::size_t>(std::clamp(u * static_cast<FloatType>(width_), 0.0f, static_cast<FloatType>(width_ - 1)));
-    std::size_t y = static_cast<std::size_t>(std::clamp(v * static_cast<FloatType>(height_), 0.0f, static_cast<FloatType>(height_ - 1)));
+    std::size_t x = static_cast<std::size_t>(
+        std::clamp(u * static_cast<FloatType>(width_), 0.0f, static_cast<FloatType>(width_ - 1)));
+    std::size_t y = static_cast<std::size_t>(
+        std::clamp(v * static_cast<FloatType>(height_), 0.0f, static_cast<FloatType>(height_ - 1)));
     return data_[y * width_ + x] * intensity_;
 }
 
@@ -70,11 +69,7 @@ glm::mat3 Camera::orientation() const noexcept {
     FloatType sin_pitch = std::sin(pitch_);
     FloatType cos_yaw = std::cos(yaw_);
     FloatType sin_yaw = std::sin(yaw_);
-    glm::vec3 f(
-        sin_yaw * cos_pitch,
-        sin_pitch,
-        -cos_yaw * cos_pitch
-    );
+    glm::vec3 f(sin_yaw * cos_pitch, sin_pitch, -cos_yaw * cos_pitch);
     glm::vec3 world_up(0.0f, 1.0f, 0.0f);
     glm::vec3 r = glm::normalize(glm::cross(f, world_up));
     glm::vec3 u = glm::normalize(glm::cross(r, f));
@@ -97,11 +92,7 @@ glm::vec3 Camera::forward() const noexcept {
     FloatType sin_pitch = std::sin(pitch_);
     FloatType cos_yaw = std::cos(yaw_);
     FloatType sin_yaw = std::sin(yaw_);
-    return glm::vec3(
-        sin_yaw * cos_pitch,
-        sin_pitch,
-        -cos_yaw * cos_pitch
-    );
+    return glm::vec3(sin_yaw * cos_pitch, sin_pitch, -cos_yaw * cos_pitch);
 }
 
 glm::vec3 Camera::right() const noexcept {
@@ -128,21 +119,17 @@ void Camera::orbiting() noexcept {
     }
 }
 
-void Camera::stop_orbiting() noexcept {
-    is_orbiting_ = false;
-}
+void Camera::stop_orbiting() noexcept { is_orbiting_ = false; }
 
 void Camera::rotate(FloatType delta_yaw, FloatType delta_pitch) noexcept {
     yaw_ += delta_yaw;
     pitch_ += delta_pitch;
-    
+
     constexpr FloatType max_pitch = glm::radians(89.0f);
     pitch_ = std::clamp(pitch_, -max_pitch, max_pitch);
 }
 
-void Camera::roll(FloatType delta_roll) noexcept {
-    roll_ += delta_roll;
-}
+void Camera::roll(FloatType delta_roll) noexcept { roll_ += delta_roll; }
 
 void Camera::move(FloatType forward_delta, FloatType right_delta, FloatType up_delta, FloatType dt) noexcept {
     position_ += forward() * (forward_delta * dt);
@@ -154,13 +141,15 @@ void Camera::move(FloatType forward_delta, FloatType right_delta, FloatType up_d
 
 // Input callbacks are registered centrally in main; World no longer registers to Window
 
-std::pair<glm::vec3, glm::vec3> Camera::generate_ray(int pixel_x, int pixel_y, int screen_width, int screen_height, double aspect_ratio) const noexcept {
+std::pair<glm::vec3, glm::vec3> Camera::generate_ray(
+    int pixel_x, int pixel_y, int screen_width, int screen_height, double aspect_ratio) const noexcept {
     FloatType u = (static_cast<FloatType>(pixel_x) + 0.5f) / static_cast<FloatType>(screen_width);
     FloatType v = (static_cast<FloatType>(pixel_y) + 0.5f) / static_cast<FloatType>(screen_height);
     return generate_ray_uv(u, v, screen_width, screen_height, aspect_ratio);
 }
 
-std::pair<glm::vec3, glm::vec3> Camera::generate_ray_uv(FloatType u, FloatType v, int screen_width, int screen_height, double aspect_ratio) const noexcept {
+std::pair<glm::vec3, glm::vec3> Camera::generate_ray_uv(
+    FloatType u, FloatType v, int screen_width, int screen_height, double aspect_ratio) const noexcept {
     // Map pixel UV to view-space direction using pinhole; then rotate to world space
     FloatType ndc_x = u * 2.0f - 1.0f;
     FloatType ndc_y = 1.0f - v * 2.0f;
@@ -180,13 +169,9 @@ void Camera::set_pitch(FloatType p) noexcept { pitch_ = p; }
 void Camera::set_roll(FloatType r) noexcept { roll_ = r; }
 
 // Model implementation
-void Model::load_file(std::string filename) {
-    SceneLoader::LoadObj(*this, filename);
-}
+void Model::load_file(std::string filename) { SceneLoader::LoadObj(*this, filename); }
 
-void Model::load_scene_txt(std::string filename) {
-    SceneLoader::LoadSceneTxt(*this, filename);
-}
+void Model::load_scene_txt(std::string filename) { SceneLoader::LoadSceneTxt(*this, filename); }
 
 void Model::compute_face_normals() noexcept {
     // Compute geometric normals per face from vertex positions; used for flat shading and backface tests
@@ -205,16 +190,19 @@ void Model::compute_face_normals() noexcept {
 void Model::cache_faces() noexcept {
     // Flatten per-object faces into a contiguous array for fast traversal and BVH build
     all_faces_.clear();
-    all_faces_.reserve(std::accumulate(objects_.begin(), objects_.end(), std::size_t(0),
-        [](std::size_t sum, const Object& obj) { return sum + obj.faces.size(); }));
-    
+    all_faces_.reserve(
+        std::accumulate(objects_.begin(), objects_.end(), std::size_t(0), [](std::size_t sum, const Object& obj) {
+            return sum + obj.faces.size();
+        }));
+
     for (const auto& object : objects_) {
         all_faces_.insert(all_faces_.end(), object.faces.begin(), object.faces.end());
     }
 }
 
 void Model::load_materials(std::string filename) {
-    // MTL loader: populate material table (albedo, shininess, metallic, IOR, transmission, absorption, emission, textures)
+    // MTL loader: populate material table (albedo, shininess, metallic, IOR, transmission, absorption, emission,
+    // textures)
     auto current_material = materials_.end();
     std::ifstream file(filename);
     if (!file.is_open()) {
@@ -269,11 +257,7 @@ void Model::load_materials(std::string filename) {
             assert(current_material != materials_.end());
             FloatType r, g, b;
             iss >> r >> g >> b;
-            current_material->second.sigma_a = glm::vec3(
-                std::max(0.0f, r),
-                std::max(0.0f, g),
-                std::max(0.0f, b)
-            );
+            current_material->second.sigma_a = glm::vec3(std::max(0.0f, r), std::max(0.0f, g), std::max(0.0f, b));
         } else if (type == "map_Kd") {
             assert(current_material != materials_.end());
             std::string texture_filename;
@@ -290,27 +274,27 @@ Texture Model::load_texture(std::string filename) {
     if (!file.is_open()) {
         throw std::runtime_error("Could not open texture file: " + filename);
     }
-    
+
     std::string magic_number;
     std::getline(file, magic_number);
     if (magic_number != "P6") {
         throw std::runtime_error("Invalid PPM format (expected P6): " + filename);
     }
-    
+
     std::string line;
     std::getline(file, line);
     while (!line.empty() && line[0] == '#') {
         std::getline(file, line);
     }
-    
+
     std::istringstream size_stream(line);
     std::size_t width, height;
     if (!(size_stream >> width >> height)) {
         throw std::runtime_error("Failed to parse texture dimensions: " + filename);
     }
-    
+
     std::getline(file, line);
-    
+
     std::vector<Colour> texture_data;
     texture_data.resize(width * height);
     for (std::size_t i = 0; i < width * height; i++) {
@@ -323,8 +307,7 @@ Texture Model::load_texture(std::string filename) {
         texture_data[i] = Colour{
             .red = static_cast<std::uint8_t>(red),
             .green = static_cast<std::uint8_t>(green),
-            .blue = static_cast<std::uint8_t>(blue)
-        };
+            .blue = static_cast<std::uint8_t>(blue)};
     }
     return Texture(width, height, std::move(texture_data));
 }
@@ -333,38 +316,38 @@ Texture Model::load_texture(std::string filename) {
 FloatType EnvironmentMap::ComputeAutoExposure(const std::vector<ColourHDR>& hdr_data) noexcept {
     // Robust exposure using log-average luminance blended with the 90th percentile
     if (hdr_data.empty()) return 1.0f;
-    
+
     std::vector<FloatType> luminances;
     luminances.reserve(hdr_data.size());
-    
+
     for (const auto& pixel : hdr_data) {
         FloatType luma = 0.2126f * pixel.red + 0.7152f * pixel.green + 0.0722f * pixel.blue;
         if (luma > 0.0f) {
             luminances.push_back(luma);
         }
     }
-    
+
     if (luminances.empty()) return 1.0f;
-    
+
     std::sort(luminances.begin(), luminances.end());
-    
+
     std::size_t percentile_90_idx = static_cast<std::size_t>(luminances.size() * 0.90f);
     FloatType percentile_90 = luminances[percentile_90_idx];
-    
+
     FloatType log_lum_sum = 0.0f;
     for (FloatType lum : luminances) {
         log_lum_sum += std::log(lum + 1e-6f);
     }
     FloatType avg_log_lum = std::exp(log_lum_sum / luminances.size());
-    
+
     constexpr FloatType target_middle_gray = 0.3f;
-    
+
     FloatType exposure_from_avg = target_middle_gray / (avg_log_lum + 1e-6f);
     FloatType exposure_from_p90 = target_middle_gray / (percentile_90 + 1e-6f);
-    
+
     FloatType auto_exposure = 0.7f * exposure_from_avg + 0.3f * exposure_from_p90;
     auto_exposure = std::clamp(auto_exposure, 0.05f, 2.0f);
-    
+
     return auto_exposure * 0.5f;
 }
 
@@ -373,13 +356,18 @@ bool BVHAccelerator::empty() const noexcept { return nodes_.empty(); }
 void BVHAccelerator::set_vertices(const std::vector<glm::vec3>& verts) noexcept { vertices_ = &verts; }
 void BVHAccelerator::set_texcoords(const std::vector<glm::vec2>& uvs) noexcept { texcoords_ = &uvs; }
 void BVHAccelerator::set_normals(const std::vector<glm::vec3>& norms) noexcept { normals_ = &norms; }
-void BVHAccelerator::set_normals_by_vertex(const std::vector<glm::vec3>& norms) noexcept { normals_by_vertex_ = &norms; }
+void BVHAccelerator::set_normals_by_vertex(const std::vector<glm::vec3>& norms) noexcept {
+    normals_by_vertex_ = &norms;
+}
 
 void BVHAccelerator::build(const std::vector<Face>& faces) noexcept {
     if (!vertices_) return;
     tri_indices_.resize(faces.size());
     std::iota(tri_indices_.begin(), tri_indices_.end(), 0);
-    struct Cent { glm::vec3 c; AABB b; };
+    struct Cent {
+        glm::vec3 c;
+        AABB b;
+    };
     std::vector<Cent> data(faces.size());
     for (std::size_t i = 0; i < faces.size(); ++i) {
         const Face& f = faces[i];
@@ -390,7 +378,7 @@ void BVHAccelerator::build(const std::vector<Face>& faces) noexcept {
         glm::vec3 mx = glm::max(glm::max(v0, v1), v2);
         AABB b{mn, mx};
         glm::vec3 c = (v0 + v1 + v2) / 3.0f;
-        data[i] = Cent{ .c = c, .b = b };
+        data[i] = Cent{.c = c, .b = b};
     }
     nodes_.clear();
     auto surface_area = [](const AABB& box) -> FloatType {
@@ -412,7 +400,7 @@ void BVHAccelerator::build(const std::vector<Face>& faces) noexcept {
         }
         int count = end - start;
         int node_index = (int)nodes_.size();
-        nodes_.push_back(BVHNode{ .box   = box, .left  = -1, .right = -1, .start = start, .count = count });
+        nodes_.push_back(BVHNode{.box = box, .left = -1, .right = -1, .start = start, .count = count});
         if (count <= leaf_threshold) {
             return node_index;
         }
@@ -423,7 +411,12 @@ void BVHAccelerator::build(const std::vector<Face>& faces) noexcept {
         FloatType parent_area = surface_area(box);
         for (int axis = 0; axis < 3; ++axis) {
             if (extent[axis] < 1e-6f) continue;
-            struct Bucket { int count = 0; AABB bounds{glm::vec3(std::numeric_limits<float>::infinity()), glm::vec3(-std::numeric_limits<float>::infinity())}; };
+            struct Bucket {
+                int count = 0;
+                AABB bounds{
+                    glm::vec3(std::numeric_limits<float>::infinity()),
+                    glm::vec3(-std::numeric_limits<float>::infinity())};
+            };
             std::array<Bucket, sah_buckets> buckets;
             for (int i = start; i < end; ++i) {
                 FloatType centroid = data[tri_indices_[i]].c[axis];
@@ -434,7 +427,9 @@ void BVHAccelerator::build(const std::vector<Face>& faces) noexcept {
                 buckets[bucket_idx].bounds.max = glm::max(buckets[bucket_idx].bounds.max, data[tri_indices_[i]].b.max);
             }
             for (int split = 0; split < sah_buckets - 1; ++split) {
-                AABB left_box{glm::vec3(std::numeric_limits<float>::infinity()), glm::vec3(-std::numeric_limits<float>::infinity())};
+                AABB left_box{
+                    glm::vec3(std::numeric_limits<float>::infinity()),
+                    glm::vec3(-std::numeric_limits<float>::infinity())};
                 int left_count = 0;
                 for (int i = 0; i <= split; ++i) {
                     if (buckets[i].count > 0) {
@@ -443,7 +438,9 @@ void BVHAccelerator::build(const std::vector<Face>& faces) noexcept {
                         left_count += buckets[i].count;
                     }
                 }
-                AABB right_box{glm::vec3(std::numeric_limits<float>::infinity()), glm::vec3(-std::numeric_limits<float>::infinity())};
+                AABB right_box{
+                    glm::vec3(std::numeric_limits<float>::infinity()),
+                    glm::vec3(-std::numeric_limits<float>::infinity())};
                 int right_count = 0;
                 for (int i = split + 1; i < sah_buckets; ++i) {
                     if (buckets[i].count > 0) {
@@ -498,7 +495,8 @@ bool BVHAccelerator::IntersectAABB(const glm::vec3& ro, const glm::vec3& rd, con
     return t_enter <= t_exit && t_exit >= 0.0f && t_enter <= tmax;
 }
 
-RayTriangleIntersection BVHAccelerator::intersect(const glm::vec3& ro, const glm::vec3& rd, const std::vector<Face>& faces) const noexcept {
+RayTriangleIntersection BVHAccelerator::intersect(
+    const glm::vec3& ro, const glm::vec3& rd, const std::vector<Face>& faces) const noexcept {
     RayTriangleIntersection closest;
     closest.distanceFromCamera = std::numeric_limits<FloatType>::infinity();
     closest.triangleIndex = static_cast<std::size_t>(-1);
@@ -531,9 +529,12 @@ RayTriangleIntersection BVHAccelerator::intersect(const glm::vec3& ro, const glm
                     FloatType w = 1.0f - u - v;
                     auto fetch_normal = [&](int idx) -> glm::vec3 {
                         std::uint32_t ni = face.vn_indices[idx];
-                        if (normals_ && ni != std::numeric_limits<std::uint32_t>::max() && ni < normals_->size()) return (*normals_)[ni];
+                        if (normals_ && ni != std::numeric_limits<std::uint32_t>::max() && ni < normals_->size())
+                            return (*normals_)[ni];
                         std::uint32_t vi = face.v_indices[idx];
-                        if (normals_by_vertex_ && vi < normals_by_vertex_->size() && glm::length((*normals_by_vertex_)[vi]) > 0.001f) return (*normals_by_vertex_)[vi];
+                        if (normals_by_vertex_ && vi < normals_by_vertex_->size() &&
+                            glm::length((*normals_by_vertex_)[vi]) > 0.001f)
+                            return (*normals_by_vertex_)[vi];
                         return face.face_normal;
                     };
                     glm::vec3 n0 = fetch_normal(0);
@@ -554,7 +555,10 @@ RayTriangleIntersection BVHAccelerator::intersect(const glm::vec3& ro, const glm
                     }
                     if (face.material.texture) {
                         Colour tex_sample = face.material.texture->sample(uv_coord.x, uv_coord.y);
-                        closest.color = glm::vec3((tex_sample.red / 255.0f) * face.material.base_color.r, (tex_sample.green / 255.0f) * face.material.base_color.g, (tex_sample.blue / 255.0f) * face.material.base_color.b);
+                        closest.color = glm::vec3(
+                            (tex_sample.red / 255.0f) * face.material.base_color.r,
+                            (tex_sample.green / 255.0f) * face.material.base_color.g,
+                            (tex_sample.blue / 255.0f) * face.material.base_color.b);
                     } else {
                         closest.color = face.material.base_color;
                     }
@@ -570,7 +574,8 @@ RayTriangleIntersection BVHAccelerator::intersect(const glm::vec3& ro, const glm
     return closest;
 }
 
-glm::vec3 BVHAccelerator::transmittance(const glm::vec3& point, const glm::vec3& light_pos, const std::vector<Face>& faces) const noexcept {
+glm::vec3 BVHAccelerator::transmittance(
+    const glm::vec3& point, const glm::vec3& light_pos, const std::vector<Face>& faces) const noexcept {
     glm::vec3 to_light = light_pos - point;
     FloatType light_distance = glm::length(to_light);
     glm::vec3 light_dir = to_light / light_distance;
@@ -580,7 +585,12 @@ glm::vec3 BVHAccelerator::transmittance(const glm::vec3& point, const glm::vec3&
     stack.reserve(64);
     stack.push_back(0);
     constexpr FloatType min_t = 0.001f;
-    struct Intersection { FloatType t; const Face* face; FloatType u; FloatType v; };
+    struct Intersection {
+        FloatType t;
+        const Face* face;
+        FloatType u;
+        FloatType v;
+    };
     std::vector<Intersection> intersections;
     while (!stack.empty()) {
         int ni = stack.back();
@@ -600,12 +610,14 @@ glm::vec3 BVHAccelerator::transmittance(const glm::vec3& point, const glm::vec3&
                 const glm::vec3& v2 = (*vertices_)[face.v_indices[2]];
                 bool hit = IntersectRayTriangle(point, light_dir, v0, v1, v2, t, u, v);
                 if (hit && t > min_t && t < (light_distance - 1e-4f)) {
-                    intersections.push_back(Intersection{ .t = t, .face = &face, .u = u, .v = v });
+                    intersections.push_back(Intersection{.t = t, .face = &face, .u = u, .v = v});
                 }
             }
         }
     }
-    std::sort(intersections.begin(), intersections.end(), [](const Intersection& a, const Intersection& b) { return a.t < b.t; });
+    std::sort(intersections.begin(), intersections.end(), [](const Intersection& a, const Intersection& b) {
+        return a.t < b.t;
+    });
     for (size_t i = 0; i < intersections.size(); ++i) {
         const auto& isect = intersections[i];
         const Material& mat = isect.face->material;
@@ -619,11 +631,17 @@ glm::vec3 BVHAccelerator::transmittance(const glm::vec3& point, const glm::vec3&
             if (glm::length(mat.sigma_a) > 0.0f) {
                 effective_sigma_a = mat.sigma_a;
             } else if (mat.td > 0.0f) {
-                effective_sigma_a = glm::vec3(-std::log(std::max(mat.base_color.r, 0.001f)) / mat.td, -std::log(std::max(mat.base_color.g, 0.001f)) / mat.td, -std::log(std::max(mat.base_color.b, 0.001f)) / mat.td);
+                effective_sigma_a = glm::vec3(
+                    -std::log(std::max(mat.base_color.r, 0.001f)) / mat.td,
+                    -std::log(std::max(mat.base_color.g, 0.001f)) / mat.td,
+                    -std::log(std::max(mat.base_color.b, 0.001f)) / mat.td);
             } else {
                 effective_sigma_a = glm::vec3(0.0f);
             }
-            glm::vec3 absorption = glm::vec3(std::exp(-effective_sigma_a.r * distance_in_medium), std::exp(-effective_sigma_a.g * distance_in_medium), std::exp(-effective_sigma_a.b * distance_in_medium));
+            glm::vec3 absorption = glm::vec3(
+                std::exp(-effective_sigma_a.r * distance_in_medium),
+                std::exp(-effective_sigma_a.g * distance_in_medium),
+                std::exp(-effective_sigma_a.b * distance_in_medium));
             trans = trans * absorption;
             i++;
         }
@@ -642,26 +660,22 @@ void World::load_files(const std::vector<std::string>& filenames) {
     for (const auto& filename : filenames) {
         std::string ext = std::filesystem::path(filename).extension().string();
         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-        
+
         if (ext == ".hdr") {
             // Load environment map and compute auto exposure
             int width, height, channels;
             float* data = stbi_loadf(filename.c_str(), &width, &height, &channels, 3);
-            
+
             if (data) {
                 std::vector<ColourHDR> hdr_data;
                 hdr_data.reserve(width * height);
-                
+
                 for (int i = 0; i < width * height; ++i) {
-                    hdr_data.emplace_back(
-                        data[i * 3 + 0],
-                        data[i * 3 + 1],
-                        data[i * 3 + 2]
-                    );
+                    hdr_data.emplace_back(data[i * 3 + 0], data[i * 3 + 1], data[i * 3 + 2]);
                 }
-                
+
                 stbi_image_free(data);
-                
+
                 FloatType auto_intensity = EnvironmentMap::ComputeAutoExposure(hdr_data);
                 env_map_ = EnvironmentMap(width, height, std::move(hdr_data), auto_intensity);
             } else {
@@ -686,11 +700,7 @@ void World::load_files(const std::vector<std::string>& filenames) {
                             std::vector<ColourHDR> hdr_data;
                             hdr_data.reserve(width * height);
                             for (int i = 0; i < width * height; ++i) {
-                                hdr_data.emplace_back(
-                                    data[i * 3 + 0],
-                                    data[i * 3 + 1],
-                                    data[i * 3 + 2]
-                                );
+                                hdr_data.emplace_back(data[i * 3 + 0], data[i * 3 + 1], data[i * 3 + 2]);
                             }
                             stbi_image_free(data);
                             FloatType auto_intensity = EnvironmentMap::ComputeAutoExposure(hdr_data);
@@ -710,7 +720,7 @@ void World::load_files(const std::vector<std::string>& filenames) {
             models_.emplace_back(std::move(group));
         }
     }
-    
+
     // Flatten all models into shared arrays (vertices, texcoords, normals, faces)
     std::size_t total_vertices = 0;
     std::size_t total_texcoords = 0;
@@ -810,7 +820,9 @@ const std::vector<Face>& World::all_faces() const noexcept { return all_faces_; 
 const std::vector<glm::vec3>& World::all_vertices() const noexcept { return all_vertices_; }
 const std::vector<glm::vec2>& World::all_texcoords() const noexcept { return all_texcoords_; }
 const std::vector<glm::vec3>& World::all_vertex_normals() const noexcept { return all_vertex_normals_; }
-const std::vector<glm::vec3>& World::all_vertex_normals_by_vertex() const noexcept { return all_vertex_normals_by_vertex_; }
+const std::vector<glm::vec3>& World::all_vertex_normals_by_vertex() const noexcept {
+    return all_vertex_normals_by_vertex_;
+}
 const EnvironmentMap& World::env_map() const noexcept { return env_map_; }
 const std::vector<const Face*>& World::area_lights() const noexcept { return emissive_faces_; }
 const BVHAccelerator& World::accelerator() const noexcept { return accelerator_; }

@@ -1,13 +1,14 @@
 #pragma once
-#include <memory>
-#include <vector>
-#include <barrier>
 #include <atomic>
-#include <thread>
+#include <barrier>
+#include <memory>
 #include <stop_token>
-#include "world.hpp"
-#include "raytracer.hpp"
+#include <thread>
+#include <vector>
+
 #include "rasterizer.hpp"
+#include "raytracer.hpp"
+#include "world.hpp"
 
 // Forward declaration
 class Window;
@@ -39,7 +40,7 @@ public:
      * @return Mapped component in \[0,1].
      */
     static constexpr FloatType AcesToneMapping(FloatType hdr_value) noexcept;
-    
+
 private:
     Window& window_;
     const World& world_;
@@ -66,7 +67,7 @@ private:
     glm::vec3 last_cam_pos_ = glm::vec3(0.0f);
     FloatType last_cam_yaw_ = 0.0f;
     FloatType last_cam_pitch_ = 0.0f;
-    
+
 public:
     /**
      * @brief Constructs the renderer with shared window/world.
@@ -96,7 +97,7 @@ public:
     void set_caustics_enabled(bool e) noexcept { caustics_enabled_ = e; }
     /** @brief Indicates whether the photon map is ready. */
     bool is_photon_map_ready() const noexcept { return raytracer_ && raytracer_->is_photon_map_ready(); }
-    
+
 private:
     void clear() noexcept;
     void wireframe_render() noexcept;

@@ -1,13 +1,14 @@
 #pragma once
 
-#include <iostream>
-#include <fstream>
-#include <vector>
 #include <array>
+#include <chrono>
+#include <fstream>
 #include <functional>
+#include <iostream>
 #include <unordered_map>
 #include <unordered_set>
-#include <chrono>
+#include <vector>
+
 #include "SDL.h"
 #include "world.hpp"
 
@@ -37,12 +38,12 @@ private:
     SDL_Window* window_;
     SDL_Renderer* renderer_;
     SDL_Texture* texture_;
-    
+
     // Window properties
     size_t width_;
     size_t height_;
     std::vector<uint32_t> pixel_buffer_;
-    
+
     // Input management
     KeyState keys_this_frame_{};
     std::unordered_set<SDL_Scancode> keys_updated_this_frame_;
@@ -53,7 +54,7 @@ private:
     int mouse_xrel_ = 0;
     int mouse_yrel_ = 0;
     bool mouse_motion_this_frame_ = false;
-    
+
     // Event handling
     struct KeyBinding {
         std::unordered_set<SDL_Scancode> keys;
@@ -74,7 +75,7 @@ private:
     };
     std::vector<MouseBinding> mouse_bindings_;
     size_t next_event_id_ = 0;
-    
+
     // Helper methods
     bool check_key_trigger(const KeyBinding& binding) const noexcept;
     void process_key_bindings() noexcept;
@@ -82,9 +83,8 @@ private:
     void update_keyboard_state() noexcept;
     bool has_modifier_keys() const noexcept;
     static constexpr bool IsPressedMode(Trigger t) noexcept {
-        return t == Trigger::ANY_PRESSED || t == Trigger::ALL_PRESSED ||
-               t == Trigger::ANY_DOWN || t == Trigger::ALL_DOWN ||
-               t == Trigger::ANY_PRESSED_NO_MODIFIER;
+        return t == Trigger::ANY_PRESSED || t == Trigger::ALL_PRESSED || t == Trigger::ANY_DOWN ||
+               t == Trigger::ALL_DOWN || t == Trigger::ANY_PRESSED_NO_MODIFIER;
     }
 
 public:
@@ -92,35 +92,39 @@ public:
     /**
      * @brief Creates a window with an ARGB backbuffer.
      * @param w Width in pixels.
-     * @param h Height in pixels.
+     * @param h Height
+     * in pixels.
      * @param fullscreen Enable fullscreen desktop mode.
      */
     explicit Window(int w, int h, bool fullscreen = false) noexcept;
     /** @brief Releases SDL resources. */
     ~Window();
-    
+
     // Event registration
     /**
      * @brief Registers a key binding with a trigger policy.
      * @param keys Set of scancodes to monitor.
-     * @param trigger Trigger mode (pressed/down/released/etc.).
-     * @param handler Callback receiving key state and dt.
+
+     * * @param trigger Trigger mode (pressed/down/released/etc.).
+     * @param handler Callback receiving key state
+     * and dt.
      */
     void register_key(const std::unordered_set<SDL_Scancode>& keys, Trigger trigger, KeyHandler handler) noexcept;
     /**
      * @brief Registers a mouse binding.
      * @param button SDL mouse button.
-     * @param trigger Trigger mode.
+     * @param trigger Trigger
+     * mode.
      * @param handler Callback receiving xrel, yrel, dt.
      */
     void register_mouse(Uint8 button, Trigger trigger, MouseHandler handler) noexcept;
-    
+
     // Main loop methods
     /** @brief Polls SDL events and dispatches registered handlers. */
     bool process_events() noexcept;
     /** @brief Uploads backbuffer to SDL texture and presents. */
     void update() noexcept;
-    
+
     // Pixel manipulation
     /** @brief Clears the ARGB backbuffer to black. */
     void clear_pixels() noexcept;
@@ -130,7 +134,7 @@ public:
     std::uint32_t operator[](const std::pair<int, int>& xy) const noexcept;
     /** @brief Returns the underlying pixel buffer. */
     const std::vector<uint32_t>& get_pixel_buffer() const noexcept;
-    
+
     // File operations
     /** @brief Saves the backbuffer as raw PPM (P6) file.
      *  @param filename Output path. */
@@ -138,13 +142,13 @@ public:
     /** @brief Saves the backbuffer as BMP via SDL.
      *  @param filename Output path. */
     void save_bmp(const std::string& filename) const;
-    
+
     // Getters
     /** @brief Backbuffer width. */
     size_t get_width() const noexcept { return width_; }
     /** @brief Backbuffer height. */
     size_t get_height() const noexcept { return height_; }
-    
+
     // Keyboard state queries
     /** @brief Returns current pressed state for a key. */
     bool is_key_pressed(SDL_Scancode key) const noexcept;

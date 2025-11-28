@@ -1,8 +1,9 @@
 #pragma once
 #include <memory>
 #include <vector>
-#include "shader.hpp"
+
 #include "photon_map.hpp"
+#include "shader.hpp"
 #include "world.hpp"
 
 /**
@@ -24,9 +25,9 @@ public:
      * Used for calculating volumetric absorption (Beer's Law).
      */
     struct MediumState {
-        const Material* material = nullptr; ///< Pointer to the material of the medium.
-        glm::vec3 entry_point = glm::vec3(0.0f); ///< Point where the ray entered the medium.
-        FloatType entry_distance = 0.0f; ///< Distance from camera/origin to entry point.
+        const Material* material = nullptr;       ///< Pointer to the material of the medium.
+        glm::vec3 entry_point = glm::vec3(0.0f);  ///< Point where the ray entered the medium.
+        FloatType entry_distance = 0.0f;          ///< Distance from camera/origin to entry point.
     };
 
 public:
@@ -48,7 +49,7 @@ public:
 
     /**
      * @brief Renders a single pixel using standard pinhole camera model.
-     * 
+     *
      * @param cam The camera.
      * @param x Pixel x-coordinate.
      * @param y Pixel y-coordinate.
@@ -60,12 +61,20 @@ public:
      * @param initial_seed Seed for RNG.
      * @return The computed color for this sample.
      */
-    ColourHDR render_pixel(const Camera& cam, int x, int y, int width, int height,
-                           bool soft_shadows, bool use_caustics = false, int sample_index = 0, uint32_t initial_seed = 1u) const noexcept;
+    ColourHDR render_pixel(
+        const Camera& cam,
+        int x,
+        int y,
+        int width,
+        int height,
+        bool soft_shadows,
+        bool use_caustics = false,
+        int sample_index = 0,
+        uint32_t initial_seed = 1u) const noexcept;
 
     /**
      * @brief Renders a single pixel with Depth of Field (DoF).
-     * 
+     *
      * @param cam The camera.
      * @param x Pixel x-coordinate.
      * @param y Pixel y-coordinate.
@@ -78,9 +87,17 @@ public:
      * @param use_caustics Enable photon map lookup.
      * @return The averaged color of the samples.
      */
-    ColourHDR render_pixel_dof(const Camera& cam, int x, int y, int width, int height,
-                               FloatType focal_distance, FloatType aperture_size, int samples,
-                               bool soft_shadows, bool use_caustics = false) const noexcept;
+    ColourHDR render_pixel_dof(
+        const Camera& cam,
+        int x,
+        int y,
+        int width,
+        int height,
+        FloatType focal_distance,
+        FloatType aperture_size,
+        int samples,
+        bool soft_shadows,
+        bool use_caustics = false) const noexcept;
 
     /**
      * @brief Checks if the photon map has finished building.
@@ -90,7 +107,7 @@ public:
 private:
     /**
      * @brief Recursive ray tracing function.
-     * 
+     *
      * @param ro Ray origin.
      * @param rd Ray direction (normalized).
      * @param depth Current recursion depth.
@@ -102,8 +119,16 @@ private:
      * @param rng RNG state.
      * @return Radiance found along the ray.
      */
-    ColourHDR trace_ray(const glm::vec3& ro, const glm::vec3& rd, int depth,
-                        const MediumState& medium, bool soft_shadows, bool use_caustics, int sample_index, const glm::vec3& throughput, uint32_t& rng) const noexcept;
+    ColourHDR trace_ray(
+        const glm::vec3& ro,
+        const glm::vec3& rd,
+        int depth,
+        const MediumState& medium,
+        bool soft_shadows,
+        bool use_caustics,
+        int sample_index,
+        const glm::vec3& throughput,
+        uint32_t& rng) const noexcept;
 
     /**
      * @brief Intersects the ray with the scene geometry.
@@ -112,7 +137,8 @@ private:
 
     /**
      * @brief Computes visibility between two points (shadow ray).
-     * @return Transmission color (e.g., white if visible, black if blocked, or filtered color if through transparent object).
+     * @return Transmission color (e.g., white if visible, black if blocked, or filtered color if through transparent
+     * object).
      */
     glm::vec3 compute_transmittance_bvh(const glm::vec3& point, const glm::vec3& light_pos) const noexcept;
 };

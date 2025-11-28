@@ -1,6 +1,7 @@
-#include <iostream>
-#include <cstdlib>
 #include "video_recorder.hpp"
+
+#include <cstdlib>
+#include <iostream>
 
 VideoRecorder::VideoRecorder(const std::vector<uint32_t>& pixel_buffer, size_t width, size_t height)
     : pixel_buffer_(pixel_buffer), recording_(false), frame_count_(0), width_(width), height_(height) {}
@@ -8,7 +9,6 @@ VideoRecorder::VideoRecorder(const std::vector<uint32_t>& pixel_buffer, size_t w
 VideoRecorder::~VideoRecorder() = default;
 
 void VideoRecorder::start_recording() {
-    
     // Open Y4M stream and initialize recording state
     if (recording_) {
         std::cout << "Already recording!" << std::endl;
@@ -26,7 +26,6 @@ void VideoRecorder::start_recording() {
 }
 
 void VideoRecorder::stop_recording() {
-    
     // Close stream and spawn asynchronous MP4 conversion
     if (!recording_) return;
     recording_ = false;
@@ -37,13 +36,14 @@ void VideoRecorder::stop_recording() {
 }
 
 void VideoRecorder::toggle_recording() {
-    
     // Convenience toggle for UI bindings
-    if (recording_) stop_recording(); else start_recording();
+    if (recording_)
+        stop_recording();
+    else
+        start_recording();
 }
 
 void VideoRecorder::capture_frame() {
-    
     // Append current backbuffer as a frame to the Y4M file
     if (!recording_) return;
     write_frame();
@@ -53,13 +53,11 @@ void VideoRecorder::capture_frame() {
 bool VideoRecorder::is_recording() const noexcept { return recording_; }
 
 void VideoRecorder::write_header() {
-    
     // Minimal Y4M header describing resolution and format
     file_stream_ << "YUV4MPEG2 W" << width_ << " H" << height_ << " F30:1 Ip A1:1 C420jpeg\n";
 }
 
 void VideoRecorder::write_frame() {
-    
     // Convert ARGB backbuffer to 4:2:0 planar YUV and write a frame chunk
     file_stream_ << "FRAME\n";
     std::vector<uint8_t> y_plane(width_ * height_);
@@ -91,15 +89,14 @@ void VideoRecorder::write_frame() {
 }
 
 void VideoRecorder::convert_to_mp4() {
-    
-    // Invoke ffmpeg to transcode Y4M to MP4; silence console output
-    #ifdef _WIN32
-        std::string null_device = "nul";
-    #else
-        std::string null_device = "/dev/null";
-    #endif
-    std::string command = std::string("ffmpeg -y -i ") + Y4MFilename + " " + MP4Filename + 
-                         " > " + null_device + " 2>&1";
+// Invoke ffmpeg to transcode Y4M to MP4; silence console output
+#ifdef _WIN32
+    std::string null_device = "nul";
+#else
+    std::string null_device = "/dev/null";
+#endif
+    std::string command =
+        std::string("ffmpeg -y -i ") + Y4MFilename + " " + MP4Filename + " > " + null_device + " 2>&1";
     int result = std::system(command.c_str());
     if (result == 0) {
         std::ignore = std::system((std::string("rm ") + Y4MFilename).c_str());
