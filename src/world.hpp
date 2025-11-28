@@ -92,7 +92,7 @@ public:
     EnvironmentMap() noexcept : width_(0), height_(0), intensity_(1.0f) {}
     EnvironmentMap(std::size_t w, std::size_t h, std::vector<ColourHDR> data, FloatType intensity = 0.3f) noexcept
         : width_(w), height_(h), data_(std::move(data)), intensity_(intensity) {}
-    bool is_loaded() const noexcept { return width_ > 0 && height_ > 0; }
+    constexpr bool is_loaded() const noexcept { return width_ > 0 && height_ > 0; }
     ColourHDR sample(const glm::vec3& direction) const noexcept {
         if (!is_loaded()) return ColourHDR{0.0f, 0.0f, 0.0f};
         FloatType theta = std::atan2(direction.x, -direction.z);

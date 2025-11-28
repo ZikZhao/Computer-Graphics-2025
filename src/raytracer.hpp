@@ -15,7 +15,7 @@ public:
     };
 
 public:
-    static uint32_t PcgHash(uint32_t v) noexcept;
+    static constexpr uint32_t PcgHash(uint32_t v) noexcept;
     static FloatType RandFloat(uint32_t& seed) noexcept;
     static FloatType ComputeLambertianLighting(const glm::vec3& normal, const glm::vec3& to_light,
                                                FloatType distance, FloatType intensity) noexcept;
@@ -23,8 +23,8 @@ public:
                                              const glm::vec3& to_camera, FloatType distance,
                                              FloatType intensity, FloatType shininess) noexcept;
     static glm::vec3 SampleSphereHalton(int index, FloatType radius, const glm::vec3& center) noexcept;
-    static FloatType Halton(int index, int base) noexcept;
-    static ColourHDR ClampRadiance(const ColourHDR& c, FloatType max_luma) noexcept;
+    static constexpr FloatType Halton(int index, int base) noexcept;
+    static constexpr ColourHDR ClampRadiance(const ColourHDR& c, FloatType max_luma) noexcept;
 
 private:
     const World& world_;

@@ -7,7 +7,7 @@ class Window;
 
 class Rasterizer {
 public:
-    Rasterizer(int width, int height);
+    explicit Rasterizer(int width, int height);
     
     void clear() noexcept;
     void resize(int w, int h) noexcept;
@@ -34,8 +34,8 @@ private:
     void rasterized_render(const Camera& camera, const Face& face, const std::vector<glm::vec3>& vertices, const std::vector<glm::vec2>& texcoords, Window& window, double aspect_ratio) noexcept;
     
     // Clipping logic
-    static bool InsidePlane(const glm::vec4& v, ClipPlane plane) noexcept;
-    static FloatType ComputeIntersectionT(const glm::vec4& v0, const glm::vec4& v1, ClipPlane plane) noexcept;
+    static constexpr bool InsidePlane(const glm::vec4& v, ClipPlane plane) noexcept;
+    static constexpr FloatType ComputeIntersectionT(const glm::vec4& v0, const glm::vec4& v1, ClipPlane plane) noexcept;
     static ClipVertex IntersectPlane(const ClipVertex& v0, const ClipVertex& v1, ClipPlane plane) noexcept;
     static InplaceVector<ClipVertex, 9> ClipAgainstPlane(const InplaceVector<ClipVertex, 9>& input, ClipPlane plane) noexcept;
     InplaceVector<ClipVertex, 9> clip_triangle(const Camera& camera, const Face& face, const std::vector<glm::vec3>& vertices, const std::vector<glm::vec2>& texcoords, double aspect_ratio) noexcept;

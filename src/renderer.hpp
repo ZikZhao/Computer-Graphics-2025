@@ -23,7 +23,7 @@ public:
     static constexpr int TileHeight = 16;
     static constexpr int VideoSamples = 64;
     static Colour TonemapAndGammaCorrect(const ColourHDR& hdr, FloatType gamma) noexcept;
-    static FloatType AcesToneMapping(FloatType hdr_value) noexcept;
+    static constexpr FloatType AcesToneMapping(FloatType hdr_value) noexcept;
     
 private:
     Window& window_;
@@ -54,7 +54,7 @@ private:
     FloatType last_cam_pitch_ = 0.0f;
     
 public:
-    Renderer(Window& window, const World& world);
+    explicit Renderer(Window& window, const World& world);
     ~Renderer();
     void render() noexcept;
     void reset_accumulation() noexcept;

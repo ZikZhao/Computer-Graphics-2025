@@ -3,7 +3,7 @@
 #include "window.hpp"
 #include "renderer.hpp"
 
-FloatType Renderer::AcesToneMapping(FloatType hdr_value) noexcept {
+constexpr FloatType Renderer::AcesToneMapping(FloatType hdr_value) noexcept {
     const FloatType a = 2.51f;
     const FloatType b = 0.03f;
     const FloatType c = 2.43f;

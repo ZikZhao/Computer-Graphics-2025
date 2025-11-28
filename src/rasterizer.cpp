@@ -149,7 +149,7 @@ void Rasterizer::rasterized_render(const Camera& camera, const Face& face, const
 
  
 
-bool Rasterizer::InsidePlane(const glm::vec4& v, ClipPlane plane) noexcept {
+constexpr bool Rasterizer::InsidePlane(const glm::vec4& v, ClipPlane plane) noexcept {
     switch (plane) {
         case ClipPlane::LEFT:   return v.x >= -v.w;
         case ClipPlane::RIGHT:  return v.x <= v.w;
@@ -161,7 +161,7 @@ bool Rasterizer::InsidePlane(const glm::vec4& v, ClipPlane plane) noexcept {
     return false;
 }
 
-FloatType Rasterizer::ComputeIntersectionT(const glm::vec4& v0, const glm::vec4& v1, ClipPlane plane) noexcept {
+constexpr FloatType Rasterizer::ComputeIntersectionT(const glm::vec4& v0, const glm::vec4& v1, ClipPlane plane) noexcept {
     FloatType d0, d1;
     switch (plane) {
         case ClipPlane::LEFT:

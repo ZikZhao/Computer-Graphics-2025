@@ -73,12 +73,12 @@ private:
     size_t next_event_id_ = 0;
     
     // Helper methods
-    bool check_key_trigger(const KeyBinding& binding) const;
-    void process_key_bindings();
-    void process_mouse_bindings();
-    void update_keyboard_state();
-    bool has_modifier_keys() const;
-    static bool IsPressedMode(Trigger t) noexcept {
+    bool check_key_trigger(const KeyBinding& binding) const noexcept;
+    void process_key_bindings() noexcept;
+    void process_mouse_bindings() noexcept;
+    void update_keyboard_state() noexcept;
+    bool has_modifier_keys() const noexcept;
+    static constexpr bool IsPressedMode(Trigger t) noexcept {
         return t == Trigger::ANY_PRESSED || t == Trigger::ALL_PRESSED ||
                t == Trigger::ANY_DOWN || t == Trigger::ALL_DOWN ||
                t == Trigger::ANY_PRESSED_NO_MODIFIER;
@@ -86,16 +86,16 @@ private:
 
 public:
     Window() noexcept = delete;
-    Window(int w, int h, bool fullscreen = false) noexcept;
+    explicit Window(int w, int h, bool fullscreen = false) noexcept;
     ~Window();
     
     // Event registration
-    void register_key(const std::unordered_set<SDL_Scancode>& keys, Trigger trigger, KeyHandler handler);
-    void register_mouse(Uint8 button, Trigger trigger, MouseHandler handler);
+    void register_key(const std::unordered_set<SDL_Scancode>& keys, Trigger trigger, KeyHandler handler) noexcept;
+    void register_mouse(Uint8 button, Trigger trigger, MouseHandler handler) noexcept;
     
     // Main loop methods
-    bool process_events();
-    void update();
+    bool process_events() noexcept;
+    void update() noexcept;
     
     // Pixel manipulation
     void clear_pixels() noexcept;
@@ -112,7 +112,7 @@ public:
     size_t get_height() const noexcept { return height_; }
     
     // Keyboard state queries
-    bool is_key_pressed(SDL_Scancode key) const;
-    bool is_key_just_pressed(SDL_Scancode key) const;
-    bool is_key_just_released(SDL_Scancode key) const;
+    bool is_key_pressed(SDL_Scancode key) const noexcept;
+    bool is_key_just_pressed(SDL_Scancode key) const noexcept;
+    bool is_key_just_released(SDL_Scancode key) const noexcept;
 };

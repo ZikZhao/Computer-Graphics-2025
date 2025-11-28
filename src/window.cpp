@@ -49,17 +49,17 @@ Window::~Window() {
     SDL_Quit();
 }
 
-void Window::register_key(const std::unordered_set<SDL_Scancode>& keys, Trigger trigger, KeyHandler handler) {
+void Window::register_key(const std::unordered_set<SDL_Scancode>& keys, Trigger trigger, KeyHandler handler) noexcept {
     auto now = std::chrono::steady_clock::now();
     key_bindings_.push_back({keys, trigger, handler, next_event_id_++, now, false});
 }
 
-void Window::register_mouse(Uint8 button, Trigger trigger, MouseHandler handler) {
+void Window::register_mouse(Uint8 button, Trigger trigger, MouseHandler handler) noexcept {
     auto now = std::chrono::steady_clock::now();
     mouse_bindings_.push_back({button, trigger, handler, true, now, false});
 }
 
-bool Window::process_events() {
+bool Window::process_events() noexcept {
     SDL_Event event;
     keys_updated_this_frame_.clear();
     keys_pressed_this_frame_.clear();
@@ -113,12 +113,12 @@ bool Window::process_events() {
     return true;
 }
 
-void Window::update_keyboard_state() {
+void Window::update_keyboard_state() noexcept {
     const Uint8* keystate = SDL_GetKeyboardState(nullptr);
     std::copy(keystate, keystate + SDL_NUM_SCANCODES, keys_this_frame_.begin());
 }
 
-void Window::process_key_bindings() {
+void Window::process_key_bindings() noexcept {
     auto now = std::chrono::steady_clock::now();
     for (auto& binding : key_bindings_) {
         if (IsPressedMode(binding.trigger)) {
@@ -162,7 +162,7 @@ void Window::process_key_bindings() {
     }
 }
 
-bool Window::has_modifier_keys() const {
+bool Window::has_modifier_keys() const noexcept {
     return keys_this_frame_[SDL_SCANCODE_LCTRL] ||
            keys_this_frame_[SDL_SCANCODE_RCTRL] ||
            keys_this_frame_[SDL_SCANCODE_LSHIFT] ||
@@ -171,7 +171,7 @@ bool Window::has_modifier_keys() const {
            keys_this_frame_[SDL_SCANCODE_RALT];
 }
 
-bool Window::check_key_trigger(const KeyBinding& binding) const {
+bool Window::check_key_trigger(const KeyBinding& binding) const noexcept {
     if (binding.keys.empty()) return false;
     
     switch (binding.trigger) {
@@ -247,7 +247,7 @@ bool Window::check_key_trigger(const KeyBinding& binding) const {
     return false;
 }
 
-void Window::process_mouse_bindings() {
+void Window::process_mouse_bindings() noexcept {
     auto now = std::chrono::steady_clock::now();
     for (auto& binding : mouse_bindings_) {
         bool down = mouse_buttons_this_frame_.count(binding.button) > 0;
@@ -280,7 +280,7 @@ void Window::process_mouse_bindings() {
     mouse_yrel_ = 0;
 }
 
-void Window::update() {
+void Window::update() noexcept {
     SDL_UpdateTexture(texture_, nullptr, pixel_buffer_.data(), width_ * sizeof(uint32_t));
     SDL_RenderClear(renderer_);
     SDL_RenderCopy(renderer_, texture_, nullptr, nullptr);
@@ -335,15 +335,15 @@ void Window::save_bmp(const std::string& filename) const {
     SDL_FreeSurface(surface);
 }
 
-bool Window::is_key_pressed(SDL_Scancode key) const {
+bool Window::is_key_pressed(SDL_Scancode key) const noexcept {
     return keys_this_frame_[key] != 0;
 }
 
-bool Window::is_key_just_pressed(SDL_Scancode key) const {
+bool Window::is_key_just_pressed(SDL_Scancode key) const noexcept {
     return keys_pressed_this_frame_.count(key);
 }
 
-bool Window::is_key_just_released(SDL_Scancode key) const {
+bool Window::is_key_just_released(SDL_Scancode key) const noexcept {
     return keys_updated_this_frame_.count(key) && !keys_this_frame_[key];
 }
 

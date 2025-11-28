@@ -9,7 +9,7 @@ class VideoRecorder {
 public:
     static inline const std::string Y4MFilename = "recording.y4m";
     static inline const std::string MP4Filename = "recording.mp4";
-    VideoRecorder(const std::vector<uint32_t>& pixel_buffer, size_t width, size_t height);
+    explicit VideoRecorder(const std::vector<uint32_t>& pixel_buffer, size_t width, size_t height);
     ~VideoRecorder();
     void start_recording();
     void stop_recording();

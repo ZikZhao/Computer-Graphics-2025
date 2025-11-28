@@ -113,7 +113,7 @@ inline glm::vec3 CalculateBarycentric(glm::vec2 v0, glm::vec2 v1, glm::vec2 v2, 
 // Low-Discrepancy Sampling (Halton Sequence)
 // ============================================================================
 
-inline FloatType Halton(int index, int base) noexcept {
+constexpr FloatType Halton(int index, int base) noexcept {
     FloatType result = 0.0f;
     FloatType f = 1.0f / base;
     int i = index;

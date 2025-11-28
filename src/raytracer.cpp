@@ -9,7 +9,7 @@
 
  
 
-uint32_t RayTracer::PcgHash(uint32_t v) noexcept {
+constexpr uint32_t RayTracer::PcgHash(uint32_t v) noexcept {
     uint32_t state = v * 747796405u + 2891336453u;
     uint32_t word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
     return word ^ (word >> 22u);
@@ -521,7 +521,7 @@ glm::vec3 RayTracer::SampleSphereHalton(int index, FloatType radius, const glm::
     return center + glm::vec3(x, y, z);
 }
 
-FloatType RayTracer::Halton(int index, int base) noexcept {
+constexpr FloatType RayTracer::Halton(int index, int base) noexcept {
     FloatType result = 0.0f;
     FloatType f = 1.0f / base;
     int i = index;
@@ -533,9 +533,9 @@ FloatType RayTracer::Halton(int index, int base) noexcept {
     return result;
 }
 
-ColourHDR RayTracer::ClampRadiance(const ColourHDR& c, FloatType max_component) noexcept {
+constexpr ColourHDR RayTracer::ClampRadiance(const ColourHDR& c, FloatType max_component) noexcept {
     FloatType r = std::min(c.red, max_component);
     FloatType g = std::min(c.green, max_component);
     FloatType b = std::min(c.blue, max_component);
-    return ColourHDR(r, g, b);
+    return ColourHDR{r, g, b};
 }
