@@ -51,12 +51,26 @@ Window::~Window() {
 
 void Window::register_key(const std::unordered_set<SDL_Scancode>& keys, Trigger trigger, KeyHandler handler) noexcept {
     auto now = std::chrono::steady_clock::now();
-    key_bindings_.push_back({keys, trigger, handler, next_event_id_++, now, false});
+    key_bindings_.push_back(KeyBinding{
+        .keys             = keys,
+        .trigger          = trigger,
+        .handler          = handler,
+        .id               = next_event_id_++,
+        .last_time        = now,
+        .time_initialized = false
+    });
 }
 
 void Window::register_mouse(Uint8 button, Trigger trigger, MouseHandler handler) noexcept {
     auto now = std::chrono::steady_clock::now();
-    mouse_bindings_.push_back({button, trigger, handler, true, now, false});
+    mouse_bindings_.push_back(MouseBinding{
+        .button          = button,
+        .trigger         = trigger,
+        .handler         = handler,
+        .first_motion    = true,
+        .last_time       = now,
+        .time_initialized= false
+    });
 }
 
 bool Window::process_events() noexcept {

@@ -40,9 +40,9 @@ std::vector<Photon> PhotonMap::query_photons(const Face* face, const glm::vec3& 
 
 ColourHDR PhotonMap::estimate_caustic(const Face* face, const glm::vec3& point, 
                                       const glm::vec3& normal, FloatType search_radius) const noexcept {
-    if (!is_ready()) return ColourHDR{0.0f, 0.0f, 0.0f};
+    if (!is_ready()) return ColourHDR{ .red = 0.0f, .green = 0.0f, .blue = 0.0f };
     auto photons = query_photons(face, point, search_radius);
-    if (photons.empty()) return ColourHDR{0.0f, 0.0f, 0.0f};
+    if (photons.empty()) return ColourHDR{ .red = 0.0f, .green = 0.0f, .blue = 0.0f };
     glm::vec3 accumulated_flux(0.0f);
     constexpr FloatType k = 1.1f;
     for (const auto& photon : photons) {
@@ -56,7 +56,7 @@ ColourHDR PhotonMap::estimate_caustic(const Face* face, const glm::vec3& point,
     }
     FloatType search_area = std::numbers::pi * search_radius * search_radius;
     glm::vec3 radiance = accumulated_flux / search_area;
-    return ColourHDR{radiance.x, radiance.y, radiance.z};
+    return ColourHDR{ .red = radiance.x, .green = radiance.y, .blue = radiance.z };
 }
 
 std::size_t PhotonMap::total_photons() const noexcept {

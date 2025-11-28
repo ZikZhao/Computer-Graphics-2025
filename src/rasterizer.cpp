@@ -200,13 +200,13 @@ constexpr FloatType Rasterizer::ComputeIntersectionT(const glm::vec4& v0, const 
 ClipVertex Rasterizer::IntersectPlane(const ClipVertex& v0, const ClipVertex& v1, ClipPlane plane) noexcept {
     FloatType t = ComputeIntersectionT(v0.position_clip, v1.position_clip, plane);
     return ClipVertex{
-        v0.position_clip * (1.0f - t) + v1.position_clip * t,
-        Colour{
-            static_cast<std::uint8_t>(v0.colour.red * (1.0f - t) + v1.colour.red * t),
-            static_cast<std::uint8_t>(v0.colour.green * (1.0f - t) + v1.colour.green * t),
-            static_cast<std::uint8_t>(v0.colour.blue * (1.0f - t) + v1.colour.blue * t)
+        .position_clip = v0.position_clip * (1.0f - t) + v1.position_clip * t,
+        .colour        = Colour{
+            .red   = static_cast<std::uint8_t>(v0.colour.red * (1.0f - t) + v1.colour.red * t),
+            .green = static_cast<std::uint8_t>(v0.colour.green * (1.0f - t) + v1.colour.green * t),
+            .blue  = static_cast<std::uint8_t>(v0.colour.blue * (1.0f - t) + v1.colour.blue * t)
         },
-        v0.uv * (1.0f - t) + v1.uv * t
+        .uv            = v0.uv * (1.0f - t) + v1.uv * t
     };
 }
 
@@ -239,9 +239,9 @@ InplaceVector<ClipVertex, 9> Rasterizer::ClipAgainstPlane(const InplaceVector<Cl
 
 InplaceVector<ClipVertex, 9> Rasterizer::clip_triangle(const Camera& camera, const Face& face, const std::vector<glm::vec3>& vertices, const std::vector<glm::vec2>& texcoords, double aspect_ratio) noexcept {
     Colour vertex_color{
-        static_cast<std::uint8_t>(std::clamp(face.material.base_color.r * 255.0f, 0.0f, 255.0f)),
-        static_cast<std::uint8_t>(std::clamp(face.material.base_color.g * 255.0f, 0.0f, 255.0f)),
-        static_cast<std::uint8_t>(std::clamp(face.material.base_color.b * 255.0f, 0.0f, 255.0f))
+        .red = static_cast<std::uint8_t>(std::clamp(face.material.base_color.r * 255.0f, 0.0f, 255.0f)),
+        .green = static_cast<std::uint8_t>(std::clamp(face.material.base_color.g * 255.0f, 0.0f, 255.0f)),
+        .blue = static_cast<std::uint8_t>(std::clamp(face.material.base_color.b * 255.0f, 0.0f, 255.0f))
     };
     
     const glm::vec3& v0 = vertices[face.v_indices[0]];
@@ -254,9 +254,9 @@ InplaceVector<ClipVertex, 9> Rasterizer::clip_triangle(const Camera& camera, con
         if (face.vt_indices[2] < texcoords.size()) uv2 = texcoords[face.vt_indices[2]];
     }
     InplaceVector<ClipVertex, 9> polygon = {
-        ClipVertex{camera.world_to_clip(v0, aspect_ratio), vertex_color, uv0},
-        ClipVertex{camera.world_to_clip(v1, aspect_ratio), vertex_color, uv1},
-        ClipVertex{camera.world_to_clip(v2, aspect_ratio), vertex_color, uv2}
+        ClipVertex{ .position_clip = camera.world_to_clip(v0, aspect_ratio), .colour = vertex_color, .uv = uv0 },
+        ClipVertex{ .position_clip = camera.world_to_clip(v1, aspect_ratio), .colour = vertex_color, .uv = uv1 },
+        ClipVertex{ .position_clip = camera.world_to_clip(v2, aspect_ratio), .colour = vertex_color, .uv = uv2 }
     };
     
     polygon = ClipAgainstPlane(polygon, ClipPlane::LEFT);
@@ -299,19 +299,19 @@ Colour Rasterizer::sample_texture(const Face& face, const glm::vec3& bary,
     }
     
     return Colour{
-        static_cast<std::uint8_t>(std::clamp(base_color.r * 255.0f, 0.0f, 255.0f)),
-        static_cast<std::uint8_t>(std::clamp(base_color.g * 255.0f, 0.0f, 255.0f)),
-        static_cast<std::uint8_t>(std::clamp(base_color.b * 255.0f, 0.0f, 255.0f))
+        .red = static_cast<std::uint8_t>(std::clamp(base_color.r * 255.0f, 0.0f, 255.0f)),
+        .green = static_cast<std::uint8_t>(std::clamp(base_color.g * 255.0f, 0.0f, 255.0f)),
+        .blue = static_cast<std::uint8_t>(std::clamp(base_color.b * 255.0f, 0.0f, 255.0f))
     };
 }
 
 
 ScreenNdcCoord Rasterizer::ndc_to_screen(const glm::vec3& ndc, const glm::vec2& uv, FloatType w) const noexcept {
     return ScreenNdcCoord{
-        (ndc.x + 1.0f) * 0.5f * width_,
-        (1.0f - ndc.y) * 0.5f * height_,
-        ndc.z,
-        uv,
-        1.0f / w
+        .x = (ndc.x + 1.0f) * 0.5f * width_,
+        .y = (1.0f - ndc.y) * 0.5f * height_,
+        .z_ndc = ndc.z,
+        .uv = uv,
+        .inv_w = 1.0f / w
     };
 }

@@ -32,9 +32,9 @@ Colour Renderer::TonemapAndGammaCorrect(const ColourHDR& hdr, FloatType gamma) n
     g_out = std::clamp(g_out, 0.0f, 1.0f);
     b_out = std::clamp(b_out, 0.0f, 1.0f);
     return Colour{
-        static_cast<std::uint8_t>(std::clamp(r_out * 255.0f, 0.0f, 255.0f)),
-        static_cast<std::uint8_t>(std::clamp(g_out * 255.0f, 0.0f, 255.0f)),
-        static_cast<std::uint8_t>(std::clamp(b_out * 255.0f, 0.0f, 255.0f))
+        .red   = static_cast<std::uint8_t>(std::clamp(r_out * 255.0f, 0.0f, 255.0f)),
+        .green = static_cast<std::uint8_t>(std::clamp(g_out * 255.0f, 0.0f, 255.0f)),
+        .blue  = static_cast<std::uint8_t>(std::clamp(b_out * 255.0f, 0.0f, 255.0f))
     };
 }
 
@@ -159,9 +159,9 @@ void Renderer::process_rows(int y0, int y1) noexcept {
                         true, caustics_enabled_
                     );
                     pixel_accum = ColourHDR{
-                        pixel_accum.red + hdr.red,
-                        pixel_accum.green + hdr.green,
-                        pixel_accum.blue + hdr.blue
+                        .red   = pixel_accum.red + hdr.red,
+                        .green = pixel_accum.green + hdr.green,
+                        .blue  = pixel_accum.blue + hdr.blue
                     };
                 } else {
                     int sample_index = rendering_frame_count_ * (w * h) + pixel_index + s;
@@ -172,9 +172,9 @@ void Renderer::process_rows(int y0, int y1) noexcept {
                         true, caustics_enabled_, sample_index, sub_seed
                     );
                     pixel_accum = ColourHDR{
-                        pixel_accum.red + hdr.red,
-                        pixel_accum.green + hdr.green,
-                        pixel_accum.blue + hdr.blue
+                        .red   = pixel_accum.red + hdr.red,
+                        .green = pixel_accum.green + hdr.green,
+                        .blue  = pixel_accum.blue + hdr.blue
                     };
                 }
             }
@@ -188,17 +188,17 @@ void Renderer::process_rows(int y0, int y1) noexcept {
                 accumulation_buffer_[idx] = final_hdr_avg;
             } else {
                 accumulation_buffer_[idx] = ColourHDR{
-                    accumulation_buffer_[idx].red + final_hdr_avg.red,
-                    accumulation_buffer_[idx].green + final_hdr_avg.green,
-                    accumulation_buffer_[idx].blue + final_hdr_avg.blue
+                    .red   = accumulation_buffer_[idx].red + final_hdr_avg.red,
+                    .green = accumulation_buffer_[idx].green + final_hdr_avg.green,
+                    .blue  = accumulation_buffer_[idx].blue + final_hdr_avg.blue
                 };
             }
             ColourHDR avg_hdr = video_export_mode_
                 ? accumulation_buffer_[idx]
                 : ColourHDR{
-                    accumulation_buffer_[idx].red / static_cast<FloatType>(rendering_frame_count_),
-                    accumulation_buffer_[idx].green / static_cast<FloatType>(rendering_frame_count_),
-                    accumulation_buffer_[idx].blue / static_cast<FloatType>(rendering_frame_count_)
+                    .red   = accumulation_buffer_[idx].red / static_cast<FloatType>(rendering_frame_count_),
+                    .green = accumulation_buffer_[idx].green / static_cast<FloatType>(rendering_frame_count_),
+                    .blue  = accumulation_buffer_[idx].blue / static_cast<FloatType>(rendering_frame_count_)
                   };
             Colour final_colour = TonemapAndGammaCorrect(avg_hdr, gamma_);
             window_[{x, y}] = final_colour;

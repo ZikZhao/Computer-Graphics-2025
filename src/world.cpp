@@ -279,9 +279,9 @@ Texture Model::load_texture(std::string filename) {
             throw std::runtime_error("Unexpected end of file while reading texture: " + filename);
         }
         texture_data[i] = Colour{
-            static_cast<std::uint8_t>(red),
-            static_cast<std::uint8_t>(green),
-            static_cast<std::uint8_t>(blue)
+            .red = static_cast<std::uint8_t>(red),
+            .green = static_cast<std::uint8_t>(green),
+            .blue = static_cast<std::uint8_t>(blue)
         };
     }
     return Texture(width, height, std::move(texture_data));

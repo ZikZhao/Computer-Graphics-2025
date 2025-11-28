@@ -11,23 +11,23 @@
 #include "../libs/stb_image.h"
 
 namespace {
-struct IndexTriple { int v; int vt; int vn; };
-static IndexTriple parse_index_token(const std::string& t) {
-    IndexTriple idx{-1, -1, -1};
-    if (t.find('/') != std::string::npos) {
-        std::vector<std::string> parts;
-        std::stringstream ss(t);
-        std::string p;
-        while (std::getline(ss, p, '/')) parts.push_back(p);
-        if (!parts.empty() && !parts[0].empty()) idx.v = std::stoi(parts[0]);
-        if (parts.size() >= 2 && !parts[1].empty()) idx.vt = std::stoi(parts[1]);
-        if (parts.size() >= 3 && !parts[2].empty()) idx.vn = std::stoi(parts[2]);
-    } else {
-        bool digits_only = !t.empty() && std::all_of(t.begin(), t.end(), [](char c){ return c >= '0' && c <= '9'; });
-        if (digits_only) idx.v = std::stoi(t);
+    struct IndexTriple { int v; int vt; int vn; };
+    static IndexTriple parse_index_token(const std::string& t) {
+        IndexTriple idx{-1, -1, -1};
+        if (t.find('/') != std::string::npos) {
+            std::vector<std::string> parts;
+            std::stringstream ss(t);
+            std::string p;
+            while (std::getline(ss, p, '/')) parts.push_back(p);
+            if (!parts.empty() && !parts[0].empty()) idx.v = std::stoi(parts[0]);
+            if (parts.size() >= 2 && !parts[1].empty()) idx.vt = std::stoi(parts[1]);
+            if (parts.size() >= 3 && !parts[2].empty()) idx.vn = std::stoi(parts[2]);
+        } else {
+            bool digits_only = !t.empty() && std::all_of(t.begin(), t.end(), [](char c){ return c >= '0' && c <= '9'; });
+            if (digits_only) idx.v = std::stoi(t);
+        }
+        return idx;
     }
-    return idx;
-}
 }
 
 void SceneLoader::LoadObj(Model& model, const std::string& filename) {
@@ -117,13 +117,13 @@ void SceneLoader::LoadObj(Model& model, const std::string& filename) {
                 }
             }
             Face new_face{
-                { static_cast<std::uint32_t>(vi_idx[0]), static_cast<std::uint32_t>(vi_idx[1]), static_cast<std::uint32_t>(vi_idx[2]) },
-                { vt_indices[0], vt_indices[1], vt_indices[2] },
-                { (has_normals && normal_indices[0] >= 0) ? static_cast<std::uint32_t>(normal_indices[0]) : std::numeric_limits<std::uint32_t>::max(),
-                  (has_normals && normal_indices[1] >= 0) ? static_cast<std::uint32_t>(normal_indices[1]) : std::numeric_limits<std::uint32_t>::max(),
-                  (has_normals && normal_indices[2] >= 0) ? static_cast<std::uint32_t>(normal_indices[2]) : std::numeric_limits<std::uint32_t>::max() },
-                current_obj->material,
-                glm::vec3(0.0f)
+                .v_indices   = { static_cast<std::uint32_t>(vi_idx[0]), static_cast<std::uint32_t>(vi_idx[1]), static_cast<std::uint32_t>(vi_idx[2]) },
+                .vt_indices  = { vt_indices[0], vt_indices[1], vt_indices[2] },
+                .vn_indices  = { (has_normals && normal_indices[0] >= 0) ? static_cast<std::uint32_t>(normal_indices[0]) : std::numeric_limits<std::uint32_t>::max(),
+                                 (has_normals && normal_indices[1] >= 0) ? static_cast<std::uint32_t>(normal_indices[1]) : std::numeric_limits<std::uint32_t>::max(),
+                                 (has_normals && normal_indices[2] >= 0) ? static_cast<std::uint32_t>(normal_indices[2]) : std::numeric_limits<std::uint32_t>::max() },
+                .material    = current_obj->material,
+                .face_normal = glm::vec3(0.0f)
             };
             current_obj->faces.emplace_back(std::move(new_face));
         }
@@ -309,13 +309,13 @@ void SceneLoader::LoadSceneTxt(Model& model, const std::string& filename) {
                 }
             }
             Face new_face{
-                { static_cast<std::uint32_t>(vi_out[0]), static_cast<std::uint32_t>(vi_out[1]), static_cast<std::uint32_t>(vi_out[2]) },
-                { vt_out[0], vt_out[1], vt_out[2] },
-                { vn_out[0] >= 0 ? static_cast<std::uint32_t>(vn_out[0]) : std::numeric_limits<std::uint32_t>::max(),
-                  vn_out[1] >= 0 ? static_cast<std::uint32_t>(vn_out[1]) : std::numeric_limits<std::uint32_t>::max(),
-                  vn_out[2] >= 0 ? static_cast<std::uint32_t>(vn_out[2]) : std::numeric_limits<std::uint32_t>::max() },
-                current_obj->material,
-                glm::vec3(0.0f)
+                .v_indices   = { static_cast<std::uint32_t>(vi_out[0]), static_cast<std::uint32_t>(vi_out[1]), static_cast<std::uint32_t>(vi_out[2]) },
+                .vt_indices  = { vt_out[0], vt_out[1], vt_out[2] },
+                .vn_indices  = { vn_out[0] >= 0 ? static_cast<std::uint32_t>(vn_out[0]) : std::numeric_limits<std::uint32_t>::max(),
+                                 vn_out[1] >= 0 ? static_cast<std::uint32_t>(vn_out[1]) : std::numeric_limits<std::uint32_t>::max(),
+                                 vn_out[2] >= 0 ? static_cast<std::uint32_t>(vn_out[2]) : std::numeric_limits<std::uint32_t>::max() },
+                .material    = current_obj->material,
+                .face_normal = glm::vec3(0.0f)
             };
             model.objects_.back().faces.emplace_back(std::move(new_face));
         }

@@ -51,25 +51,25 @@ struct ColourHDR {
             return std::pow(normalized, gamma);
         };
         return ColourHDR{
-            to_linear(srgb.red),
-            to_linear(srgb.green),
-            to_linear(srgb.blue)
+            .red = to_linear(srgb.red),
+            .green = to_linear(srgb.green),
+            .blue = to_linear(srgb.blue)
         };
     }
     
     // Multiply by scalar (for lighting)
     constexpr ColourHDR operator*(FloatType scalar) const noexcept {
-        return ColourHDR{red * scalar, green * scalar, blue * scalar};
+        return ColourHDR{ .red = red * scalar, .green = green * scalar, .blue = blue * scalar };
     }
     
     // Component-wise multiplication (for color filtering)
     constexpr ColourHDR operator*(const ColourHDR& other) const noexcept {
-        return ColourHDR{red * other.red, green * other.green, blue * other.blue};
+        return ColourHDR{ .red = red * other.red, .green = green * other.green, .blue = blue * other.blue };
     }
     
     // Add colors (for ambient + diffuse)
     constexpr ColourHDR operator+(const ColourHDR& other) const noexcept {
-        return ColourHDR{red + other.red, green + other.green, blue + other.blue};
+        return ColourHDR{ .red = red + other.red, .green = green + other.green, .blue = blue + other.blue };
     }
 };
 
@@ -94,7 +94,7 @@ public:
         : width_(w), height_(h), data_(std::move(data)), intensity_(intensity) {}
     constexpr bool is_loaded() const noexcept { return width_ > 0 && height_ > 0; }
     ColourHDR sample(const glm::vec3& direction) const noexcept {
-        if (!is_loaded()) return ColourHDR{0.0f, 0.0f, 0.0f};
+        if (!is_loaded()) return ColourHDR{ .red = 0.0f, .green = 0.0f, .blue = 0.0f };
         FloatType theta = std::atan2(direction.x, -direction.z);
         FloatType phi = std::asin(std::clamp(direction.y, -1.0f, 1.0f));
         FloatType u = (theta / (2.0f * std::numbers::pi)) + 0.5f;
@@ -278,7 +278,7 @@ public:
             glm::vec3 mx = glm::max(glm::max(v0, v1), v2);
             AABB b{mn, mx};
             glm::vec3 c = (v0 + v1 + v2) / 3.0f;
-            data[i] = Cent{c, b};
+            data[i] = Cent{ .c = c, .b = b };
         }
         nodes_.clear();
         auto surface_area = [](const AABB& box) -> FloatType {
@@ -300,7 +300,7 @@ public:
             }
             int count = end - start;
             int node_index = (int)nodes_.size();
-            nodes_.push_back(BVHNode{box, -1, -1, start, count});
+            nodes_.push_back(BVHNode{ .box   = box, .left  = -1, .right = -1, .start = start, .count = count });
             if (count <= leaf_threshold) {
                 return node_index;
             }
@@ -485,7 +485,7 @@ public:
                     const glm::vec3& v2 = (*vertices_)[face.v_indices[2]];
                     bool hit = IntersectRayTriangle(point, light_dir, v0, v1, v2, t, u, v);
                     if (hit && t > min_t && t < (light_distance - 1e-4f)) {
-                        intersections.push_back({t, &face, u, v});
+                        intersections.push_back(Intersection{ .t = t, .face = &face, .u = u, .v = v });
                     }
                 }
             }
