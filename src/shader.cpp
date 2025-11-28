@@ -27,7 +27,11 @@ bool ScatterLambertian(const Ray& r_in, const HitRecord& rec, const Material& ma
     scattered.attenuation = rec.color;
     scattered.emission = glm::vec3(0.0f);
     scattered.is_specular = false;
+    // Epsilon origin shift: start the diffuse bounce slightly off the surface
+    // to avoid self-intersection due to FP error (shadow acne).
     scattered.scattered_ray = Ray{rec.intersectionPoint + rec.normal * 0.001f, scatter_dir};
+    // PDF for cosine-weighted hemisphere sampling. The integrator weights
+    // contributions by 1/PDF to keep the Monte Carlo estimator unbiased.
     scattered.pdf = glm::dot(rec.normal, scatter_dir) / std::numbers::pi;
     return true;
 }
@@ -37,7 +41,10 @@ bool ScatterMetal(const Ray& r_in, const HitRecord& rec, const Material& mat, Sc
     scattered.attenuation = rec.color;
     scattered.emission = glm::vec3(0.0f);
     scattered.is_specular = true;
+    // Epsilon origin shift: avoid immediate re-hit of the same triangle.
     scattered.scattered_ray = Ray{rec.intersectionPoint + rec.normal * 0.001f, reflected};
+    // Specular reflection is a delta distribution; treat PDF as 1 for the
+    // chosen path since the sampling is deterministic.
     scattered.pdf = 1.0f;
     return glm::dot(reflected, rec.normal) > 0.0f;
 }
@@ -77,6 +84,8 @@ bool ScatterDielectric(const Ray& r_in, const HitRecord& rec, const Material& ma
         scattered.attenuation = glm::vec3(1.0f, 1.0f, 1.0f);
         scattered.emission = glm::vec3(0.0f, 0.0f, 0.0f);
         scattered.is_specular = true;
+        // Offset along the normal to prevent the reflected ray from
+        // self-intersecting the refractive surface.
         scattered.scattered_ray = Ray{rec.intersectionPoint + normal * epsilon, reflected};
         scattered.pdf = 1.0f;
         return true;
@@ -103,6 +112,7 @@ bool ScatterDielectric(const Ray& r_in, const HitRecord& rec, const Material& ma
         scattered.attenuation = glm::vec3(1.0f, 1.0f, 1.0f);
         scattered.emission = glm::vec3(0.0f, 0.0f, 0.0f);
         scattered.is_specular = true;
+        // Offset into the air side.
         scattered.scattered_ray = Ray{rec.intersectionPoint + normal * epsilon, reflected};
         scattered.pdf = reflect_prob;
         return true;
@@ -111,6 +121,7 @@ bool ScatterDielectric(const Ray& r_in, const HitRecord& rec, const Material& ma
         scattered.attenuation = glm::vec3(1.0f, 1.0f, 1.0f);
         scattered.emission = glm::vec3(0.0f, 0.0f, 0.0f);
         scattered.is_specular = true;
+        // Offset into the medium side.
         scattered.scattered_ray = Ray{rec.intersectionPoint - normal * epsilon, refracted};
         scattered.pdf = 1.0f - reflect_prob;
         return true;

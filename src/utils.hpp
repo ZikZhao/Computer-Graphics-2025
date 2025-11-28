@@ -32,6 +32,12 @@ constexpr FloatType ComputeInvZndc(std::array<FloatType, 3> bary, std::array<Flo
 
 // ============================================================================
 // Container Utilities (InplaceVector)
+// ----------------------------------------------------------------------------
+// Rationale: std::inplace_vector is standardized in C++26 (late C++23). Our
+// build targets C++20/partial C++23, so this lightweight backport exists to
+// keep small, fixed-capacity arrays on the stack. That avoids heap traffic and
+// fragmentation in tight loops (e.g., clipping, micro-partitioning), improving
+// cache locality and deterministic performance.
 // ============================================================================
 
 template<typename T, std::size_t N>
@@ -155,11 +161,14 @@ inline glm::vec3 SampleConeHalton(int index, const glm::vec3& direction, FloatTy
     FloatType sin_theta = std::sqrt(1.0f - z * z);
     glm::vec3 sample_dir(sin_theta * std::cos(phi), sin_theta * std::sin(phi), z);
     
-    // Build orthonormal basis around direction
+    // Basis construction: pick an 'up' that avoids degeneracy when direction
+    // aligns with the world up, then build a stable orthonormal frame to map
+    // local samples into world space without introducing skew.
     glm::vec3 up = std::abs(direction.y) < 0.999f ? glm::vec3(0.0f, 1.0f, 0.0f) : glm::vec3(1.0f, 0.0f, 0.0f);
     glm::vec3 right = glm::normalize(glm::cross(up, direction));
     glm::vec3 forward = glm::cross(direction, right);
-    
-    // Transform sample to world space
+
+    // Transform: apply the frame so the sample respects the requested cone
+    // angle around 'direction' while preserving low-discrepancy properties.
     return glm::normalize(sample_dir.x * right + sample_dir.y * forward + sample_dir.z * direction);
 }

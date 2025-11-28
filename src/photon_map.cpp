@@ -100,7 +100,12 @@ void PhotonMap::trace_photons() {
     glm::vec3 target_center = (aabb_min + aabb_max) * 0.5f;
     FloatType target_radius = glm::length(aabb_max - target_center);
 
-    // Build flattened spatial grid based on transparent region AABB
+    // Spatial indexing:
+    // Switch from hash-based buckets to a flattened 1D grid. The grid index
+    // is computed from integer cell coordinates, yielding O(1) addressing and
+    // much better cache locality than unordered_map lookups during photon
+    // queries. This matters because caustic estimation probes many neighboring
+    // cells per shading point.
     grid_origin_ = aabb_min;
     glm::vec3 extent = aabb_max - aabb_min;
     grid_width_  = std::max(1, static_cast<int>(std::ceil(extent.x / GridCellSize)));
@@ -119,6 +124,7 @@ void PhotonMap::trace_photons() {
         glm::vec3 e1 = world_.all_vertices()[lf->v_indices[2]] - world_.all_vertices()[lf->v_indices[0]];
         FloatType area = 0.5f * glm::length(glm::cross(e0, e1));
         glm::vec3 Le = lf->material.emission;
+        // Luminance (ITU-R BT.709) used for energy-aware photon allocation.
         FloatType lum = 0.2126f * Le.x + 0.7152f * Le.y + 0.0722f * Le.z;
         FloatType w = std::max<FloatType>(1e-6f, area * lum);
         weights[i] = w;
@@ -338,7 +344,8 @@ void PhotonMap::store_photon(const Photon& photon) {
     // No mutex needed: only single worker thread writes during construction
     photon_map_[photon.face].push_back(photon);
     
-    // Also store in flattened spatial grid for fast lookup
+    // Store in flattened grid: contiguous vectors per cell minimize pointer
+    // chasing and improve memory coherence during neighborhood queries.
     auto [cx, cy, cz] = GetGridCell(photon.position);
     if (cx < 0 || cy < 0 || cz < 0 || cx >= grid_width_ || cy >= grid_height_ || cz >= grid_depth_) {
         return; // Out of bounds: skip

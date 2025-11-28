@@ -185,6 +185,9 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
         
         if (total_internal_reflection) {
             glm::vec3 reflected_dir = glm::reflect(ray_dir, normal);
+            // Epsilon origin shift: nudge the spawn point along the geometric
+            // normal to avoid self-intersections caused by floating-point
+            // imprecision (shadow acne / z-fighting).
             glm::vec3 offset_origin = intersection.intersectionPoint + normal * epsilon;
             glm::vec3 next_tp = throughput;
             ColourHDR reflected = trace_ray(offset_origin, reflected_dir, depth + 1, medium, soft_shadows, use_caustics, sample_index, next_tp, rng);
@@ -207,6 +210,8 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
         
         if (reflect_weight > 0.01f) {
             glm::vec3 reflected_dir = glm::reflect(ray_dir, normal);
+            // Epsilon origin shift: prevent the reflected ray from re-hitting
+            // the same surface due to numerical error.
             glm::vec3 offset_origin = intersection.intersectionPoint + normal * epsilon;
             glm::vec3 next_tp = throughput;
             ColourHDR reflected_color = trace_ray(offset_origin, reflected_dir, depth + 1, medium, soft_shadows, use_caustics, sample_index, next_tp, rng);
@@ -214,6 +219,8 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
         }
         
         if (refract_weight > 0.01f) {
+            // For transmitted rays, offset opposite the surface normal to start
+            // the ray just inside the medium.
             glm::vec3 offset_origin = intersection.intersectionPoint - normal * epsilon;
             MediumState new_medium;
             if (entering) {
@@ -308,12 +315,16 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
                 glm::vec3 vis = transmittance;
                 glm::vec3 Le = lf->material.emission;
                 FloatType G = (cos_surf * cos_light) / (dist * dist + 1e-6f);
+                // Monte Carlo weighting: we sample points uniformly on the area
+                // light (PDF = 1/area). Multiplying by 'area' is the 1/PDF term
+                // that keeps the estimator unbiased. 'G' encodes geometry terms.
                 FloatType GA = G * area;
                 glm::vec3 albedo = glm::vec3(hdr_colour.red, hdr_colour.green, hdr_colour.blue);
                 FloatType inv_pi = 1.0f / static_cast<FloatType>(std::numbers::pi);
                 diffuse_rgb_accum += (albedo * ((Le * vis) * (GA * inv_pi)));
                 glm::vec3 halfway = glm::normalize(L + to_camera_hit);
                 FloatType cos_alpha = std::max(0.0f, glm::dot(n_shade, halfway));
+                // Luminance coefficients per ITU-R BT.709 (sRGB/Rec.709).
                 FloatType le_lum = 0.2126f * Le.r + 0.7152f * Le.g + 0.0722f * Le.b;
                 FloatType vis_lum = 0.2126f * vis.r + 0.7152f * vis.g + 0.0722f * vis.b;
                 specular += le_lum * std::pow(cos_alpha, face.material.shininess) * area * vis_lum / (dist * dist + 1e-6f);
@@ -347,10 +358,14 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
         }
         glm::vec3 reflected_dir = glm::reflect(ray_dir, use_normal);
         constexpr FloatType epsilon = 0.001f;
+        // Epsilon origin shift: start the glossy reflection slightly above the
+        // surface to avoid self-hit.
         glm::vec3 offset_origin = intersection.intersectionPoint + use_normal * epsilon;
         glm::vec3 next_tp = throughput * glm::vec3(hdr_colour.red, hdr_colour.green, hdr_colour.blue);
         FloatType p = std::max(next_tp.x, std::max(next_tp.y, next_tp.z));
         p = std::clamp(p, 0.05f, 1.0f);
+        // Russian roulette: divide by survival probability 'p' so the expected
+        // contribution remains unchanged (unbiased estimator).
         glm::vec3 compensated_tp = next_tp / p;
         ColourHDR reflected_color = trace_ray(offset_origin, reflected_dir, depth + 1, medium, soft_shadows, use_caustics, sample_index, compensated_tp, rng);
         ColourHDR metallic_reflection = ColourHDR{

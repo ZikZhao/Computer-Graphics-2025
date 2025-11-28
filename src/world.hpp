@@ -195,6 +195,11 @@ public:
     std::pair<glm::vec3, glm::vec3> generate_ray_uv(FloatType u, FloatType v, int screen_width, int screen_height, double aspect_ratio) const noexcept;
 };
 
+// Optimization: Store per-vertex indices instead of duplicating vertex data.
+// Reduces Face footprint (e.g., ~100B → ~40B depending on Material/padding),
+// which improves cache residency and memory bandwidth during BVH traversal and
+// ray–triangle intersection. The triangles stream indices; actual positions,
+// uvs and normals are fetched from shared arrays on demand.
 struct Face {
     std::array<std::uint32_t, 3> v_indices;
     std::array<std::uint32_t, 3> vt_indices;
