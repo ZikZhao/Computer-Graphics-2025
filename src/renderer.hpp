@@ -30,14 +30,14 @@ public:
      * @param gamma Output gamma (1.0 = none, 2.2 typical sRGB).
      * @return 8-bit sRGB colour.
      */
-    static Colour TonemapAndGammaCorrect(const ColourHDR& hdr, FloatType gamma) noexcept;
+    [[nodiscard]] static Colour TonemapAndGammaCorrect(const ColourHDR& hdr, FloatType gamma) noexcept;
 
     /**
      * @brief ACES filmic tone mapping curve (approximation).
      * @param hdr_value Input HDR component.
      * @return Mapped component in [0,1].
      */
-    static constexpr FloatType AcesToneMapping(FloatType hdr_value) noexcept;
+    [[nodiscard]] static constexpr FloatType AcesToneMapping(FloatType hdr_value) noexcept;
 
 private:
     const World& world_;
@@ -86,18 +86,18 @@ public:
     /** @brief Sets the rendering mode. */
     void set_mode(Mode m) noexcept { mode_ = m; }
     /** @brief Returns current display gamma. */
-    FloatType gamma() const noexcept { return gamma_; }
+    [[nodiscard]] FloatType gamma() const noexcept { return gamma_; }
     /** @brief Sets display gamma. */
     void set_gamma(FloatType g) noexcept { gamma_ = g; }
     /** @brief Returns whether caustics are enabled. */
-    bool caustics_enabled() const noexcept { return caustics_enabled_; }
+    [[nodiscard]] bool caustics_enabled() const noexcept { return caustics_enabled_; }
     /** @brief Enables or disables photon-mapped caustics. */
     void set_caustics_enabled(bool e) noexcept { caustics_enabled_ = e; }
     /** @brief Indicates whether the photon map is ready. */
-    bool is_photon_map_ready() const noexcept { return raytracer_ && raytracer_->is_photon_map_ready(); }
+    [[nodiscard]] bool is_photon_map_ready() const noexcept { return raytracer_ && raytracer_->is_photon_map_ready(); }
 
-    int get_width() const noexcept { return rasterizer_->get_width(); }
-    int get_height() const noexcept { return rasterizer_->get_height(); }
+    [[nodiscard]] int get_width() const noexcept { return rasterizer_->get_width(); }
+    [[nodiscard]] int get_height() const noexcept { return rasterizer_->get_height(); }
 
 private:
     void clear() noexcept;

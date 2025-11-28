@@ -79,7 +79,7 @@ public:
      * @brief Indicates whether the photon map has finished building.
      * @return True when neighborhood queries are available.
      */
-    bool is_ready() const noexcept { return is_ready_.load(std::memory_order_acquire); }
+    [[nodiscard]] bool is_ready() const noexcept { return is_ready_.load(std::memory_order_acquire); }
 
     /**
      * @brief Retrieves photons within a radius of a point on a given face.
@@ -88,7 +88,7 @@ public:
      * @param radius Search radius.
      * @return List of nearby photons satisfying the radial and face filter.
      */
-    std::vector<Photon> query_photons(const Face* face, const glm::vec3& point, FloatType radius) const;
+    [[nodiscard]] std::vector<Photon> query_photons(const Face* face, const glm::vec3& point, FloatType radius) const;
 
     /**
      * @brief Estimates caustic radiance at a surface point.
@@ -98,14 +98,14 @@ public:
      * @param search_radius Radius for photon gathering.
      * @return Estimated radiance in HDR space.
      */
-    ColourHDR estimate_caustic(
+    [[nodiscard]] ColourHDR estimate_caustic(
         const Face* face, const glm::vec3& point, const glm::vec3& normal, FloatType search_radius) const noexcept;
 
     /**
      * @brief Returns total number of stored photons.
      * @return Photon count across all faces and grid cells.
      */
-    std::size_t total_photons() const noexcept;
+    [[nodiscard]] std::size_t total_photons() const noexcept;
 
 private:
     // Main photon tracing worker (runs in jthread)

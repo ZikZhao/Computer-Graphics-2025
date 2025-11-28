@@ -79,7 +79,7 @@ public:
      * @param hdr_data Linear HDR pixels.
      * @return Exposure multiplier.
      */
-    static FloatType ComputeAutoExposure(const std::vector<ColourHDR>& hdr_data) noexcept;
+    [[nodiscard]] static FloatType ComputeAutoExposure(const std::vector<ColourHDR>& hdr_data) noexcept;
 
 private:
     std::size_t width_;
@@ -99,13 +99,13 @@ public:
      */
     EnvironmentMap(std::size_t w, std::size_t h, std::vector<ColourHDR> data, FloatType intensity = 0.3f) noexcept;
     /** @brief Indicates whether a valid map is present. */
-    constexpr bool is_loaded() const noexcept { return width_ > 0 && height_ > 0; }
+    [[nodiscard]] constexpr bool is_loaded() const noexcept { return width_ > 0 && height_ > 0; }
     /**
      * @brief Samples environment radiance along a direction.
      * @param direction World-space direction.
      * @return Linear HDR radiance.
      */
-    ColourHDR sample(const glm::vec3& direction) const noexcept;
+    [[nodiscard]] ColourHDR sample(const glm::vec3& direction) const noexcept;
 };
 
 struct RayTriangleIntersection {
@@ -128,7 +128,7 @@ class Texture {
 public:
     constexpr Texture(std::size_t w, std::size_t h, std::vector<Colour> data)
         : width_(w), height_(h), data_(std::move(data)) {}
-    constexpr Colour sample(FloatType u, FloatType v) const {
+    [[nodiscard]] constexpr Colour sample(FloatType u, FloatType v) const {
         std::size_t ix = static_cast<std::size_t>(
             std::clamp(u * static_cast<FloatType>(width_ - 1), 0.0f, static_cast<FloatType>(width_ - 1)));
         std::size_t iy = static_cast<std::size_t>(
@@ -184,17 +184,17 @@ public:
     FloatType orbit_radius_ = 0.0f;
     Camera() noexcept = default;
     /** @brief Projects a world-space vertex to homogeneous clip space. */
-    glm::vec4 world_to_clip(const glm::vec3& vertex, double aspect_ratio) const noexcept;
+    [[nodiscard]] glm::vec4 world_to_clip(const glm::vec3& vertex, double aspect_ratio) const noexcept;
     /** @brief Converts clip coordinates to NDC by dividing by w. */
-    glm::vec3 clip_to_ndc(const glm::vec4& clip) const noexcept;
+    [[nodiscard]] glm::vec3 clip_to_ndc(const glm::vec4& clip) const noexcept;
     /** @brief Returns camera basis matrix (right, up, forward). */
-    glm::mat3 orientation() const noexcept;
+    [[nodiscard]] glm::mat3 orientation() const noexcept;
     /** @brief Forward direction. */
-    glm::vec3 forward() const noexcept;
+    [[nodiscard]] glm::vec3 forward() const noexcept;
     /** @brief Right direction. */
-    glm::vec3 right() const noexcept;
+    [[nodiscard]] glm::vec3 right() const noexcept;
     /** @brief Up direction. */
-    glm::vec3 up() const noexcept;
+    [[nodiscard]] glm::vec3 up() const noexcept;
     /** @brief Begins orbiting around a target at current radius. */
     void start_orbiting(glm::vec3 target) noexcept;
     /** @brief Updates orbit if active. */
@@ -216,10 +216,10 @@ public:
     /** @brief Sets roll. */
     void set_roll(FloatType r) noexcept;
     /** @brief Generates a ray through a pixel center. */
-    std::pair<glm::vec3, glm::vec3> generate_ray(
+    [[nodiscard]] std::pair<glm::vec3, glm::vec3> generate_ray(
         int pixel_x, int pixel_y, int screen_width, int screen_height, double aspect_ratio) const noexcept;
     /** @brief Generates a ray from normalized UV. */
-    std::pair<glm::vec3, glm::vec3> generate_ray_uv(
+    [[nodiscard]] std::pair<glm::vec3, glm::vec3> generate_ray_uv(
         FloatType u, FloatType v, int screen_width, int screen_height, double aspect_ratio) const noexcept;
 };
 
@@ -263,15 +263,15 @@ public:
     void load_scene_txt(std::string filename);
     friend class SceneLoader;
     /** @brief Flattened faces for iteration. */
-    const std::vector<Face>& all_faces() const noexcept { return all_faces_; }
+    [[nodiscard]] const std::vector<Face>& all_faces() const noexcept { return all_faces_; }
     /** @brief Shared vertex positions. */
-    const std::vector<glm::vec3>& vertices() const noexcept { return vertices_; }
+    [[nodiscard]] const std::vector<glm::vec3>& vertices() const noexcept { return vertices_; }
     /** @brief Shared texture coordinates. */
-    const std::vector<glm::vec2>& texture_coords() const noexcept { return texture_coords_; }
+    [[nodiscard]] const std::vector<glm::vec2>& texture_coords() const noexcept { return texture_coords_; }
     /** @brief Shared OBJ vertex normals. */
-    const std::vector<glm::vec3>& vertex_normals() const noexcept { return vertex_normals_; }
+    [[nodiscard]] const std::vector<glm::vec3>& vertex_normals() const noexcept { return vertex_normals_; }
     /** @brief Optional per-vertex normals authored inline. */
-    const std::vector<glm::vec3>& vertex_normals_by_vertex() const noexcept { return vertex_normals_by_vertex_; }
+    [[nodiscard]] const std::vector<glm::vec3>& vertex_normals_by_vertex() const noexcept { return vertex_normals_by_vertex_; }
 
 private:
     void load_materials(std::string filename);
@@ -308,7 +308,7 @@ private:
 public:
     BVHAccelerator() noexcept = default;
     /** @brief Returns true if no nodes are built. */
-    bool empty() const noexcept;
+    [[nodiscard]] bool empty() const noexcept;
     /** @brief Binds vertex array used by intersection. */
     void set_vertices(const std::vector<glm::vec3>& verts) noexcept;
     /** @brief Binds texture coordinate array. */
@@ -320,12 +320,12 @@ public:
     /** @brief Builds BVH nodes over provided faces. */
     void build(const std::vector<Face>& faces) noexcept;
     /** @brief Ray–AABB test used by traversal. */
-    static bool IntersectAABB(const glm::vec3& ro, const glm::vec3& rd, const AABB& box, FloatType tmax) noexcept;
+    [[nodiscard]] static bool IntersectAABB(const glm::vec3& ro, const glm::vec3& rd, const AABB& box, FloatType tmax) noexcept;
     /** @brief Intersects ray with triangles; returns closest hit or miss. */
-    RayTriangleIntersection intersect(
+    [[nodiscard]] RayTriangleIntersection intersect(
         const glm::vec3& ro, const glm::vec3& rd, const std::vector<Face>& faces) const noexcept;
     /** @brief Computes shadow transmittance along a segment to the light. */
-    glm::vec3 transmittance(
+    [[nodiscard]] glm::vec3 transmittance(
         const glm::vec3& point, const glm::vec3& light_pos, const std::vector<Face>& faces) const noexcept;
 };
 
@@ -355,16 +355,16 @@ public:
      */
     void load_files(const std::vector<std::string>& filenames);
     // Accessors for Renderer
-    const std::vector<Model>& models() const noexcept;
-    const std::vector<Face>& all_faces() const noexcept;
-    const std::vector<glm::vec3>& all_vertices() const noexcept;
-    const std::vector<glm::vec2>& all_texcoords() const noexcept;
-    const std::vector<glm::vec3>& all_vertex_normals() const noexcept;
-    const std::vector<glm::vec3>& all_vertex_normals_by_vertex() const noexcept;
+    [[nodiscard]] const std::vector<Model>& models() const noexcept;
+    [[nodiscard]] const std::vector<Face>& all_faces() const noexcept;
+    [[nodiscard]] const std::vector<glm::vec3>& all_vertices() const noexcept;
+    [[nodiscard]] const std::vector<glm::vec2>& all_texcoords() const noexcept;
+    [[nodiscard]] const std::vector<glm::vec3>& all_vertex_normals() const noexcept;
+    [[nodiscard]] const std::vector<glm::vec3>& all_vertex_normals_by_vertex() const noexcept;
     /** @brief HDR environment map accessor. */
-    const EnvironmentMap& env_map() const noexcept;
+    [[nodiscard]] const EnvironmentMap& env_map() const noexcept;
     /** @brief List of emissive faces (area lights). */
-    const std::vector<const Face*>& area_lights() const noexcept;
+    [[nodiscard]] const std::vector<const Face*>& area_lights() const noexcept;
     /** @brief BVH accelerator accessor. */
-    const BVHAccelerator& accelerator() const noexcept;
+    [[nodiscard]] const BVHAccelerator& accelerator() const noexcept;
 };

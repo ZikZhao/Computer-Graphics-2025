@@ -37,7 +37,7 @@ public:
      * @param max_luma Maximum allowed component value.
      * @return Clamped color.
      */
-    static constexpr ColourHDR ClampRadiance(const ColourHDR& c, FloatType max_luma) noexcept;
+    [[nodiscard]] static constexpr ColourHDR ClampRadiance(const ColourHDR& c, FloatType max_luma) noexcept;
 
 private:
     const World& world_;
@@ -61,7 +61,7 @@ public:
      * @param initial_seed Seed for RNG.
      * @return The computed color for this sample.
      */
-    ColourHDR render_pixel(
+    [[nodiscard]] ColourHDR render_pixel(
         const Camera& cam,
         int x,
         int y,
@@ -87,7 +87,7 @@ public:
      * @param use_caustics Enable photon map lookup.
      * @return The averaged color of the samples.
      */
-    ColourHDR render_pixel_dof(
+    [[nodiscard]] ColourHDR render_pixel_dof(
         const Camera& cam,
         int x,
         int y,
@@ -102,7 +102,7 @@ public:
     /**
      * @brief Checks if the photon map has finished building.
      */
-    bool is_photon_map_ready() const noexcept { return photon_map_ && photon_map_->is_ready(); }
+    [[nodiscard]] bool is_photon_map_ready() const noexcept { return photon_map_ && photon_map_->is_ready(); }
 
 private:
     /**

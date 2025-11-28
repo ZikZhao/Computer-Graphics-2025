@@ -129,11 +129,11 @@ public:
     /** @brief Clears the ARGB backbuffer to black. */
     void clear_pixels() noexcept;
     /** @brief Mutable pixel access by (x,y). */
-    std::uint32_t& operator[](const std::pair<int, int>& xy) noexcept;
+    [[nodiscard]] std::uint32_t& operator[](const std::pair<int, int>& xy) noexcept;
     /** @brief Const pixel read by (x,y). */
-    std::uint32_t operator[](const std::pair<int, int>& xy) const noexcept;
+    [[nodiscard]] std::uint32_t operator[](const std::pair<int, int>& xy) const noexcept;
     /** @brief Returns the underlying pixel buffer. */
-    const std::vector<uint32_t>& get_pixel_buffer() const noexcept;
+    [[nodiscard]] const std::vector<uint32_t>& get_pixel_buffer() const noexcept;
 
     // File operations
     /** @brief Saves the backbuffer as raw PPM (P6) file.
@@ -145,15 +145,15 @@ public:
 
     // Getters
     /** @brief Backbuffer width. */
-    size_t get_width() const noexcept { return width_; }
+    [[nodiscard]] size_t get_width() const noexcept { return width_; }
     /** @brief Backbuffer height. */
-    size_t get_height() const noexcept { return height_; }
+    [[nodiscard]] size_t get_height() const noexcept { return height_; }
 
     // Keyboard state queries
     /** @brief Returns current pressed state for a key. */
-    bool is_key_pressed(SDL_Scancode key) const noexcept;
+    [[nodiscard]] bool is_key_pressed(SDL_Scancode key) const noexcept;
     /** @brief Returns true if key transitioned to pressed in this frame. */
-    bool is_key_just_pressed(SDL_Scancode key) const noexcept;
+    [[nodiscard]] bool is_key_just_pressed(SDL_Scancode key) const noexcept;
     /** @brief Returns true if key transitioned to released in this frame. */
-    bool is_key_just_released(SDL_Scancode key) const noexcept;
+    [[nodiscard]] bool is_key_just_released(SDL_Scancode key) const noexcept;
 };

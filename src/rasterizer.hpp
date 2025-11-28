@@ -72,10 +72,10 @@ public:
      * @param y Pixel Y coordinate.
      * @return Inverse-Z value, or 0 if the coordinates are out of bounds.
      */
-    FloatType get_depth(int x, int y) const noexcept;
+    [[nodiscard]] FloatType get_depth(int x, int y) const noexcept;
 
-    int get_width() const noexcept { return window_.get_width(); }
-    int get_height() const noexcept { return window_.get_height(); }
+    [[nodiscard]] int get_width() const noexcept { return window_.get_width(); }
+    [[nodiscard]] int get_height() const noexcept { return window_.get_height(); }
 
 private:
     // Per-face rendering helpers
