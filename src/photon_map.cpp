@@ -78,8 +78,8 @@ void PhotonMap::trace_photons() {
         if (is_transparent(face.material)) {
             transparent_faces.push_back(&face);
             for (int k = 0; k < 3; ++k) {
-                aabb_min = glm::min(aabb_min, face.vertices[k]);
-                aabb_max = glm::max(aabb_max, face.vertices[k]);
+                aabb_min = glm::min(aabb_min, world_.all_vertices()[face.vertex_indices[k]]);
+                aabb_max = glm::max(aabb_max, world_.all_vertices()[face.vertex_indices[k]]);
             }
         }
     }
@@ -102,8 +102,8 @@ void PhotonMap::trace_photons() {
     FloatType weight_sum = 0.0f;
     for (std::size_t i = 0; i < area_lights.size(); ++i) {
         const Face* lf = area_lights[i];
-        glm::vec3 e0 = lf->vertices[1] - lf->vertices[0];
-        glm::vec3 e1 = lf->vertices[2] - lf->vertices[0];
+        glm::vec3 e0 = world_.all_vertices()[lf->vertex_indices[1]] - world_.all_vertices()[lf->vertex_indices[0]];
+        glm::vec3 e1 = world_.all_vertices()[lf->vertex_indices[2]] - world_.all_vertices()[lf->vertex_indices[0]];
         FloatType area = 0.5f * glm::length(glm::cross(e0, e1));
         glm::vec3 Le = lf->material.emission;
         FloatType lum = 0.2126f * Le.x + 0.7152f * Le.y + 0.0722f * Le.z;
@@ -131,7 +131,9 @@ void PhotonMap::emit_photons_to_object(const Face& target_face, int num_photons)
     const glm::vec3& light_pos = world_.light_position();
     
     // Compute face center as target point
-    glm::vec3 face_center = (target_face.vertices[0] + target_face.vertices[1] + target_face.vertices[2]) / 3.0f;
+    glm::vec3 face_center = (world_.all_vertices()[target_face.vertex_indices[0]]
+                           + world_.all_vertices()[target_face.vertex_indices[1]]
+                           + world_.all_vertices()[target_face.vertex_indices[2]]) / 3.0f;
     glm::vec3 to_face = glm::normalize(face_center - light_pos);
     
     // Emit photons in a cone toward the face
@@ -147,8 +149,8 @@ void PhotonMap::emit_photons_to_object(const Face& target_face, int num_photons)
 }
 
 void PhotonMap::emit_photons_from_area_light(const Face& light_face, const glm::vec3& target_center, FloatType target_radius, int num_photons) {
-    glm::vec3 e0 = light_face.vertices[1] - light_face.vertices[0];
-    glm::vec3 e1 = light_face.vertices[2] - light_face.vertices[0];
+    glm::vec3 e0 = world_.all_vertices()[light_face.vertex_indices[1]] - world_.all_vertices()[light_face.vertex_indices[0]];
+    glm::vec3 e1 = world_.all_vertices()[light_face.vertex_indices[2]] - world_.all_vertices()[light_face.vertex_indices[0]];
     FloatType area = 0.5f * glm::length(glm::cross(e0, e1));
     glm::vec3 Le = light_face.material.emission;
     glm::vec3 n_light = glm::normalize(light_face.face_normal);
@@ -164,7 +166,7 @@ void PhotonMap::emit_photons_from_area_light(const Face& light_face, const glm::
         FloatType b0 = 1.0f - su;
         FloatType b1 = su * (1.0f - u2);
         FloatType b2 = su * u2;
-        glm::vec3 light_p = light_face.vertices[0] + b1 * e0 + b2 * e1;
+        glm::vec3 light_p = world_.all_vertices()[light_face.vertex_indices[0]] + b1 * e0 + b2 * e1;
         glm::vec3 origin = light_p + n_light * 1e-4f;
         glm::vec3 to_center = glm::normalize(target_center - origin);
         FloatType dist = glm::length(target_center - origin);
@@ -358,11 +360,11 @@ std::optional<RayTriangleIntersection> PhotonMap::find_intersection(
 }
 
 std::optional<RayTriangleIntersection> PhotonMap::intersect_triangle(
-    const glm::vec3& ro, const glm::vec3& rd, const Face& face) noexcept {
+    const glm::vec3& ro, const glm::vec3& rd, const Face& face) const noexcept {
     
-    const glm::vec3& v0 = face.vertices[0];
-    const glm::vec3& v1 = face.vertices[1];
-    const glm::vec3& v2 = face.vertices[2];
+    const glm::vec3& v0 = world_.all_vertices()[face.vertex_indices[0]];
+    const glm::vec3& v1 = world_.all_vertices()[face.vertex_indices[1]];
+    const glm::vec3& v2 = world_.all_vertices()[face.vertex_indices[2]];
     
     // Möller-Trumbore intersection algorithm
     constexpr FloatType EPSILON = 1e-6f;

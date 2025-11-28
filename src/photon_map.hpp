@@ -102,8 +102,8 @@ private:
     }
     
     // Ray-triangle intersection (simplified from RayTracer)
-    static std::optional<RayTriangleIntersection> intersect_triangle(
-        const glm::vec3& ro, const glm::vec3& rd, const Face& face) noexcept;
+    std::optional<RayTriangleIntersection> intersect_triangle(
+        const glm::vec3& ro, const glm::vec3& rd, const Face& face) const noexcept;
     
     // Find closest intersection in scene
     std::optional<RayTriangleIntersection> find_intersection(

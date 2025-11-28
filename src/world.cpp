@@ -153,7 +153,10 @@ void Model::load_scene_txt(std::string filename) {
 void Model::compute_face_normals() noexcept {
     for (auto& obj : objects_) {
         for (auto& f : obj.faces) {
-            f.face_normal = CalculateNormal(f.vertices[0], f.vertices[1], f.vertices[2]);
+            const glm::vec3& v0 = vertices_[f.vertex_indices[0]];
+            const glm::vec3& v1 = vertices_[f.vertex_indices[1]];
+            const glm::vec3& v2 = vertices_[f.vertex_indices[2]];
+            f.face_normal = CalculateNormal(v0, v1, v2);
         }
     }
 }
@@ -409,13 +412,35 @@ void World::load_files(const std::vector<std::string>& filenames) {
     const_cast<glm::vec3&>(light_position_) = light_pos;
     const_cast<bool&>(has_light_) = found_light;
     
+    std::size_t total_vertices = 0;
     std::size_t total_faces = 0;
     for (const auto& model : models_) {
+        total_vertices += model.vertices().size();
         total_faces += model.all_faces().size();
     }
+    all_vertices_.clear();
+    all_vertices_.reserve(total_vertices);
+    all_faces_.clear();
     all_faces_.reserve(total_faces);
+    std::vector<std::size_t> vertex_offsets;
+    vertex_offsets.reserve(models_.size());
+    std::size_t running_offset = 0;
     for (const auto& model : models_) {
-        all_faces_.insert(all_faces_.end(), model.all_faces().begin(), model.all_faces().end());
+        vertex_offsets.push_back(running_offset);
+        const auto& verts = model.vertices();
+        all_vertices_.insert(all_vertices_.end(), verts.begin(), verts.end());
+        running_offset += verts.size();
+    }
+    for (std::size_t mi = 0; mi < models_.size(); ++mi) {
+        const auto& model = models_[mi];
+        std::size_t offset = vertex_offsets[mi];
+        for (const auto& f : model.all_faces()) {
+            Face f2 = f;
+            for (int k = 0; k < 3; ++k) {
+                f2.vertex_indices[k] = static_cast<std::uint32_t>(offset + f.vertex_indices[k]);
+            }
+            all_faces_.push_back(std::move(f2));
+        }
     }
 
     emissive_faces_.clear();
@@ -425,6 +450,7 @@ void World::load_files(const std::vector<std::string>& filenames) {
         }
     }
 
+    accelerator_.set_vertices(all_vertices_);
     accelerator_.build(all_faces_);
 }
 

@@ -200,13 +200,12 @@ public:
 };
 
 struct Face {
-    std::array<glm::vec3, 3> vertices;
+    std::array<std::uint32_t, 3> vertex_indices;
     std::array<std::uint8_t, 3> texture_vertices;
-    std::array<glm::vec2, 3> texture_coords;  // Actual UV coordinates for this face
+    std::array<glm::vec2, 3> texture_coords;
     Material material;
-    std::array<int, 3> vertex_indices;  // Indices into model's vertices_
-    std::array<glm::vec3, 3> vertex_normals; // Smoothed vertex normals
-    glm::vec3 face_normal;  // Geometric face normal (for flat shading)
+    std::array<glm::vec3, 3> vertex_normals;
+    glm::vec3 face_normal;
 };
 
 struct Object {
@@ -233,6 +232,7 @@ public:
     friend class SceneLoader;
     // Getter for all_faces_
     const std::vector<Face>& all_faces() const noexcept { return all_faces_; }
+    const std::vector<glm::vec3>& vertices() const noexcept { return vertices_; }
     // Light accessors
     bool has_light() const noexcept { return has_light_; }
     const glm::vec3& light_position() const noexcept { return light_position_; }
@@ -260,22 +260,26 @@ public:
 private:
     std::vector<int> tri_indices_;
     std::vector<BVHNode> nodes_;
+    const std::vector<glm::vec3>* vertices_ = nullptr;
 public:
     BvhAccelerator() noexcept = default;
     bool empty() const noexcept { return nodes_.empty(); }
-    static inline AABB tri_aabb(const Face& f) noexcept {
-        glm::vec3 mn = glm::min(glm::min(f.vertices[0], f.vertices[1]), f.vertices[2]);
-        glm::vec3 mx = glm::max(glm::max(f.vertices[0], f.vertices[1]), f.vertices[2]);
-        return AABB{mn, mx};
-    }
+    void set_vertices(const std::vector<glm::vec3>& verts) noexcept { vertices_ = &verts; }
     void build(const std::vector<Face>& faces) noexcept {
+        if (!vertices_) return;
         tri_indices_.resize(faces.size());
         std::iota(tri_indices_.begin(), tri_indices_.end(), 0);
         struct Cent { glm::vec3 c; AABB b; };
         std::vector<Cent> data(faces.size());
         for (std::size_t i = 0; i < faces.size(); ++i) {
-            auto b = tri_aabb(faces[i]);
-            glm::vec3 c = (faces[i].vertices[0] + faces[i].vertices[1] + faces[i].vertices[2]) / 3.0f;
+            const Face& f = faces[i];
+            const glm::vec3& v0 = (*vertices_)[f.vertex_indices[0]];
+            const glm::vec3& v1 = (*vertices_)[f.vertex_indices[1]];
+            const glm::vec3& v2 = (*vertices_)[f.vertex_indices[2]];
+            glm::vec3 mn = glm::min(glm::min(v0, v1), v2);
+            glm::vec3 mx = glm::max(glm::max(v0, v1), v2);
+            AABB b{mn, mx};
+            glm::vec3 c = (v0 + v1 + v2) / 3.0f;
             data[i] = Cent{c, b};
         }
         nodes_.clear();
@@ -403,7 +407,10 @@ public:
                     int tri_index = tri_indices_[n.start + i];
                     const Face& face = faces[tri_index];
                     FloatType t, u, v;
-                    if (IntersectRayTriangle(ro, rd, face.vertices[0], face.vertices[1], face.vertices[2], t, u, v) && t < closest.distanceFromCamera) {
+                    const glm::vec3& v0 = (*vertices_)[face.vertex_indices[0]];
+                    const glm::vec3& v1 = (*vertices_)[face.vertex_indices[1]];
+                    const glm::vec3& v2 = (*vertices_)[face.vertex_indices[2]];
+                    if (IntersectRayTriangle(ro, rd, v0, v1, v2, t, u, v) && t < closest.distanceFromCamera) {
                         closest.distanceFromCamera = t;
                         closest.intersectionPoint = ro + rd * t;
                         closest.triangleIndex = tri_index;
@@ -458,7 +465,10 @@ public:
                     int tri_index = tri_indices_[n.start + i];
                     const Face& face = faces[tri_index];
                     FloatType t, u, v;
-                    bool hit = IntersectRayTriangle(point, light_dir, face.vertices[0], face.vertices[1], face.vertices[2], t, u, v);
+                    const glm::vec3& v0 = (*vertices_)[face.vertex_indices[0]];
+                    const glm::vec3& v1 = (*vertices_)[face.vertex_indices[1]];
+                    const glm::vec3& v2 = (*vertices_)[face.vertex_indices[2]];
+                    bool hit = IntersectRayTriangle(point, light_dir, v0, v1, v2, t, u, v);
                     if (hit && t > min_t && t < (light_distance - 1e-4f)) {
                         intersections.push_back({t, &face, u, v});
                     }
@@ -498,6 +508,7 @@ class World {
 private:
     std::vector<Model> models_;
     std::vector<Face> all_faces_;  // Cached flattened faces from all models
+    std::vector<glm::vec3> all_vertices_;
     const glm::vec3 light_position_;  // Immutable after loading
     const bool has_light_;
     FloatType light_intensity_ = 100.0f;  // Adjustable light intensity constant
@@ -517,6 +528,7 @@ public:
     const Camera& camera() const noexcept { return camera_; }
     const std::vector<Model>& models() const noexcept { return models_; }
     const std::vector<Face>& all_faces() const noexcept { return all_faces_; }
+    const std::vector<glm::vec3>& all_vertices() const noexcept { return all_vertices_; }
     const glm::vec3& light_position() const noexcept { return light_position_; }
     bool has_light() const noexcept { return has_light_; }
     FloatType light_intensity() const noexcept { return light_intensity_; }

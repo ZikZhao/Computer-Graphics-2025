@@ -127,11 +127,10 @@ void SceneLoader::LoadObj(Model& model, const std::string& filename) {
                 }
             }
             Face new_face{
-                { vertice[0], vertice[1], vertice[2] },
+                { static_cast<std::uint32_t>(vi_idx[0]), static_cast<std::uint32_t>(vi_idx[1]), static_cast<std::uint32_t>(vi_idx[2]) },
                 { tex_indices[0], tex_indices[1], tex_indices[2] },
                 { tex_coords[0], tex_coords[1], tex_coords[2] },
                 current_obj->material,
-                { vi_idx[0], vi_idx[1], vi_idx[2] },
                 { glm::vec3(0.0f), glm::vec3(0.0f), glm::vec3(0.0f) },
                 glm::vec3(0.0f)
             };
@@ -333,11 +332,10 @@ void SceneLoader::LoadSceneTxt(Model& model, const std::string& filename) {
                 }
             }
             Face new_face{
-                { vpos[0], vpos[1], vpos[2] },
+                { static_cast<std::uint32_t>(vi_out[0]), static_cast<std::uint32_t>(vi_out[1]), static_cast<std::uint32_t>(vi_out[2]) },
                 { tex_idx_out[0], tex_idx_out[1], tex_idx_out[2] },
                 { uv_out[0], uv_out[1], uv_out[2] },
                 current_obj->material,
-                { vi_out[0], vi_out[1], vi_out[2] },
                 { vnorm_out[0], vnorm_out[1], vnorm_out[2] },
                 glm::vec3(0.0f)
             };
@@ -347,4 +345,3 @@ void SceneLoader::LoadSceneTxt(Model& model, const std::string& filename) {
     model.compute_face_normals();
     model.cache_faces();
 }
-

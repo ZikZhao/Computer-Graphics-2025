@@ -100,11 +100,11 @@ void Renderer::clear() noexcept {
 }
 
 void Renderer::wireframe_render() noexcept {
-    rasterizer_->draw_model_wireframe(world_.camera(), world_.all_faces(), window_, aspect_ratio_);
+    rasterizer_->draw_model_wireframe(world_.camera(), world_.all_faces(), world_.all_vertices(), window_, aspect_ratio_);
 }
 
 void Renderer::rasterized_render() noexcept {
-    rasterizer_->draw_model_rasterized(world_.camera(), world_.all_faces(), window_, aspect_ratio_);
+    rasterizer_->draw_model_rasterized(world_.camera(), world_.all_faces(), world_.all_vertices(), window_, aspect_ratio_);
 }
 
 void Renderer::raytraced_render() noexcept {

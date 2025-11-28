@@ -277,8 +277,8 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
                 if (!area_lights.empty()) {
                     glm::vec3 diffuse_rgb_accum(0.0f);
                     for (const Face* lf : area_lights) {
-                        glm::vec3 e0 = lf->vertices[1] - lf->vertices[0];
-                        glm::vec3 e1 = lf->vertices[2] - lf->vertices[0];
+                        glm::vec3 e0 = world_.all_vertices()[lf->vertex_indices[1]] - world_.all_vertices()[lf->vertex_indices[0]];
+                        glm::vec3 e1 = world_.all_vertices()[lf->vertex_indices[2]] - world_.all_vertices()[lf->vertex_indices[0]];
                         FloatType area = 0.5f * glm::length(glm::cross(e0, e1));
                         if (area < 1e-6f) continue;
                         FloatType u1 = RandFloat(rng);
@@ -287,7 +287,7 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
                         FloatType b0 = 1.0f - su;
                         FloatType b1 = su * (1.0f - u2);
                         FloatType b2 = su * u2;
-                        glm::vec3 light_p = lf->vertices[0] + b1 * e0 + b2 * e1;
+                        glm::vec3 light_p = world_.all_vertices()[lf->vertex_indices[0]] + b1 * e0 + b2 * e1;
                         glm::vec3 shadow_origin = intersection.intersectionPoint + n_shade * 1e-4f;
                         glm::vec3 to_light = light_p - shadow_origin;
                         if (glm::dot(face.face_normal, to_light) <= 0.0f) continue;
