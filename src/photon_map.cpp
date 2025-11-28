@@ -6,7 +6,6 @@
 PhotonMap::PhotonMap(const World& world) 
     : world_(world) 
 {
-    // Launch worker thread to trace photons asynchronously
     worker_thread_ = std::jthread([this]() { trace_photons(); });
 }
 
@@ -96,7 +95,6 @@ void PhotonMap::trace_photons() {
     std::cout << "PhotonMap: Found " << transparent_faces.size() << " transparent faces\n";
     std::cout << "PhotonMap: Emitting photons from " << area_lights.size() << " area lights\n";
     
-    // Compute bounding sphere for transparent region
     glm::vec3 target_center = (aabb_min + aabb_max) * 0.5f;
     FloatType target_radius = glm::length(aabb_max - target_center);
 
@@ -155,7 +153,7 @@ void PhotonMap::emit_photons_from_area_light(const Face& light_face, const glm::
     glm::vec3 n_light = glm::normalize(light_face.face_normal);
     
     glm::vec3 photon_power = Le * (area / static_cast<FloatType>(std::max(1, num_photons)));
-    photon_power *= 5.0f; // artistic boost
+    photon_power *= 5.0f;
     
     
     for (int i = 0; i < num_photons; ++i) {
@@ -180,51 +178,40 @@ void PhotonMap::trace_single_photon(const glm::vec3& origin, const glm::vec3& di
                                     const glm::vec3& medium_entry_point,
                                     bool interacted_with_transparent) {
     
-    // Stop if exceeded max bounces
     if (depth >= MaxPhotonBounces) {
         return;
     }
     
-    // Find intersection
     auto hit_opt = find_intersection(origin, direction);
     if (!hit_opt.has_value()) {
-        return;  // Photon escaped scene
+        return;
     }
     
     const auto& hit = hit_opt.value();
     const Face* hit_face = &world_.all_faces()[hit.triangleIndex];
     const Material& mat = hit_face->material;
     
-    // Check if surface is transparent or diffuse
     bool is_transparent_surface = IsTransparent(mat);
     
-    // Continue tracing if hit transparent object
     if (is_transparent_surface) {
-        // Mark that this photon has interacted with a transparent surface
         interacted_with_transparent = true;
-        // Determine if photon is currently inside or outside the medium
         bool currently_inside = glm::length(medium_entry_point) > 0.0f;
         
-        // Refraction/reflection logic
         glm::vec3 normal = hit.front_face ? hit.normal : -hit.normal;
         FloatType eta = hit.front_face ? (1.0f / mat.ior) : mat.ior;
         
-        // Compute refraction parameters
         FloatType cos_theta = std::min(glm::dot(-direction, normal), 1.0f);
         FloatType sin_theta = std::sqrt(1.0f - cos_theta * cos_theta);
         bool cannot_refract = eta * sin_theta > 1.0f;
         
-        // Fresnel (Schlick's approximation)
         FloatType r0 = (1.0f - eta) / (1.0f + eta);
         r0 = r0 * r0;
         FloatType reflectance = r0 + (1.0f - r0) * std::pow(1.0f - cos_theta, 5.0f);
         
-        // Prepare for next ray
         glm::vec3 new_direction;
         glm::vec3 new_power = power;
         glm::vec3 new_entry_point = medium_entry_point;
         
-        // Apply Beer-Lambert absorption if photon was traveling inside medium
         if (currently_inside) {
             FloatType travel_dist = glm::length(hit.intersectionPoint - medium_entry_point);
             
@@ -234,7 +221,6 @@ void PhotonMap::trace_single_photon(const glm::vec3& origin, const glm::vec3& di
                 if (glm::length(mat.sigma_a) > 0.0f) {
                     effective_sigma_a = mat.sigma_a;
                 } else {
-                    // Derive absorption from tint color and transmission depth
                     effective_sigma_a = glm::vec3(
                         -std::log(std::max(mat.base_color.r, 0.001f)) / mat.td,
                         -std::log(std::max(mat.base_color.g, 0.001f)) / mat.td,
@@ -242,7 +228,6 @@ void PhotonMap::trace_single_photon(const glm::vec3& origin, const glm::vec3& di
                     );
                 }
                 
-                // Apply Beer-Lambert law: I = I0 * exp(-sigma_a * distance)
                 new_power = glm::vec3(
                     power.x * std::exp(-effective_sigma_a.x * travel_dist),
                     power.y * std::exp(-effective_sigma_a.y * travel_dist),
@@ -251,56 +236,41 @@ void PhotonMap::trace_single_photon(const glm::vec3& origin, const glm::vec3& di
             }
         }
         
-        // Russian roulette after first bounce (with energy compensation for unbiased estimation)
         if (depth >= 1) {
             FloatType power_magnitude = glm::length(new_power);
-            // Survival probability based on photon power
             FloatType survival_prob = std::min(0.95f, std::max(0.1f, power_magnitude / MinPhotonPower));
             FloatType rr = RandomFloat();
             if (rr > survival_prob) {
-                return;  // Photon absorbed
+                return;
             }
-            // Energy compensation: boost surviving photon power to maintain expected value
-            // E[new_power] = survival_prob * (new_power / survival_prob) + (1 - survival_prob) * 0 = new_power
             new_power /= survival_prob;
         }
         
-        // Decide refraction vs reflection
         if (cannot_refract) {
-            // Total internal reflection (only happens inside medium)
             new_direction = glm::reflect(direction, normal);
-            // Stay inside, update entry point for next segment
             new_entry_point = hit.intersectionPoint;
         } else if (RandomFloat() < reflectance * 0.5f) {
-            // Fresnel reflection (reduced probability for caustics)
             new_direction = glm::reflect(direction, normal);
-            // If reflecting from outside, stay outside; if from inside, stay inside
             if (currently_inside) {
                 new_entry_point = hit.intersectionPoint;
             } else {
-                new_entry_point = glm::vec3(0.0f);  // Outside
+                new_entry_point = glm::vec3(0.0f);
             }
         } else {
-            // Refraction
             if (hit.front_face) {
-                // Entering medium
                 new_entry_point = hit.intersectionPoint;
             } else {
-                // Exiting medium
                 new_entry_point = glm::vec3(0.0f);
             }
             new_direction = glm::refract(direction, normal, eta);
         }
         
-        // Continue tracing
         glm::vec3 offset = new_direction * 0.001f;
         trace_single_photon(hit.intersectionPoint + offset, new_direction, new_power, depth + 1, 
                            new_entry_point, interacted_with_transparent);
     } else {
-        // Hit diffuse surface
         glm::vec3 final_power = power;
         
-        // Apply absorption if photon is currently inside medium
         bool currently_inside = glm::length(medium_entry_point) > 0.0f;
         if (currently_inside) {
             FloatType travel_dist = glm::length(hit.intersectionPoint - medium_entry_point);
@@ -329,11 +299,6 @@ void PhotonMap::trace_single_photon(const glm::vec3& origin, const glm::vec3& di
             }
         }
         
-        // Store photon if it has interacted with any transparent surface
-        // This captures:
-        // - Refractive caustics (with Beer-Lambert absorption if traveled through medium)
-        // - External reflections from glass (white light for ceiling caustics)
-        // - Internal reflections (with absorption)
         if (interacted_with_transparent) {
             store_photon(Photon{hit.intersectionPoint, direction, final_power, hit_face});
         }

@@ -37,13 +37,11 @@ struct Colour {
     }
 };
 
-// HDR color with floating point precision
 struct ColourHDR {
     FloatType red;
     FloatType green;
     FloatType blue;
     
-    // Convert from 8-bit sRGB to linear HDR
     static ColourHDR from_srgb(const Colour& srgb, FloatType gamma) noexcept {
         auto to_linear = [gamma](std::uint8_t component) -> FloatType {
             FloatType normalized = component / 255.0f;
@@ -57,17 +55,14 @@ struct ColourHDR {
         };
     }
     
-    // Multiply by scalar (for lighting)
     constexpr ColourHDR operator*(FloatType scalar) const noexcept {
         return ColourHDR{ .red = red * scalar, .green = green * scalar, .blue = blue * scalar };
     }
     
-    // Component-wise multiplication (for color filtering)
     constexpr ColourHDR operator*(const ColourHDR& other) const noexcept {
         return ColourHDR{ .red = red * other.red, .green = green * other.green, .blue = blue * other.blue };
     }
     
-    // Add colors (for ambient + diffuse)
     constexpr ColourHDR operator+(const ColourHDR& other) const noexcept {
         return ColourHDR{ .red = red + other.red, .green = green + other.green, .blue = blue + other.blue };
     }
@@ -77,7 +72,6 @@ struct Face;
 struct RayTriangleIntersection;
 class BvhAccelerator; // forward declaration
 
-// Environment map for HDR lighting
 class EnvironmentMap {
 public:
     static FloatType ComputeAutoExposure(const std::vector<ColourHDR>& hdr_data) noexcept;
@@ -85,8 +79,8 @@ public:
 private:
     std::size_t width_;
     std::size_t height_;
-    std::vector<ColourHDR> data_;  // HDR pixel data
-    FloatType intensity_;  // Scaling factor for environment map brightness
+    std::vector<ColourHDR> data_;
+    FloatType intensity_;
 
 public:
     EnvironmentMap() noexcept : width_(0), height_(0), intensity_(1.0f) {}
@@ -125,7 +119,6 @@ public:
     constexpr Texture(std::size_t w, std::size_t h, std::vector<Colour> data)
         : width_(w), height_(h), data_(std::move(data)) {}
     constexpr Colour sample(FloatType u, FloatType v) const {
-        // Convert UV (0-1) to pixel coordinates
         std::size_t ix = static_cast<std::size_t>(std::clamp(u * static_cast<FloatType>(width_ - 1), 0.0f, static_cast<FloatType>(width_ - 1)));
         std::size_t iy = static_cast<std::size_t>(std::clamp(v * static_cast<FloatType>(height_ - 1), 0.0f, static_cast<FloatType>(height_ - 1)));
         return data_[iy * width_ + ix];
@@ -145,11 +138,10 @@ struct Material {
     glm::vec3 emission = glm::vec3(0.0f);             // Emissive radiance (area light)
 };
 
-// Vertex in clip space with attributes
 struct ClipVertex {
-    glm::vec4 position_clip;  // Homogeneous clip space coordinates
+    glm::vec4 position_clip;
     Colour colour;
-    glm::vec2 uv;  // Texture coordinates
+    glm::vec2 uv;
 };
 
 struct ScreenNdcCoord {
@@ -228,7 +220,6 @@ public:
     void load_file(std::string filename);
     void load_scene_txt(std::string filename);
     friend class SceneLoader;
-    // Getter for all_faces_
     const std::vector<Face>& all_faces() const noexcept { return all_faces_; }
     const std::vector<glm::vec3>& vertices() const noexcept { return vertices_; }
     const std::vector<glm::vec2>& texture_coords() const noexcept { return texture_coords_; }
@@ -237,7 +228,7 @@ public:
     private:
     void load_materials(std::string filename);
     Texture load_texture(std::string filename);
-    void cache_faces() noexcept;  // Build all_faces_ from objects_
+    void cache_faces() noexcept;
     void compute_face_normals() noexcept;
 };
 
@@ -536,7 +527,7 @@ private:
     std::vector<const Face*> emissive_faces_;
     BvhAccelerator accelerator_;
 public:
-    Camera camera_;  // Now public for direct access
+    Camera camera_;
     
     World();
     void load_files(const std::vector<std::string>& filenames);

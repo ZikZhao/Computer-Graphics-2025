@@ -16,9 +16,7 @@
 
 using FloatType = decltype(std::declval<glm::vec3>().x);
 
-// ============================================================================
 // Math Utilities
-// ============================================================================
 
 constexpr FloatType ComputeInvZndc(FloatType progress, std::array<FloatType, 2> vertices_z_ndc) noexcept {
     return (1.0f - progress) / vertices_z_ndc[0] + progress / vertices_z_ndc[1];
@@ -30,7 +28,6 @@ constexpr FloatType ComputeInvZndc(std::array<FloatType, 3> bary, std::array<Flo
            bary[2] / vertices_z_ndc[2];
 }
 
-// ============================================================================
 // Container Utilities (InplaceVector)
 // ----------------------------------------------------------------------------
 // Rationale: std::inplace_vector is standardized in C++26 (late C++23). Our
@@ -65,9 +62,7 @@ public:
     constexpr const T& operator[](std::size_t index) const noexcept { return *reinterpret_cast<const T*>(&data_[index * sizeof(T)]); }
 };
 
-// ============================================================================
 // Ray Tracing Utilities (Geometry & Barycentric)
-// ============================================================================
 
 inline glm::vec3 CalculateNormal(const glm::vec3& v0, const glm::vec3& v1, const glm::vec3& v2) noexcept {
     glm::vec3 edge1 = v1 - v0;
@@ -115,9 +110,7 @@ inline glm::vec3 CalculateBarycentric(glm::vec2 v0, glm::vec2 v1, glm::vec2 v2, 
     return glm::vec3(weight_v0, weight_v1, weight_v2);
 }
 
-// ============================================================================
 // Low-Discrepancy Sampling (Halton Sequence)
-// ============================================================================
 
 constexpr FloatType Halton(int index, int base) noexcept {
     FloatType result = 0.0f;

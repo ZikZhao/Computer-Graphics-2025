@@ -38,7 +38,6 @@ ColourHDR RayTracer::render_pixel(const Camera& cam, int x, int y, int width, in
     return trace_ray(ray_origin, ray_dir, 0, MediumState{}, soft_shadows, use_caustics, sample_index, glm::vec3(1.0f), initial_seed);
 }
 
-// Helper for DOF lens sampling
 static glm::vec2 SampleDiskConcentric(FloatType u1, FloatType u2) noexcept {
     FloatType a = 2.0f * u1 - 1.0f;
     FloatType b = 2.0f * u2 - 1.0f;
@@ -159,11 +158,6 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
     }
     const auto& area_lights = world_.area_lights();
     
-    // SHADER DISPATCH: Choose shader based on material properties
-    // TODO: Eventually use shader system for pure path tracing
-    // For now, use the existing lighting model for compatibility
-    
-    // Check if material is transparent
     if (face.material.tw > 0.0f) {
         constexpr FloatType epsilon = 0.001f;
         glm::vec3 normal = intersection.normal;
@@ -251,7 +245,6 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
         }
     }
     
-    // Standard lighting for opaque materials
     glm::vec3 to_camera_hit = -ray_dir;
     
     ColourHDR shadow_color;
@@ -335,7 +328,6 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
         }
     }
     
-    // Separate ambient (not affected by shadows) and direct lighting (affected by shadows)
     ColourHDR ambient_component = hdr_colour * ambient;
     if (area_lights.empty()) {
         diffuse_component = ColourHDR{ .red = 0.0f, .green = 0.0f, .blue = 0.0f };
@@ -380,7 +372,6 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
         }
     }
     
-    // Add caustics contribution if enabled
     ColourHDR caustics_contribution(0.0f, 0.0f, 0.0f);
     if (use_caustics && photon_map_ && photon_map_->is_ready()) {
         // Estimate caustic radiance at this point
@@ -408,7 +399,6 @@ HitRecord RayTracer::hit(const glm::vec3& ro, const glm::vec3& rd) const noexcep
     return world_.accelerator().intersect(ro, rd, world_.all_faces());
 }
 
-// Shadow and lighting helpers
 glm::vec3 RayTracer::compute_transmittance_bvh(const glm::vec3& point, const glm::vec3& light_pos) const noexcept {
     return world_.accelerator().transmittance(point, light_pos, world_.all_faces());
 }

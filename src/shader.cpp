@@ -60,7 +60,6 @@ static FloatType fresnel_schlick(FloatType cos_theta, FloatType ior_ratio) noexc
 bool ScatterDielectric(const Ray& r_in, const HitRecord& rec, const Material& mat, ScatterRecord& scattered) noexcept {
     constexpr FloatType epsilon = 0.001f;
     
-    // Determine if entering or exiting
     glm::vec3 normal = rec.normal;
     FloatType cos_theta_i = glm::dot(-r_in.direction, normal);
     bool entering = cos_theta_i > 0.0f;
@@ -74,12 +73,10 @@ bool ScatterDielectric(const Ray& r_in, const HitRecord& rec, const Material& ma
         cos_theta_i = -cos_theta_i;
     }
     
-    // Calculate refraction
     glm::vec3 refracted = glm::refract(r_in.direction, normal, ior_ratio);
     bool total_internal_reflection = (glm::length(refracted) < 0.0001f);
     
     if (total_internal_reflection) {
-        // Total internal reflection
         glm::vec3 reflected = glm::reflect(r_in.direction, normal);
         scattered.attenuation = glm::vec3(1.0f, 1.0f, 1.0f);
         scattered.emission = glm::vec3(0.0f, 0.0f, 0.0f);
@@ -93,11 +90,9 @@ bool ScatterDielectric(const Ray& r_in, const HitRecord& rec, const Material& ma
     
     FloatType fresnel = fresnel_schlick(std::abs(cos_theta_i), ior_ratio);
     
-    // Mix reflection and refraction based on Fresnel and transparency weight
     FloatType reflect_prob = fresnel * (1.0f - mat.tw);
     FloatType refract_prob = (1.0f - fresnel) * mat.tw;
     
-    // Normalize probabilities
     FloatType total_prob = reflect_prob + refract_prob;
     if (total_prob < 0.01f) {
         return false;  // Absorbed
@@ -105,9 +100,7 @@ bool ScatterDielectric(const Ray& r_in, const HitRecord& rec, const Material& ma
     
     reflect_prob /= total_prob;
     
-    // Stochastically choose reflection or refraction
     if (dist(rng) < reflect_prob) {
-        // Reflection
         glm::vec3 reflected = glm::reflect(r_in.direction, normal);
         scattered.attenuation = glm::vec3(1.0f, 1.0f, 1.0f);
         scattered.emission = glm::vec3(0.0f, 0.0f, 0.0f);
@@ -117,7 +110,6 @@ bool ScatterDielectric(const Ray& r_in, const HitRecord& rec, const Material& ma
         scattered.pdf = reflect_prob;
         return true;
     } else {
-        // Refraction
         scattered.attenuation = glm::vec3(1.0f, 1.0f, 1.0f);
         scattered.emission = glm::vec3(0.0f, 0.0f, 0.0f);
         scattered.is_specular = true;
