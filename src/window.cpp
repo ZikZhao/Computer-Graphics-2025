@@ -115,9 +115,6 @@ bool Window::process_events() {
 
 void Window::update_keyboard_state() {
     const Uint8* keystate = SDL_GetKeyboardState(nullptr);
-    // for (int i = 0; i < SDL_NUM_SCANCODES; ++i) {
-    //     keys_this_frame[i] = keystate[i];
-    // }
     std::copy(keystate, keystate + SDL_NUM_SCANCODES, keys_this_frame_.begin());
 }
 

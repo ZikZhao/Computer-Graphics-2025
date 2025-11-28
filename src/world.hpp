@@ -241,7 +241,6 @@ private:
     Texture load_texture(std::string filename);
     void cache_faces() noexcept;  // Build all_faces_ from objects_
     void compute_face_normals() noexcept;
-    void smooth_missing_vertex_normals() noexcept;
 };
 
 class BvhAccelerator {

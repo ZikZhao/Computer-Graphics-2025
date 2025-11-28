@@ -76,5 +76,4 @@ private:
     void depth_of_field_render() noexcept;
     void worker_thread(std::stop_token st) noexcept;
     void process_rows(int y0, int y1) noexcept;
-    void draw_coordinate_axes() noexcept;
 };

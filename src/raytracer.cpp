@@ -22,11 +22,6 @@ FloatType RayTracer::RandFloat(uint32_t& seed) noexcept {
 
 RayTracer::RayTracer(const World& world)
     : world_(world) {
-    // Create shader instances
-    shader_lambertian_ = std::make_unique<LambertianShader>();
-    shader_metal_ = std::make_unique<MetalShader>();
-    shader_dielectric_ = std::make_unique<DielectricShader>();
-    
     // Initialize photon map (starts background thread automatically)
     std::cout << "RayTracer: Initializing photon map for caustics..." << std::endl;
     photon_map_ = std::make_unique<PhotonMap>(world);

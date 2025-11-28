@@ -28,10 +28,6 @@ public:
 
 private:
     const World& world_;
-    // Shader instances (stateless singletons)
-    std::unique_ptr<Shader> shader_lambertian_;
-    std::unique_ptr<Shader> shader_metal_;
-    std::unique_ptr<Shader> shader_dielectric_;
     // Photon map for caustics
     std::unique_ptr<PhotonMap> photon_map_;
 

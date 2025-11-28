@@ -2,30 +2,10 @@
 #include <random>
 #include <numbers>
 
-// Random number generator for scattering
 static thread_local std::mt19937 rng(std::random_device{}());
 static thread_local std::uniform_real_distribution<FloatType> dist(0.0f, 1.0f);
 
-bool LambertianShader::scatter(
-    const Ray& r_in,
-    const HitRecord& rec,
-    const Material& mat,
-    ScatterRecord& scattered
-) const {
-    // Lambertian diffuse: scatter in random direction
-    glm::vec3 scatter_dir = random_in_hemisphere(rec.normal);
-    
-    scattered.attenuation = rec.color;  // Use surface color
-    scattered.emission = glm::vec3(0.0f, 0.0f, 0.0f);
-    scattered.is_specular = false;
-    scattered.scattered_ray = Ray{rec.intersectionPoint + rec.normal * 0.001f, scatter_dir};
-    scattered.pdf = glm::dot(rec.normal, scatter_dir) / std::numbers::pi;
-    
-    return true;
-}
-
-// Generate random direction in hemisphere around normal
-glm::vec3 LambertianShader::random_in_hemisphere(const glm::vec3& normal) noexcept {
+static glm::vec3 random_in_hemisphere(const glm::vec3& normal) noexcept {
     FloatType u1 = dist(rng);
     FloatType u2 = dist(rng);
     FloatType r = std::sqrt(u1);
@@ -40,31 +20,37 @@ glm::vec3 LambertianShader::random_in_hemisphere(const glm::vec3& normal) noexce
     return glm::normalize(u * x + v * y + w * z);
 }
 
-bool MetalShader::scatter(
-    const Ray& r_in,
-    const HitRecord& rec,
-    const Material& mat,
-    ScatterRecord& scattered
-) const {
-    // Perfect specular reflection
+namespace Shading {
+
+bool ScatterLambertian(const Ray& r_in, const HitRecord& rec, const Material& mat, ScatterRecord& scattered) noexcept {
+    glm::vec3 scatter_dir = random_in_hemisphere(rec.normal);
+    scattered.attenuation = rec.color;
+    scattered.emission = glm::vec3(0.0f);
+    scattered.is_specular = false;
+    scattered.scattered_ray = Ray{rec.intersectionPoint + rec.normal * 0.001f, scatter_dir};
+    scattered.pdf = glm::dot(rec.normal, scatter_dir) / std::numbers::pi;
+    return true;
+}
+
+bool ScatterMetal(const Ray& r_in, const HitRecord& rec, const Material& mat, ScatterRecord& scattered) noexcept {
     glm::vec3 reflected = glm::reflect(r_in.direction, rec.normal);
-    
-    scattered.attenuation = rec.color;  // Metals tint reflections
-    scattered.emission = glm::vec3(0.0f, 0.0f, 0.0f);
+    scattered.attenuation = rec.color;
+    scattered.emission = glm::vec3(0.0f);
     scattered.is_specular = true;
     scattered.scattered_ray = Ray{rec.intersectionPoint + rec.normal * 0.001f, reflected};
     scattered.pdf = 1.0f;
-    
-    // Only scatter if reflection is in same hemisphere as normal
     return glm::dot(reflected, rec.normal) > 0.0f;
 }
 
-bool DielectricShader::scatter(
-    const Ray& r_in,
-    const HitRecord& rec,
-    const Material& mat,
-    ScatterRecord& scattered
-) const {
+static FloatType fresnel_schlick(FloatType cos_theta, FloatType ior_ratio) noexcept {
+    FloatType r0 = (1.0f - ior_ratio) / (1.0f + ior_ratio);
+    r0 = r0 * r0;
+    FloatType cos_term = 1.0f - cos_theta;
+    FloatType cos5 = cos_term * cos_term * cos_term * cos_term * cos_term;
+    return r0 + (1.0f - r0) * cos5;
+}
+
+bool ScatterDielectric(const Ray& r_in, const HitRecord& rec, const Material& mat, ScatterRecord& scattered) noexcept {
     constexpr FloatType epsilon = 0.001f;
     
     // Determine if entering or exiting
@@ -96,7 +82,6 @@ bool DielectricShader::scatter(
         return true;
     }
     
-    // Calculate Fresnel
     FloatType fresnel = fresnel_schlick(std::abs(cos_theta_i), ior_ratio);
     
     // Mix reflection and refraction based on Fresnel and transparency weight
@@ -132,10 +117,4 @@ bool DielectricShader::scatter(
     }
 }
 
-FloatType DielectricShader::fresnel_schlick(FloatType cos_theta, FloatType ior_ratio) noexcept {
-    FloatType r0 = (1.0f - ior_ratio) / (1.0f + ior_ratio);
-    r0 = r0 * r0;
-    FloatType cos_term = 1.0f - cos_theta;
-    FloatType cos5 = cos_term * cos_term * cos_term * cos_term * cos_term;
-    return r0 + (1.0f - r0) * cos5;
 }
