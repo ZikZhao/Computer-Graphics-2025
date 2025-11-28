@@ -1,6 +1,6 @@
-#include "shader.hpp"
 #include <random>
 #include <numbers>
+#include "shader.hpp"
 
 static thread_local std::mt19937 rng(std::random_device{}());
 static thread_local std::uniform_real_distribution<FloatType> dist(0.0f, 1.0f);

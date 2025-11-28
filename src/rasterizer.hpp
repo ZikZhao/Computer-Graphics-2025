@@ -1,7 +1,7 @@
 #pragma once
-#include "world.hpp"
-#include "containers.hpp"
 #include <vector>
+#include "world.hpp"
+#include "utils.hpp"
 
 class Window;
 
@@ -33,10 +33,10 @@ private:
     void rasterized_render(const Camera& camera, const Face& face, const std::vector<glm::vec3>& vertices, Window& window, double aspect_ratio) noexcept;
     
     // Clipping logic
-    static bool inside_plane(const glm::vec4& v, ClipPlane plane) noexcept;
-    static FloatType compute_intersection_t(const glm::vec4& v0, const glm::vec4& v1, ClipPlane plane) noexcept;
-    static ClipVertex intersect_plane(const ClipVertex& v0, const ClipVertex& v1, ClipPlane plane) noexcept;
-    static InplaceVector<ClipVertex, 9> clip_against_plane(const InplaceVector<ClipVertex, 9>& input, ClipPlane plane) noexcept;
+    static bool InsidePlane(const glm::vec4& v, ClipPlane plane) noexcept;
+    static FloatType ComputeIntersectionT(const glm::vec4& v0, const glm::vec4& v1, ClipPlane plane) noexcept;
+    static ClipVertex IntersectPlane(const ClipVertex& v0, const ClipVertex& v1, ClipPlane plane) noexcept;
+    static InplaceVector<ClipVertex, 9> ClipAgainstPlane(const InplaceVector<ClipVertex, 9>& input, ClipPlane plane) noexcept;
     InplaceVector<ClipVertex, 9> clip_triangle(const Camera& camera, const Face& face, const std::vector<glm::vec3>& vertices, double aspect_ratio) noexcept;
     
     // Texture sampling with perspective correction

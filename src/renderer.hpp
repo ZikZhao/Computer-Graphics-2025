@@ -21,7 +21,7 @@ public:
         DEPTH_OF_FIELD,
     };
     static constexpr int TileHeight = 16;
-    static constexpr int VIDEO_SAMPLES = 64;
+    static constexpr int VideoSamples = 64;
     static Colour TonemapAndGammaCorrect(const ColourHDR& hdr, FloatType gamma) noexcept;
     static FloatType AcesToneMapping(FloatType hdr_value) noexcept;
     

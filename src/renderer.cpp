@@ -41,8 +41,8 @@ Colour Renderer::TonemapAndGammaCorrect(const ColourHDR& hdr, FloatType gamma) n
 Renderer::Renderer(Window& window, const World& world)
     : window_(window),
       world_(world),
-      hdr_buffer_(window.get_width() * window.get_height(), ColourHDR()),
-      accumulation_buffer_(window.get_width() * window.get_height(), ColourHDR()),
+      hdr_buffer_(window.get_width() * window.get_height(), ColourHDR{}),
+      accumulation_buffer_(window.get_width() * window.get_height(), ColourHDR{}),
       frame_barrier_(std::thread::hardware_concurrency() + 1) {
     
     // Create sub-engines
@@ -89,13 +89,13 @@ void Renderer::render() noexcept {
 }
 
 void Renderer::reset_accumulation() noexcept {
-    std::fill(accumulation_buffer_.begin(), accumulation_buffer_.end(), ColourHDR());
+    std::fill(accumulation_buffer_.begin(), accumulation_buffer_.end(), ColourHDR{});
     frame_count_ = 0;
 }
 
 void Renderer::clear() noexcept {
     rasterizer_->clear();
-    hdr_buffer_.assign(window_.get_width() * window_.get_height(), ColourHDR());
+    hdr_buffer_.assign(window_.get_width() * window_.get_height(), ColourHDR{});
 }
 
 void Renderer::wireframe_render() noexcept {
@@ -149,8 +149,8 @@ void Renderer::process_rows(int y0, int y1) noexcept {
             int w = static_cast<int>(window_.get_width());
             int h = static_cast<int>(window_.get_height());
             int pixel_index = y * w + x;
-            int samples_to_run = video_export_mode_ ? VIDEO_SAMPLES : 1;
-            ColourHDR pixel_accum(0.0f, 0.0f, 0.0f);
+            int samples_to_run = video_export_mode_ ? VideoSamples : 1;
+            ColourHDR pixel_accum{0.0f, 0.0f, 0.0f};
             for (int s = 0; s < samples_to_run; ++s) {
                 if (is_dof) {
                     ColourHDR hdr = raytracer_->render_pixel_dof(
@@ -158,11 +158,11 @@ void Renderer::process_rows(int y0, int y1) noexcept {
                         focal_distance_, aperture_size_, dof_samples_,
                         true, world_.light_intensity(), caustics_enabled_
                     );
-                    pixel_accum = ColourHDR(
+                    pixel_accum = ColourHDR{
                         pixel_accum.red + hdr.red,
                         pixel_accum.green + hdr.green,
                         pixel_accum.blue + hdr.blue
-                    );
+                    };
                 } else {
                     int sample_index = rendering_frame_count_ * (w * h) + pixel_index + s;
                     uint32_t base_seed = static_cast<uint32_t>(pixel_index + rendering_frame_count_ * 123457u) | 1u;
@@ -171,35 +171,35 @@ void Renderer::process_rows(int y0, int y1) noexcept {
                         camera, x, y, w, h,
                         true, world_.light_intensity(), caustics_enabled_, sample_index, sub_seed
                     );
-                    pixel_accum = ColourHDR(
+                    pixel_accum = ColourHDR{
                         pixel_accum.red + hdr.red,
                         pixel_accum.green + hdr.green,
                         pixel_accum.blue + hdr.blue
-                    );
+                    };
                 }
             }
-            ColourHDR final_hdr_avg(
+            ColourHDR final_hdr_avg{
                 pixel_accum.red / static_cast<FloatType>(samples_to_run),
                 pixel_accum.green / static_cast<FloatType>(samples_to_run),
                 pixel_accum.blue / static_cast<FloatType>(samples_to_run)
-            );
+            };
             std::size_t idx = static_cast<std::size_t>(y) * window_.get_width() + static_cast<std::size_t>(x);
             if (video_export_mode_) {
                 accumulation_buffer_[idx] = final_hdr_avg;
             } else {
-                accumulation_buffer_[idx] = ColourHDR(
+                accumulation_buffer_[idx] = ColourHDR{
                     accumulation_buffer_[idx].red + final_hdr_avg.red,
                     accumulation_buffer_[idx].green + final_hdr_avg.green,
                     accumulation_buffer_[idx].blue + final_hdr_avg.blue
-                );
+                };
             }
             ColourHDR avg_hdr = video_export_mode_
                 ? accumulation_buffer_[idx]
-                : ColourHDR(
+                : ColourHDR{
                     accumulation_buffer_[idx].red / static_cast<FloatType>(rendering_frame_count_),
                     accumulation_buffer_[idx].green / static_cast<FloatType>(rendering_frame_count_),
                     accumulation_buffer_[idx].blue / static_cast<FloatType>(rendering_frame_count_)
-                  );
+                  };
             Colour final_colour = TonemapAndGammaCorrect(avg_hdr, gamma_);
             window_[{x, y}] = final_colour;
         }

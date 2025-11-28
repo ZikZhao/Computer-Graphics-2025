@@ -1,6 +1,6 @@
 #pragma once
-#include "world.hpp"
 #include <optional>
+#include "world.hpp"
 
 struct Ray {
     glm::vec3 origin;

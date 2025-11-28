@@ -1,7 +1,7 @@
+#include <algorithm>
 #include "rasterizer.hpp"
 #include "window.hpp"
-#include "math_utils.hpp"
-#include <algorithm>
+#include "utils.hpp"
 
 Rasterizer::Rasterizer(int width, int height)
     : width_(width), height_(height), z_buffer_(width * height, 0.0f) {}
@@ -148,42 +148,42 @@ void Rasterizer::rasterized_render(const Camera& camera, const Face& face, const
 
  
 
-bool Rasterizer::inside_plane(const glm::vec4& v, ClipPlane plane) noexcept {
+bool Rasterizer::InsidePlane(const glm::vec4& v, ClipPlane plane) noexcept {
     switch (plane) {
-        case ClipPlane::Left:   return v.x >= -v.w;
-        case ClipPlane::Right:  return v.x <= v.w;
-        case ClipPlane::Bottom: return v.y >= -v.w;
-        case ClipPlane::Top:    return v.y <= v.w;
-        case ClipPlane::Near:   return v.z >= 0.0f;
-        case ClipPlane::Far:    return v.z <= v.w;
+        case ClipPlane::LEFT:   return v.x >= -v.w;
+        case ClipPlane::RIGHT:  return v.x <= v.w;
+        case ClipPlane::BOTTOM: return v.y >= -v.w;
+        case ClipPlane::TOP:    return v.y <= v.w;
+        case ClipPlane::NEAR:   return v.z >= 0.0f;
+        case ClipPlane::FAR:    return v.z <= v.w;
     }
     return false;
 }
 
-FloatType Rasterizer::compute_intersection_t(const glm::vec4& v0, const glm::vec4& v1, ClipPlane plane) noexcept {
+FloatType Rasterizer::ComputeIntersectionT(const glm::vec4& v0, const glm::vec4& v1, ClipPlane plane) noexcept {
     FloatType d0, d1;
     switch (plane) {
-        case ClipPlane::Left:
+        case ClipPlane::LEFT:
             d0 = v0.x + v0.w;
             d1 = v1.x + v1.w;
             break;
-        case ClipPlane::Right:
+        case ClipPlane::RIGHT:
             d0 = v0.w - v0.x;
             d1 = v1.w - v1.x;
             break;
-        case ClipPlane::Bottom:
+        case ClipPlane::BOTTOM:
             d0 = v0.y + v0.w;
             d1 = v1.y + v1.w;
             break;
-        case ClipPlane::Top:
+        case ClipPlane::TOP:
             d0 = v0.w - v0.y;
             d1 = v1.w - v1.y;
             break;
-        case ClipPlane::Near:
+        case ClipPlane::NEAR:
             d0 = v0.z;
             d1 = v1.z;
             break;
-        case ClipPlane::Far:
+        case ClipPlane::FAR:
             d0 = v0.w - v0.z;
             d1 = v1.w - v1.z;
             break;
@@ -196,8 +196,8 @@ FloatType Rasterizer::compute_intersection_t(const glm::vec4& v0, const glm::vec
     return d0 / (d0 - d1);
 }
 
-ClipVertex Rasterizer::intersect_plane(const ClipVertex& v0, const ClipVertex& v1, ClipPlane plane) noexcept {
-    FloatType t = compute_intersection_t(v0.position_clip, v1.position_clip, plane);
+ClipVertex Rasterizer::IntersectPlane(const ClipVertex& v0, const ClipVertex& v1, ClipPlane plane) noexcept {
+    FloatType t = ComputeIntersectionT(v0.position_clip, v1.position_clip, plane);
     return ClipVertex{
         v0.position_clip * (1.0f - t) + v1.position_clip * t,
         Colour{
@@ -209,7 +209,7 @@ ClipVertex Rasterizer::intersect_plane(const ClipVertex& v0, const ClipVertex& v
     };
 }
 
-InplaceVector<ClipVertex, 9> Rasterizer::clip_against_plane(const InplaceVector<ClipVertex, 9>& input, ClipPlane plane) noexcept {
+InplaceVector<ClipVertex, 9> Rasterizer::ClipAgainstPlane(const InplaceVector<ClipVertex, 9>& input, ClipPlane plane) noexcept {
     InplaceVector<ClipVertex, 9> output;
     
     if (input.size() == 0) return output;
@@ -218,17 +218,17 @@ InplaceVector<ClipVertex, 9> Rasterizer::clip_against_plane(const InplaceVector<
         const ClipVertex& current = input[i];
         const ClipVertex& next = input[(i + 1) % input.size()];
         
-        bool current_inside = inside_plane(current.position_clip, plane);
-        bool next_inside = inside_plane(next.position_clip, plane);
+        bool current_inside = InsidePlane(current.position_clip, plane);
+        bool next_inside = InsidePlane(next.position_clip, plane);
         
         if (current_inside && next_inside) {
             output.push_back(next);
         } 
         else if (current_inside && !next_inside) {
-            output.push_back(intersect_plane(current, next, plane));
+            output.push_back(IntersectPlane(current, next, plane));
         } 
         else if (!current_inside && next_inside) {
-            output.push_back(intersect_plane(current, next, plane));
+            output.push_back(IntersectPlane(current, next, plane));
             output.push_back(next);
         }
     }
@@ -252,22 +252,22 @@ InplaceVector<ClipVertex, 9> Rasterizer::clip_triangle(const Camera& camera, con
         ClipVertex{camera.world_to_clip(v2, aspect_ratio), vertex_color, face.texture_coords[2]}
     };
     
-    polygon = clip_against_plane(polygon, ClipPlane::Left);
+    polygon = ClipAgainstPlane(polygon, ClipPlane::LEFT);
     if (polygon.size() < 3) return {};
     
-    polygon = clip_against_plane(polygon, ClipPlane::Right);
+    polygon = ClipAgainstPlane(polygon, ClipPlane::RIGHT);
     if (polygon.size() < 3) return {};
     
-    polygon = clip_against_plane(polygon, ClipPlane::Bottom);
+    polygon = ClipAgainstPlane(polygon, ClipPlane::BOTTOM);
     if (polygon.size() < 3) return {};
     
-    polygon = clip_against_plane(polygon, ClipPlane::Top);
+    polygon = ClipAgainstPlane(polygon, ClipPlane::TOP);
     if (polygon.size() < 3) return {};
     
-    polygon = clip_against_plane(polygon, ClipPlane::Near);
+    polygon = ClipAgainstPlane(polygon, ClipPlane::NEAR);
     if (polygon.size() < 3) return {};
     
-    polygon = clip_against_plane(polygon, ClipPlane::Far);
+    polygon = ClipAgainstPlane(polygon, ClipPlane::FAR);
     
     return polygon;
 }

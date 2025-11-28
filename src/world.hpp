@@ -17,16 +17,15 @@
 #include <atomic>
 #include <thread>
 #include "utils.hpp"
-#include "math_utils.hpp"
 
 // Clipping planes for frustum
 enum class ClipPlane {
-    Left,   // x >= -w
-    Right,  // x <= w
-    Bottom, // y >= -w
-    Top,    // y <= w
-    Near,   // z >= 0
-    Far     // z <= w
+    LEFT,   // x >= -w
+    RIGHT,  // x <= w
+    BOTTOM, // y >= -w
+    TOP,    // y <= w
+    NEAR,   // z >= 0
+    FAR     // z <= w
 };
 
 struct Colour {
@@ -44,9 +43,6 @@ struct ColourHDR {
     FloatType green;
     FloatType blue;
     
-    constexpr ColourHDR() noexcept : red(0.0f), green(0.0f), blue(0.0f) {}
-    constexpr ColourHDR(FloatType r, FloatType g, FloatType b) noexcept : red(r), green(g), blue(b) {}
-    
     // Convert from 8-bit sRGB to linear HDR
     static ColourHDR from_srgb(const Colour& srgb, FloatType gamma) noexcept {
         auto to_linear = [gamma](std::uint8_t component) -> FloatType {
@@ -54,26 +50,26 @@ struct ColourHDR {
             if (gamma == 1.0f) return normalized;  // No gamma correction
             return std::pow(normalized, gamma);
         };
-        return ColourHDR(
+        return ColourHDR{
             to_linear(srgb.red),
             to_linear(srgb.green),
             to_linear(srgb.blue)
-        );
+        };
     }
     
     // Multiply by scalar (for lighting)
     constexpr ColourHDR operator*(FloatType scalar) const noexcept {
-        return ColourHDR(red * scalar, green * scalar, blue * scalar);
+        return ColourHDR{red * scalar, green * scalar, blue * scalar};
     }
     
     // Component-wise multiplication (for color filtering)
     constexpr ColourHDR operator*(const ColourHDR& other) const noexcept {
-        return ColourHDR(red * other.red, green * other.green, blue * other.blue);
+        return ColourHDR{red * other.red, green * other.green, blue * other.blue};
     }
     
     // Add colors (for ambient + diffuse)
     constexpr ColourHDR operator+(const ColourHDR& other) const noexcept {
-        return ColourHDR(red + other.red, green + other.green, blue + other.blue);
+        return ColourHDR{red + other.red, green + other.green, blue + other.blue};
     }
 };
 
@@ -84,7 +80,7 @@ class BvhAccelerator; // forward declaration
 // Environment map for HDR lighting
 class EnvironmentMap {
 public:
-    static FloatType compute_auto_exposure(const std::vector<ColourHDR>& hdr_data) noexcept;
+    static FloatType ComputeAutoExposure(const std::vector<ColourHDR>& hdr_data) noexcept;
 
 private:
     std::size_t width_;
@@ -98,7 +94,7 @@ public:
         : width_(w), height_(h), data_(std::move(data)), intensity_(intensity) {}
     bool is_loaded() const noexcept { return width_ > 0 && height_ > 0; }
     ColourHDR sample(const glm::vec3& direction) const noexcept {
-        if (!is_loaded()) return ColourHDR(0.0f, 0.0f, 0.0f);
+        if (!is_loaded()) return ColourHDR{0.0f, 0.0f, 0.0f};
         FloatType theta = std::atan2(direction.x, -direction.z);
         FloatType phi = std::asin(std::clamp(direction.y, -1.0f, 1.0f));
         FloatType u = (theta / (2.0f * std::numbers::pi)) + 0.5f;
@@ -375,7 +371,7 @@ public:
         };
         build_rec(0, (int)faces.size());
     }
-    static bool intersect_aabb(const glm::vec3& ro, const glm::vec3& rd, const AABB& box, FloatType tmax) noexcept {
+    static bool IntersectAabb(const glm::vec3& ro, const glm::vec3& rd, const AABB& box, FloatType tmax) noexcept {
         glm::vec3 inv = glm::vec3(1.0f) / rd;
         glm::vec3 t0 = (box.min - ro) * inv;
         glm::vec3 t1 = (box.max - ro) * inv;
@@ -397,7 +393,7 @@ public:
             int ni = stack.back();
             stack.pop_back();
             const BVHNode& n = nodes_[ni];
-            if (!intersect_aabb(ro, rd, n.box, closest.distanceFromCamera)) continue;
+            if (!IntersectAabb(ro, rd, n.box, closest.distanceFromCamera)) continue;
             if (n.count == 0) {
                 stack.push_back(n.left);
                 stack.push_back(n.right);
@@ -455,7 +451,7 @@ public:
             int ni = stack.back();
             stack.pop_back();
             const BVHNode& n = nodes_[ni];
-            if (!intersect_aabb(point, light_dir, n.box, light_distance)) continue;
+            if (!IntersectAabb(point, light_dir, n.box, light_distance)) continue;
             if (n.count == 0) {
                 stack.push_back(n.left);
                 stack.push_back(n.right);

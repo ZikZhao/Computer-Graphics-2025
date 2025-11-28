@@ -1,7 +1,4 @@
 #pragma once
-#include "world.hpp"
-#include "shader.hpp"
-#include "utils.hpp"
 #include <thread>
 #include <map>
 #include <unordered_map>
@@ -9,6 +6,9 @@
 #include <random>
 #include <mutex>
 #include <atomic>
+#include "world.hpp"
+#include "shader.hpp"
+#include "utils.hpp"
 
 // Structure representing a single photon
 struct Photon {
@@ -16,10 +16,6 @@ struct Photon {
     glm::vec3 direction;         // Incident direction
     glm::vec3 power;             // RGB power/energy of photon
     const Face* face;            // Face where photon landed
-    
-    Photon() noexcept = default;
-    Photon(const glm::vec3& pos, const glm::vec3& dir, const glm::vec3& pwr, const Face* f) noexcept
-        : position(pos), direction(dir), power(pwr), face(f) {}
 };
 
 // Hash function for 3D grid coordinates
@@ -36,11 +32,11 @@ struct GridCellHash {
 class PhotonMap {
 public:
     // Configuration
-    static constexpr int PHOTONS_PER_LIGHT = 200000;     // Number of photons to emit from light source
-    static constexpr int MAX_PHOTON_BOUNCES = 5;        // Maximum number of bounces per photon
-    static constexpr FloatType MIN_PHOTON_POWER = 0.01f; // Minimum power threshold for Russian roulette
-    static constexpr FloatType CAUSTIC_SEARCH_RADIUS = 0.4f;  // Search radius for caustic photon gathering
-    static constexpr FloatType GRID_CELL_SIZE = CAUSTIC_SEARCH_RADIUS;  // Grid cell size = search radius for exact 27-cell coverage
+    static constexpr int PhotonsPerLight = 200000;     // Number of photons to emit from light source
+    static constexpr int MaxPhotonBounces = 5;        // Maximum number of bounces per photon
+    static constexpr FloatType MinPhotonPower = 0.01f; // Minimum power threshold for Russian roulette
+    static constexpr FloatType CausticSearchRadius = 0.4f;  // Search radius for caustic photon gathering
+    static constexpr FloatType GridCellSize = CausticSearchRadius;  // Grid cell size = search radius for exact 27-cell coverage
     
 private:
     const World& world_;
@@ -94,10 +90,10 @@ private:
     void store_photon(const Photon& photon);
     
     // Compute grid cell coordinates for a 3D position
-    static GridCell get_grid_cell(const glm::vec3& position) noexcept;
+    static GridCell GetGridCell(const glm::vec3& position) noexcept;
     
     // Check if material is transparent (refractive)
-    static bool is_transparent(const Material& mat) noexcept {
+    static bool IsTransparent(const Material& mat) noexcept {
         return mat.tw > 0.0f && mat.ior != 1.0f;
     }
     
@@ -110,5 +106,5 @@ private:
         const glm::vec3& ro, const glm::vec3& rd) const noexcept;
     
     // Random number generation for stochastic decisions
-    static FloatType random_float(FloatType min = 0.0f, FloatType max = 1.0f) noexcept;
+    static FloatType RandomFloat(FloatType min = 0.0f, FloatType max = 1.0f) noexcept;
 };

@@ -13,9 +13,9 @@ PhotonMap::PhotonMap(const World& world)
 std::vector<Photon> PhotonMap::query_photons(const Face* face, const glm::vec3& point, 
                                              FloatType radius) const {
     std::vector<Photon> result;
-    GridCell center_cell = get_grid_cell(point);
+    GridCell center_cell = GetGridCell(point);
     auto [cx, cy, cz] = center_cell;
-    int cell_range = static_cast<int>(std::ceil(radius / GRID_CELL_SIZE)) + 1;
+    int cell_range = static_cast<int>(std::ceil(radius / GridCellSize)) + 1;
     FloatType radius_sq = radius * radius;
     for (int dx = -cell_range; dx <= cell_range; ++dx) {
         for (int dy = -cell_range; dy <= cell_range; ++dy) {
@@ -37,9 +37,9 @@ std::vector<Photon> PhotonMap::query_photons(const Face* face, const glm::vec3& 
 
 ColourHDR PhotonMap::estimate_caustic(const Face* face, const glm::vec3& point, 
                                       const glm::vec3& normal, FloatType search_radius) const noexcept {
-    if (!is_ready()) return ColourHDR(0.0f, 0.0f, 0.0f);
+    if (!is_ready()) return ColourHDR{0.0f, 0.0f, 0.0f};
     auto photons = query_photons(face, point, search_radius);
-    if (photons.empty()) return ColourHDR(0.0f, 0.0f, 0.0f);
+    if (photons.empty()) return ColourHDR{0.0f, 0.0f, 0.0f};
     glm::vec3 accumulated_flux(0.0f);
     constexpr FloatType k = 1.1f;
     for (const auto& photon : photons) {
@@ -53,7 +53,7 @@ ColourHDR PhotonMap::estimate_caustic(const Face* face, const glm::vec3& point,
     }
     FloatType search_area = std::numbers::pi * search_radius * search_radius;
     glm::vec3 radiance = accumulated_flux / search_area;
-    return ColourHDR(radiance.x, radiance.y, radiance.z);
+    return ColourHDR{radiance.x, radiance.y, radiance.z};
 }
 
 std::size_t PhotonMap::total_photons() const noexcept {
@@ -75,7 +75,7 @@ void PhotonMap::trace_photons() {
     glm::vec3 aabb_min(std::numeric_limits<FloatType>::infinity());
     glm::vec3 aabb_max(-std::numeric_limits<FloatType>::infinity());
     for (const auto& face : world_.all_faces()) {
-        if (is_transparent(face.material)) {
+        if (IsTransparent(face.material)) {
             transparent_faces.push_back(&face);
             for (int k = 0; k < 3; ++k) {
                 aabb_min = glm::min(aabb_min, world_.all_vertices()[face.vertex_indices[k]]);
@@ -114,7 +114,7 @@ void PhotonMap::trace_photons() {
     
     int photons_emitted = 0;
     for (std::size_t i = 0; i < area_lights.size(); ++i) {
-        int photons_for_light = static_cast<int>(PHOTONS_PER_LIGHT * (weights[i] / weight_sum));
+        int photons_for_light = static_cast<int>(PhotonsPerLight * (weights[i] / weight_sum));
         if (photons_for_light <= 0) continue;
         emit_photons_from_area_light(*area_lights[i], target_center, target_radius, photons_for_light);
         photons_emitted += photons_for_light;
@@ -182,7 +182,7 @@ void PhotonMap::trace_single_photon(const glm::vec3& origin, const glm::vec3& di
                                     bool interacted_with_transparent) {
     
     // Stop if exceeded max bounces
-    if (depth >= MAX_PHOTON_BOUNCES) {
+    if (depth >= MaxPhotonBounces) {
         return;
     }
     
@@ -197,7 +197,7 @@ void PhotonMap::trace_single_photon(const glm::vec3& origin, const glm::vec3& di
     const Material& mat = hit_face->material;
     
     // Check if surface is transparent or diffuse
-    bool is_transparent_surface = is_transparent(mat);
+    bool is_transparent_surface = IsTransparent(mat);
     
     // Continue tracing if hit transparent object
     if (is_transparent_surface) {
@@ -256,8 +256,8 @@ void PhotonMap::trace_single_photon(const glm::vec3& origin, const glm::vec3& di
         if (depth >= 1) {
             FloatType power_magnitude = glm::length(new_power);
             // Survival probability based on photon power
-            FloatType survival_prob = std::min(0.95f, std::max(0.1f, power_magnitude / MIN_PHOTON_POWER));
-            FloatType rr = random_float();
+            FloatType survival_prob = std::min(0.95f, std::max(0.1f, power_magnitude / MinPhotonPower));
+            FloatType rr = RandomFloat();
             if (rr > survival_prob) {
                 return;  // Photon absorbed
             }
@@ -272,7 +272,7 @@ void PhotonMap::trace_single_photon(const glm::vec3& origin, const glm::vec3& di
             new_direction = glm::reflect(direction, normal);
             // Stay inside, update entry point for next segment
             new_entry_point = hit.intersectionPoint;
-        } else if (random_float() < reflectance * 0.5f) {
+        } else if (RandomFloat() < reflectance * 0.5f) {
             // Fresnel reflection (reduced probability for caustics)
             new_direction = glm::reflect(direction, normal);
             // If reflecting from outside, stay outside; if from inside, stay inside
@@ -308,7 +308,7 @@ void PhotonMap::trace_single_photon(const glm::vec3& origin, const glm::vec3& di
             
             const Face* last_transparent_face = nullptr;
             for (const auto& face : world_.all_faces()) {
-                if (is_transparent(face.material)) {
+                if (IsTransparent(face.material)) {
                     last_transparent_face = &face;
                     break;
                 }
@@ -336,7 +336,7 @@ void PhotonMap::trace_single_photon(const glm::vec3& origin, const glm::vec3& di
         // - External reflections from glass (white light for ceiling caustics)
         // - Internal reflections (with absorption)
         if (interacted_with_transparent) {
-            store_photon(Photon(hit.intersectionPoint, direction, final_power, hit_face));
+            store_photon(Photon{hit.intersectionPoint, direction, final_power, hit_face});
         }
     }
 }
@@ -346,7 +346,7 @@ void PhotonMap::store_photon(const Photon& photon) {
     photon_map_[photon.face].push_back(photon);
     
     // Also store in spatial grid for fast lookup
-    GridCell cell = get_grid_cell(photon.position);
+    GridCell cell = GetGridCell(photon.position);
     spatial_grid_[cell].push_back(photon);
 }
 
@@ -424,14 +424,14 @@ std::optional<RayTriangleIntersection> PhotonMap::intersect_triangle(
 }
 
 
-PhotonMap::GridCell PhotonMap::get_grid_cell(const glm::vec3& position) noexcept {
-    int x = static_cast<int>(std::floor(position.x / GRID_CELL_SIZE));
-    int y = static_cast<int>(std::floor(position.y / GRID_CELL_SIZE));
-    int z = static_cast<int>(std::floor(position.z / GRID_CELL_SIZE));
+PhotonMap::GridCell PhotonMap::GetGridCell(const glm::vec3& position) noexcept {
+    int x = static_cast<int>(std::floor(position.x / GridCellSize));
+    int y = static_cast<int>(std::floor(position.y / GridCellSize));
+    int z = static_cast<int>(std::floor(position.z / GridCellSize));
     return std::make_tuple(x, y, z);
 }
 
-FloatType PhotonMap::random_float(FloatType min, FloatType max) noexcept {
+FloatType PhotonMap::RandomFloat(FloatType min, FloatType max) noexcept {
     thread_local std::mt19937 rng(std::random_device{}());
     std::uniform_real_distribution<FloatType> dist(min, max);
     return dist(rng);

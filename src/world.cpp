@@ -288,7 +288,7 @@ Texture Model::load_texture(std::string filename) {
 }
 
 // EnvironmentMap implementation
-FloatType EnvironmentMap::compute_auto_exposure(const std::vector<ColourHDR>& hdr_data) noexcept {
+FloatType EnvironmentMap::ComputeAutoExposure(const std::vector<ColourHDR>& hdr_data) noexcept {
     if (hdr_data.empty()) return 1.0f;
     
     std::vector<FloatType> luminances;
@@ -351,7 +351,7 @@ void World::load_files(const std::vector<std::string>& filenames) {
                 
                 stbi_image_free(data);
                 
-                FloatType auto_intensity = EnvironmentMap::compute_auto_exposure(hdr_data);
+                FloatType auto_intensity = EnvironmentMap::ComputeAutoExposure(hdr_data);
                 env_map_ = EnvironmentMap(width, height, std::move(hdr_data), auto_intensity);
             } else {
                 throw std::runtime_error("Failed to load HDR environment map: " + filename);
@@ -382,7 +382,7 @@ void World::load_files(const std::vector<std::string>& filenames) {
                                     );
                                 }
                                 stbi_image_free(data);
-                                FloatType auto_intensity = EnvironmentMap::compute_auto_exposure(hdr_data);
+                                FloatType auto_intensity = EnvironmentMap::ComputeAutoExposure(hdr_data);
                                 env_map_ = EnvironmentMap(width, height, std::move(hdr_data), auto_intensity);
                             }
                             break;
