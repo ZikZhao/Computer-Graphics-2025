@@ -4,13 +4,13 @@
 Window::Window(int w, int h, bool fullscreen) noexcept 
     : width_(w), height_(h), pixel_buffer_(w * h) {
     
-    // Initialize SDL
+    // Initialize SDL video subsystem
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
         std::cerr << "Could not initialise SDL: " << SDL_GetError() << std::endl;
         std::terminate();
     }
     
-    // Create window
+    // Create window surface (optional fullscreen)
     uint32_t flags = SDL_WINDOW_OPENGL;
     if (fullscreen) flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
     
@@ -21,7 +21,7 @@ Window::Window(int w, int h, bool fullscreen) noexcept
         std::terminate();
     }
     
-    // Create renderer (software rendering for compatibility)
+    // Renderer bound to window (software for portability)
     flags = SDL_RENDERER_SOFTWARE;
     // Alternative: SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC for hardware acceleration
     renderer_ = SDL_CreateRenderer(window_, -1, flags);
@@ -33,7 +33,7 @@ Window::Window(int w, int h, bool fullscreen) noexcept
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
     SDL_RenderSetLogicalSize(renderer_, width_, height_);
     
-    // Create texture
+    // Backbuffer texture receiving ARGB pixels
     int pixel_format = SDL_PIXELFORMAT_ARGB8888;
     texture_ = SDL_CreateTexture(renderer_, pixel_format, SDL_TEXTUREACCESS_STATIC, width_, height_);
     if (!texture_) {
@@ -74,6 +74,8 @@ void Window::register_mouse(Uint8 button, Trigger trigger, MouseHandler handler)
 }
 
 bool Window::process_events() noexcept {
+    
+    // Reset per-frame input state, then drain SDL event queue
     SDL_Event event;
     keys_updated_this_frame_.clear();
     keys_pressed_this_frame_.clear();
@@ -88,6 +90,8 @@ bool Window::process_events() noexcept {
             (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE)) {
             return false;
         }
+        
+        // Keyboard transitions
         if (event.type == SDL_KEYDOWN && !event.key.repeat) {
             SDL_Scancode sc = event.key.keysym.scancode;
             if (sc >= 0 && sc < SDL_NUM_SCANCODES) {
@@ -103,6 +107,8 @@ bool Window::process_events() noexcept {
                 keys_updated_this_frame_.insert(sc);
             }
         }
+        
+        // Mouse button transitions
         if (event.type == SDL_MOUSEBUTTONDOWN) {
             Uint8 b = event.button.button;
             mouse_buttons_this_frame_.insert(b);
@@ -116,12 +122,16 @@ bool Window::process_events() noexcept {
             mouse_buttons_this_frame_.erase(b);
             mouse_buttons_updated_this_frame_.insert(b);
         }
+        
+        // Accumulate relative motion for bound handlers
         if (event.type == SDL_MOUSEMOTION) {
             mouse_motion_this_frame_ = true;
             mouse_xrel_ += event.motion.xrel;
             mouse_yrel_ += event.motion.yrel;
         }
     }
+    
+    // Dispatch registered input handlers
     process_key_bindings();
     process_mouse_bindings();
     return true;
@@ -295,6 +305,8 @@ void Window::process_mouse_bindings() noexcept {
 }
 
 void Window::update() noexcept {
+    
+    // Upload ARGB backbuffer to texture and present; then clear for next frame
     SDL_UpdateTexture(texture_, nullptr, pixel_buffer_.data(), width_ * sizeof(uint32_t));
     SDL_RenderClear(renderer_);
     SDL_RenderCopy(renderer_, texture_, nullptr, nullptr);

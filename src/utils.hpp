@@ -16,52 +16,95 @@
 
 using FloatType = decltype(std::declval<glm::vec3>().x);
 
-// Math Utilities
+/**
+ * @brief Computes inverse Z in NDC for a linear interpolation along an edge.
+ * @param progress Interpolation factor in \[0,1].
+ * @param vertices_z_ndc Z components (NDC) for the two edge endpoints.
+ * @return 1/z value suitable for depth comparison and perspective-correct interpolation.
+ */
 
 constexpr FloatType ComputeInvZndc(FloatType progress, std::array<FloatType, 2> vertices_z_ndc) noexcept {
     return (1.0f - progress) / vertices_z_ndc[0] + progress / vertices_z_ndc[1];
 }
 
+/**
+ * @brief Computes inverse Z in NDC using barycentric weights over a triangle.
+ * @param bary Barycentric weights for triangle vertices (sum to 1).
+ * @param vertices_z_ndc Z components (NDC) for the three triangle vertices.
+ * @return 1/z value for perspective-correct interpolation and depth testing.
+ */
 constexpr FloatType ComputeInvZndc(std::array<FloatType, 3> bary, std::array<FloatType, 3> vertices_z_ndc) noexcept {
     return bary[0] / vertices_z_ndc[0] +
            bary[1] / vertices_z_ndc[1] +
            bary[2] / vertices_z_ndc[2];
 }
 
-// InplaceVector Container
-// ----------------------------------------------------------------------------
-// Rationale: std::inplace_vector is standardized in C++26 (late C++23). Our
-// build targets C++20/partial C++23, so this lightweight backport exists to
-// keep small, fixed-capacity arrays on the stack. That avoids heap traffic and
-// fragmentation in tight loops (e.g., clipping, micro-partitioning), improving
-// cache locality and deterministic performance.
-
+/**
+ * @brief Fixed-capacity, stack-allocated vector with inplace storage.
+ *
+ * Provides a minimal subset of `std::inplace_vector` semantics for C++20.
+ * Elements are constructed in a preallocated buffer and capacity is limited
+ * to `N`. Intended for hot paths where heap allocation is undesirable.
+ */
 template<typename T, std::size_t N>
 class InplaceVector {
 private:
     alignas(T) std::byte data_[N * sizeof(T)];
     std::size_t size_ = 0;
 public:
+    /** @brief Default-construct an empty container. */
     constexpr InplaceVector() noexcept = default;
+
+    /**
+     * @brief Variadic constructor that emplaces initial elements.
+     * @param args Elements to insert up to capacity `N`.
+     */
     constexpr InplaceVector(auto&&... args) noexcept : InplaceVector() {
         (emplace_back(std::forward<decltype(args)>(args)), ...);
     }
+    /**
+     * @brief Appends a copy of `value`.
+     * @param value Element to append.
+     */
     constexpr void push_back(const T& value) noexcept {
         assert(size_ < N);
         new (&data_[size_ * sizeof(T)]) T(value);
         size_++;
     }
+    /**
+     * @brief Appends by move construction.
+     * @param value Element to append by move.
+     */
     constexpr void emplace_back(T&& value) noexcept {
         assert(size_ < N);
         new (&data_[size_ * sizeof(T)]) T(std::move(value));
         size_++;
     }
+    /** @brief Current number of elements. */
     constexpr std::size_t size() const noexcept { return size_; }
+
+    /**
+     * @brief Access element by index.
+     * @param index Zero-based position (must be < size()).
+     * @return Reference to the element.
+     */
     constexpr T& operator[](std::size_t index) noexcept { return *reinterpret_cast<T*>(&data_[index * sizeof(T)]); }
+
+    /**
+     * @brief Const access by index.
+     * @param index Zero-based position (must be < size()).
+     * @return Const reference to the element.
+     */
     constexpr const T& operator[](std::size_t index) const noexcept { return *reinterpret_cast<const T*>(&data_[index * sizeof(T)]); }
 };
 
-// Ray Tracing Utilities (Geometry & Barycentric)
+/**
+ * @brief Computes a triangle face normal from three vertices.
+ * @param v0 First vertex in world space.
+ * @param v1 Second vertex in world space.
+ * @param v2 Third vertex in world space.
+ * @return Unit-length geometric normal (right-hand cross).
+ */
 
 inline glm::vec3 CalculateNormal(const glm::vec3& v0, const glm::vec3& v1, const glm::vec3& v2) noexcept {
     glm::vec3 edge1 = v1 - v0;
@@ -69,6 +112,18 @@ inline glm::vec3 CalculateNormal(const glm::vec3& v0, const glm::vec3& v1, const
     return glm::normalize(glm::cross(edge1, edge2));
 }
 
+/**
+ * @brief Möller–Trumbore ray–triangle intersection.
+ * @param ray_origin Ray origin in world space.
+ * @param ray_dir Normalized ray direction.
+ * @param v0 Triangle vertex 0.
+ * @param v1 Triangle vertex 1.
+ * @param v2 Triangle vertex 2.
+ * @param out_t Intersection distance along the ray.
+ * @param out_u Barycentric coordinate for v1.
+ * @param out_v Barycentric coordinate for v2.
+ * @return True if the ray hits the triangle at t > 0.
+ */
 inline bool IntersectRayTriangle(
     const glm::vec3& ray_origin,
     const glm::vec3& ray_dir,
@@ -97,6 +152,14 @@ inline bool IntersectRayTriangle(
     return t > EPSILON;
 }
 
+/**
+ * @brief Computes barycentric coordinates of a point relative to a 2D triangle.
+ * @param v0 Vertex 0 in screen or 2D space.
+ * @param v1 Vertex 1 in screen or 2D space.
+ * @param v2 Vertex 2 in screen or 2D space.
+ * @param p Point to evaluate.
+ * @return Barycentric weights (w0, w1, w2) that sum to 1.
+ */
 inline glm::vec3 CalculateBarycentric(glm::vec2 v0, glm::vec2 v1, glm::vec2 v2, glm::vec2 p) noexcept {
     glm::vec2 e0 = v1 - v0;
     glm::vec2 e1 = v2 - v0;
@@ -109,8 +172,34 @@ inline glm::vec3 CalculateBarycentric(glm::vec2 v0, glm::vec2 v1, glm::vec2 v2, 
     return glm::vec3(weight_v0, weight_v1, weight_v2);
 }
 
-// Low-Discrepancy Sampling (Halton Sequence)
+/**
+ * @brief Permuted Congruential Generator hash for 32-bit values.
+ * @param v Input value.
+ * @return Pseudorandomly permuted integer.
+ */
 
+constexpr uint32_t PCGHash(uint32_t v) noexcept {
+    uint32_t state = v * 747796405u + 2891336453u;
+    uint32_t word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return word ^ (word >> 22u);
+}
+
+/**
+ * @brief Generates a uniform random float in \[0,1).
+ * @param seed RNG state (updated in-place).
+ * @return Random float in \[0,1).
+ */
+constexpr FloatType RandFloat(uint32_t& seed) noexcept {
+    seed = PCGHash(seed);
+    return static_cast<FloatType>((seed >> 8) & 0x00FFFFFFu) / 16777216.0f;
+}
+
+/**
+ * @brief Halton low-discrepancy sequence term.
+ * @param index Sequence index (>= 0).
+ * @param base Prime base (e.g., 2 or 3).
+ * @return Value in \[0,1).
+ */
 constexpr FloatType Halton(int index, int base) noexcept {
     FloatType result = 0.0f;
     FloatType f = 1.0f / base;
@@ -123,6 +212,13 @@ constexpr FloatType Halton(int index, int base) noexcept {
     return result;
 }
 
+/**
+ * @brief Samples a point on a sphere using Halton sequences.
+ * @param index Sample index.
+ * @param radius Sphere radius.
+ * @param center Sphere center.
+ * @return Position on the sphere surface.
+ */
 inline glm::vec3 SampleSphereHalton(int index, FloatType radius, const glm::vec3& center) noexcept {
     FloatType u = Halton(index, 2);
     FloatType v = Halton(index, 3);
@@ -138,10 +234,22 @@ inline glm::vec3 SampleSphereHalton(int index, FloatType radius, const glm::vec3
     return center + glm::vec3(x, y, z);
 }
 
+/**
+ * @brief Samples a unit direction uniformly over the sphere.
+ * @param index Sample index.
+ * @return Unit-length direction vector.
+ */
 inline glm::vec3 SampleUnitVectorHalton(int index) noexcept {
     return SampleSphereHalton(index, 1.0f, glm::vec3(0.0f));
 }
 
+/**
+ * @brief Samples a direction within a cone around `direction` using Halton.
+ * @param index Sample index.
+ * @param direction Cone axis (normalized).
+ * @param cone_angle Half-angle of the cone in radians.
+ * @return Unit-length direction within the cone.
+ */
 inline glm::vec3 SampleConeHalton(int index, const glm::vec3& direction, FloatType cone_angle) noexcept {
     FloatType u1 = Halton(index, 2);
     FloatType u2 = Halton(index, 3);

@@ -10,7 +10,9 @@
 #include "shader.hpp"
 #include "utils.hpp"
 
-// Structure representing a single photon
+/**
+ * @brief Represents a single photon used for caustic estimation.
+ */
 struct Photon {
     glm::vec3 position;          // 3D position of photon impact
     glm::vec3 direction;         // Incident direction
@@ -18,7 +20,9 @@ struct Photon {
     const Face* face;            // Face where photon landed
 };
 
-// Hash function for 3D grid coordinates
+/**
+ * @brief Hash functor for integer 3D grid coordinates.
+ */
 struct GridCellHash {
     std::size_t operator()(const std::tuple<int, int, int>& cell) const noexcept {
         auto h1 = std::hash<int>{}(std::get<0>(cell));
@@ -28,7 +32,12 @@ struct GridCellHash {
     }
 };
 
-// PhotonMap class for caustics computation
+/**
+ * @brief Photon mapping accelerator for estimating caustic radiance.
+ *
+ * Builds a spatial index of photons traced from emissive surfaces and supports
+ * neighborhood queries to reconstruct radiance at hit points.
+ */
 class PhotonMap {
 public:
     // Configuration
@@ -57,20 +66,43 @@ private:
     std::atomic<bool> is_ready_{false};
     
 public:
+    /**
+     * @brief Constructs and launches the photon tracing worker.
+     * @param world World reference used for geometry and materials.
+     */
     explicit PhotonMap(const World& world);
     ~PhotonMap() = default;
     
-    // Check if photon map is ready for queries
+    /**
+     * @brief Indicates whether the photon map has finished building.
+     * @return True when neighborhood queries are available.
+     */
     bool is_ready() const noexcept { return is_ready_.load(std::memory_order_acquire); }
     
-    // Query photons near a point on a given face
+    /**
+     * @brief Retrieves photons within a radius of a point on a given face.
+     * @param face Target surface (used to filter hits).
+     * @param point Query point in world space.
+     * @param radius Search radius.
+     * @return List of nearby photons satisfying the radial and face filter.
+     */
     std::vector<Photon> query_photons(const Face* face, const glm::vec3& point, FloatType radius) const;
     
-    // Estimate caustic radiance at a point
+    /**
+     * @brief Estimates caustic radiance at a surface point.
+     * @param face Surface being shaded.
+     * @param point World-space hit position.
+     * @param normal Shading normal at the hit.
+     * @param search_radius Radius for photon gathering.
+     * @return Estimated radiance in HDR space.
+     */
     ColourHDR estimate_caustic(const Face* face, const glm::vec3& point, 
                                const glm::vec3& normal, FloatType search_radius) const noexcept;
     
-    // Get total number of stored photons
+    /**
+     * @brief Returns total number of stored photons.
+     * @return Photon count across all faces and grid cells.
+     */
     std::size_t total_photons() const noexcept;
     
 private:
@@ -105,6 +137,11 @@ private:
     std::optional<RayTriangleIntersection> find_intersection(
         const glm::vec3& ro, const glm::vec3& rd) const noexcept;
     
-    // Random number generation for stochastic decisions
+    /**
+     * @brief Random float helper for stochastic decisions.
+     * @param min Inclusive lower bound.
+     * @param max Exclusive upper bound.
+     * @return Random value in \[min, max).
+     */
     static FloatType RandomFloat(FloatType min = 0.0f, FloatType max = 1.0f) noexcept;
 };

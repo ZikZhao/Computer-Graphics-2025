@@ -12,6 +12,9 @@
 // Forward declaration
 class Window;
 
+/**
+ * @brief Orchestrates rasterization and ray tracing; manages frame tiling.
+ */
 class Renderer {
 public:
     enum class Mode {
@@ -22,7 +25,19 @@ public:
     };
     static constexpr int TileHeight = 16;
     static constexpr int VideoSamples = 64;
+    /**
+     * @brief Converts HDR to displayable sRGB using ACES and gamma.
+     * @param hdr Linear HDR colour.
+     * @param gamma Output gamma (1.0 = none, 2.2 typical sRGB).
+     * @return 8-bit sRGB colour.
+     */
     static Colour TonemapAndGammaCorrect(const ColourHDR& hdr, FloatType gamma) noexcept;
+
+    /**
+     * @brief ACES filmic tone mapping curve (approximation).
+     * @param hdr_value Input HDR component.
+     * @return Mapped component in \[0,1].
+     */
     static constexpr FloatType AcesToneMapping(FloatType hdr_value) noexcept;
     
 private:
@@ -53,16 +68,33 @@ private:
     FloatType last_cam_pitch_ = 0.0f;
     
 public:
+    /**
+     * @brief Constructs the renderer with shared window/world.
+     * @param window Output target and event source.
+     * @param world Scene data and camera.
+     */
     explicit Renderer(Window& window, const World& world);
+
+    /** @brief Destructor joins worker threads and releases resources. */
     ~Renderer();
+
+    /** @brief Renders a frame in the current mode. */
     void render() noexcept;
+
+    /** @brief Clears progressive accumulation buffers. */
     void reset_accumulation() noexcept;
     bool video_export_mode_ = false;
+    /** @brief Sets the rendering mode. */
     void set_mode(Mode m) noexcept { mode_ = m; }
+    /** @brief Returns current display gamma. */
     FloatType gamma() const noexcept { return gamma_; }
+    /** @brief Sets display gamma. */
     void set_gamma(FloatType g) noexcept { gamma_ = g; }
+    /** @brief Returns whether caustics are enabled. */
     bool caustics_enabled() const noexcept { return caustics_enabled_; }
+    /** @brief Enables or disables photon-mapped caustics. */
     void set_caustics_enabled(bool e) noexcept { caustics_enabled_ = e; }
+    /** @brief Indicates whether the photon map is ready. */
     bool is_photon_map_ready() const noexcept { return raytracer_ && raytracer_->is_photon_map_ready(); }
     
 private:

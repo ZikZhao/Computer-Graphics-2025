@@ -3,7 +3,7 @@
 #include "window.hpp"
 #include "renderer.hpp"
 
-// Filmic tone mapping (ACES approximation): compress HDR into displayable range
+// Filmic tone mapping (ACES approximation): compress HDR to displayable range
 constexpr FloatType Renderer::AcesToneMapping(FloatType hdr_value) noexcept {
     const FloatType a = 2.51f;
     const FloatType b = 0.03f;
@@ -15,7 +15,7 @@ constexpr FloatType Renderer::AcesToneMapping(FloatType hdr_value) noexcept {
     return std::clamp(numerator / denominator, 0.0f, 1.0f);
 }
 
-// Step: Tonemap then gamma-correct HDR to 8-bit sRGB for the window backbuffer
+// Tonemap then gamma-correct HDR to 8-bit sRGB for the window backbuffer
 Colour Renderer::TonemapAndGammaCorrect(const ColourHDR& hdr, FloatType gamma) noexcept {
     FloatType r_ldr = AcesToneMapping(hdr.red * 0.6f);
     FloatType g_ldr = AcesToneMapping(hdr.green * 0.6f);
@@ -48,11 +48,11 @@ Renderer::Renderer(Window& window, const World& world)
       accumulation_buffer_(window.get_width() * window.get_height(), ColourHDR{}),
       frame_barrier_(std::thread::hardware_concurrency() + 1) {
     
-    // Step 1: Create sub-engines (ray tracing and rasterization backends)
+    // Create sub-engines (ray tracing and rasterization backends)
     raytracer_ = std::make_unique<RayTracer>(world);
     rasterizer_ = std::make_unique<Rasterizer>(window.get_width(), window.get_height());
     
-    // Step 2: Launch worker threads for tiled rendering; barrier synchronizes frame boundaries
+    // Launch worker threads for tiled rendering; barrier synchronizes frame boundaries
     for (unsigned int i = 0; i < std::thread::hardware_concurrency(); ++i) {
         workers_.emplace_back([this](std::stop_token st) { this->worker_thread(st); });
     }
@@ -66,13 +66,13 @@ Renderer::~Renderer() {
 }
 
 void Renderer::render() noexcept {
-    // Step 1: Reset accumulation in video mode to produce per-frame averages
+    // In video mode, reset accumulation to produce per-frame averages
     if (video_export_mode_) {
         reset_accumulation();
     }
     aspect_ratio_ = static_cast<double>(window_.get_width()) / window_.get_height();
     
-    // Step 2: Dispatch to selected rendering mode
+    // Dispatch to selected rendering mode
     switch (mode_) {
     case Mode::WIREFRAME:
         clear();
@@ -119,12 +119,12 @@ void Renderer::raytraced_render() noexcept {
                        (std::abs(cur_yaw - last_cam_yaw_) > 1e-6f) ||
                        (std::abs(cur_pitch - last_cam_pitch_) > 1e-6f);
     if (cam_changed) {
-        // Step: Camera moved — reset progressive accumulation to avoid ghosting
+        // Camera moved — reset progressive accumulation to avoid ghosting
         reset_accumulation();
     }
     rendering_frame_count_ = frame_count_ + 1;
     
-    // Step: Signal workers to start and wait for completion via barrier
+    // Signal workers to start and wait for completion via barrier
     frame_barrier_.arrive_and_wait();  // Start signal
     frame_barrier_.arrive_and_wait();  // Completion wait
     frame_count_ = rendering_frame_count_;
@@ -138,7 +138,7 @@ void Renderer::depth_of_field_render() noexcept {
     tile_counter_.store(0, std::memory_order_relaxed);
     rendering_frame_count_ = frame_count_ + 1;
     
-    // Step: Signal workers to start and wait for completion via barrier
+    // Signal workers to start and wait for completion via barrier
     frame_barrier_.arrive_and_wait();  // Start signal
     frame_barrier_.arrive_and_wait();  // Completion wait
     frame_count_ = rendering_frame_count_;
@@ -148,7 +148,7 @@ void Renderer::process_rows(int y0, int y1) noexcept {
     const Camera& camera = *current_camera_;
     const bool is_dof = (mode_ == Mode::DEPTH_OF_FIELD);
     
-    // Step: Tiled loop over rows/pixels; per-pixel sampling and accumulation
+    // Row-batched loop over pixels; sampling and accumulation
     for (int y = y0; y < y1; ++y) {
         for (int x = 0; x < static_cast<int>(window_.get_width()); x++) {
             int w = static_cast<int>(window_.get_width());
@@ -158,7 +158,7 @@ void Renderer::process_rows(int y0, int y1) noexcept {
             ColourHDR pixel_accum{0.0f, 0.0f, 0.0f};
             for (int s = 0; s < samples_to_run; ++s) {
                 if (is_dof) {
-                    // Step: Depth-of-field rendering — sample thin lens (aperture/focal plane)
+                    // Depth-of-field rendering — thin lens (aperture/focal plane)
                     ColourHDR hdr = raytracer_->render_pixel_dof(
                         camera, x, y, w, h,
                         focal_distance_, aperture_size_, dof_samples_,
@@ -170,7 +170,7 @@ void Renderer::process_rows(int y0, int y1) noexcept {
                         .blue  = pixel_accum.blue + hdr.blue
                     };
                 } else {
-                    // Step: Path tracing — jittered sampling per frame for progressive refinement
+                    // Path tracing — jittered sampling per frame for progressive refinement
                     int sample_index = rendering_frame_count_ * (w * h) + pixel_index + s;
                     uint32_t base_seed = static_cast<uint32_t>(pixel_index + rendering_frame_count_ * 123457u) | 1u;
                     uint32_t sub_seed = base_seed ^ (static_cast<uint32_t>(s) * 0x9e3779b9u);
@@ -185,14 +185,14 @@ void Renderer::process_rows(int y0, int y1) noexcept {
                     };
                 }
             }
-            // Step: Average samples for current pixel
+            // Average samples for current pixel
             ColourHDR final_hdr_avg{
                 pixel_accum.red / static_cast<FloatType>(samples_to_run),
                 pixel_accum.green / static_cast<FloatType>(samples_to_run),
                 pixel_accum.blue / static_cast<FloatType>(samples_to_run)
             };
             std::size_t idx = static_cast<std::size_t>(y) * window_.get_width() + static_cast<std::size_t>(x);
-            // Step: Update accumulation buffer (video mode vs progressive mode)
+            // Update accumulation buffer (video mode vs progressive mode)
             if (video_export_mode_) {
                 accumulation_buffer_[idx] = final_hdr_avg;
             } else {
@@ -202,7 +202,7 @@ void Renderer::process_rows(int y0, int y1) noexcept {
                     .blue  = accumulation_buffer_[idx].blue + final_hdr_avg.blue
                 };
             }
-            // Step: Compute display HDR (per-frame or progressive average)
+            // Compute display HDR (per-frame or progressive average)
             ColourHDR avg_hdr = video_export_mode_
                 ? accumulation_buffer_[idx]
                 : ColourHDR{
@@ -210,7 +210,7 @@ void Renderer::process_rows(int y0, int y1) noexcept {
                     .green = accumulation_buffer_[idx].green / static_cast<FloatType>(rendering_frame_count_),
                     .blue  = accumulation_buffer_[idx].blue / static_cast<FloatType>(rendering_frame_count_)
                   };
-            // Step: Tone map + gamma correct, then write to window backbuffer
+            // Tone map + gamma correct, then write to window backbuffer
             Colour final_colour = TonemapAndGammaCorrect(avg_hdr, gamma_);
             window_[{x, y}] = final_colour;
         }
@@ -219,11 +219,11 @@ void Renderer::process_rows(int y0, int y1) noexcept {
 
 void Renderer::worker_thread(std::stop_token st) noexcept {
     while (true) {
-        // Step: Wait for frame start signal
+        // Wait for frame start signal
         frame_barrier_.arrive_and_wait();
         if (st.stop_requested()) break;
         
-        // Step: Process tiles until all are done (row-batched for cache locality)
+        // Process tiles until all are done (row-batched for cache locality)
         const int num_tiles = (window_.get_height() + TileHeight - 1) / TileHeight;
         while (true) {
             int tile_idx = tile_counter_.fetch_add(1, std::memory_order_relaxed);
@@ -235,7 +235,7 @@ void Renderer::worker_thread(std::stop_token st) noexcept {
             if (st.stop_requested()) break;
         }
         
-        // Step: Signal frame completion
+        // Signal frame completion
         frame_barrier_.arrive_and_wait();
     }
 }

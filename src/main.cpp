@@ -18,16 +18,17 @@ constexpr std::size_t HEIGHT = 540;
 int main(int argc, char *argv[]) {
     assert(argc >= 2 && "Please provide a .obj file as a command line argument.");
     
-    // Load world first
+    // Load world assets from CLI arguments
     World world;
     world.load_files(std::vector<std::string>(argv + 1, argv + argc));
     
-    // Initialize window after successful world loading
+    // Initialize output window and rendering engines
     Window window(WIDTH, HEIGHT, false);
     Renderer renderer(window, world);
     VideoRecorder video_recorder(window.get_pixel_buffer(), WIDTH, HEIGHT);
 
-    // Centralized input callbacks
+    
+    // Centralized input callbacks: movement and UI toggles
     window.register_key(
         {SDL_SCANCODE_W, SDL_SCANCODE_S, SDL_SCANCODE_A, SDL_SCANCODE_D, SDL_SCANCODE_SPACE, SDL_SCANCODE_C},
         Window::Trigger::ANY_PRESSED_NO_MODIFIER,
@@ -88,7 +89,7 @@ int main(int argc, char *argv[]) {
             }
         });
     
-    // Screenshot Save (Ctrl+S)
+    // Screenshot save (Ctrl+S)
     window.register_key({SDL_SCANCODE_LCTRL, SDL_SCANCODE_S}, Window::Trigger::ALL_JUST_PRESSED,
         [&](const Window::KeyState& ks, float) {
             window.save_ppm("screenshot.ppm");
@@ -103,7 +104,7 @@ int main(int argc, char *argv[]) {
             std::cout << "Screenshot saved as screenshot.ppm and screenshot.bmp" << std::endl;
         });
     
-    // Video Recording Toggle (Ctrl+Shift+S)
+    // Video recording toggle (Ctrl+Shift+S)
     window.register_key({SDL_SCANCODE_LCTRL, SDL_SCANCODE_LSHIFT, SDL_SCANCODE_S}, Window::Trigger::ALL_JUST_PRESSED,
         [&](const Window::KeyState&, float) {
             video_recorder.toggle_recording();
@@ -136,15 +137,19 @@ int main(int argc, char *argv[]) {
     std::size_t fps = 0;
     
     while (true) {
-
+        
+        // Advance any orbit animation and render the frame
         world.camera_.orbiting();
         renderer.video_export_mode_ = video_recorder.is_recording();
         renderer.render();
 
+        // Process input; exit on window close or ESC
         if (!window.process_events()) break;
 
+        // Capture a frame if recording
         if (video_recorder.is_recording()) video_recorder.capture_frame();
 
+        // Present backbuffer
         window.update();
         
         // FPS counter

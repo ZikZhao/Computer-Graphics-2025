@@ -11,6 +11,9 @@
 #include "SDL.h"
 #include "world.hpp"
 
+/**
+ * @brief SDL-backed window, input, and pixel backbuffer manager.
+ */
 class Window {
 public:
     // Event trigger types
@@ -86,33 +89,67 @@ private:
 
 public:
     Window() noexcept = delete;
+    /**
+     * @brief Creates a window with an ARGB backbuffer.
+     * @param w Width in pixels.
+     * @param h Height in pixels.
+     * @param fullscreen Enable fullscreen desktop mode.
+     */
     explicit Window(int w, int h, bool fullscreen = false) noexcept;
+    /** @brief Releases SDL resources. */
     ~Window();
     
     // Event registration
+    /**
+     * @brief Registers a key binding with a trigger policy.
+     * @param keys Set of scancodes to monitor.
+     * @param trigger Trigger mode (pressed/down/released/etc.).
+     * @param handler Callback receiving key state and dt.
+     */
     void register_key(const std::unordered_set<SDL_Scancode>& keys, Trigger trigger, KeyHandler handler) noexcept;
+    /**
+     * @brief Registers a mouse binding.
+     * @param button SDL mouse button.
+     * @param trigger Trigger mode.
+     * @param handler Callback receiving xrel, yrel, dt.
+     */
     void register_mouse(Uint8 button, Trigger trigger, MouseHandler handler) noexcept;
     
     // Main loop methods
+    /** @brief Polls SDL events and dispatches registered handlers. */
     bool process_events() noexcept;
+    /** @brief Uploads backbuffer to SDL texture and presents. */
     void update() noexcept;
     
     // Pixel manipulation
+    /** @brief Clears the ARGB backbuffer to black. */
     void clear_pixels() noexcept;
+    /** @brief Mutable pixel access by (x,y). */
     std::uint32_t& operator[](const std::pair<int, int>& xy) noexcept;
+    /** @brief Const pixel read by (x,y). */
     std::uint32_t operator[](const std::pair<int, int>& xy) const noexcept;
+    /** @brief Returns the underlying pixel buffer. */
     const std::vector<uint32_t>& get_pixel_buffer() const noexcept;
     
     // File operations
+    /** @brief Saves the backbuffer as raw PPM (P6) file.
+     *  @param filename Output path. */
     void save_ppm(const std::string& filename) const;
+    /** @brief Saves the backbuffer as BMP via SDL.
+     *  @param filename Output path. */
     void save_bmp(const std::string& filename) const;
     
     // Getters
+    /** @brief Backbuffer width. */
     size_t get_width() const noexcept { return width_; }
+    /** @brief Backbuffer height. */
     size_t get_height() const noexcept { return height_; }
     
     // Keyboard state queries
+    /** @brief Returns current pressed state for a key. */
     bool is_key_pressed(SDL_Scancode key) const noexcept;
+    /** @brief Returns true if key transitioned to pressed in this frame. */
     bool is_key_just_pressed(SDL_Scancode key) const noexcept;
+    /** @brief Returns true if key transitioned to released in this frame. */
     bool is_key_just_released(SDL_Scancode key) const noexcept;
 };

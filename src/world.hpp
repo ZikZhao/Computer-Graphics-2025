@@ -19,6 +19,9 @@
 #include "utils.hpp"
 
 // Clipping planes for frustum
+/**
+ * @brief Frustum clip planes in homogeneous clip space.
+ */
 enum class ClipPlane {
     LEFT,   // x >= -w
     RIGHT,  // x <= w
@@ -42,6 +45,12 @@ struct ColourHDR {
     FloatType green;
     FloatType blue;
     
+    /**
+     * @brief Converts 8-bit sRGB to linear HDR using gamma.
+     * @param srgb Source colour.
+     * @param gamma Gamma exponent (1.0 = identity).
+     * @return Linear HDR colour.
+     */
     static ColourHDR from_srgb(const Colour& srgb, FloatType gamma) noexcept;
     
     constexpr ColourHDR operator*(FloatType scalar) const noexcept {
@@ -61,8 +70,16 @@ struct Face;
 struct RayTriangleIntersection;
 class BVHAccelerator; // forward declaration
 
+/**
+ * @brief Lat-long HDR environment map with auto-exposure.
+ */
 class EnvironmentMap {
 public:
+    /**
+     * @brief Computes a robust exposure scalar from HDR luminance statistics.
+     * @param hdr_data Linear HDR pixels.
+     * @return Exposure multiplier.
+     */
     static FloatType ComputeAutoExposure(const std::vector<ColourHDR>& hdr_data) noexcept;
 
 private:
@@ -72,9 +89,23 @@ private:
     FloatType intensity_;
 
 public:
+    /** @brief Constructs an empty environment. */
     EnvironmentMap() noexcept;
+    /**
+     * @brief Constructs a loaded environment map.
+     * @param w Width in pixels.
+     * @param h Height in pixels.
+     * @param data Linear HDR texels (lat-long).
+     * @param intensity Exposure multiplier.
+     */
     EnvironmentMap(std::size_t w, std::size_t h, std::vector<ColourHDR> data, FloatType intensity = 0.3f) noexcept;
+    /** @brief Indicates whether a valid map is present. */
     constexpr bool is_loaded() const noexcept { return width_ > 0 && height_ > 0; }
+    /**
+     * @brief Samples environment radiance along a direction.
+     * @param direction World-space direction.
+     * @return Linear HDR radiance.
+     */
     ColourHDR sample(const glm::vec3& direction) const noexcept;
 };
 
@@ -131,6 +162,9 @@ struct ScreenNdcCoord {
     FloatType inv_w;  // 1/w for perspective correction
 };
 
+/**
+ * @brief Pinhole camera with yaw/pitch/roll and orbit helper.
+ */
 class Camera {
 public:
     static constexpr auto OrbitInterval = std::chrono::seconds(1) / 60;
@@ -146,23 +180,41 @@ public:
     bool is_orbiting_ = false;
     FloatType orbit_radius_ = 0.0f;
     Camera() noexcept = default;
+    /** @brief Projects a world-space vertex to homogeneous clip space. */
     glm::vec4 world_to_clip(const glm::vec3& vertex, double aspect_ratio) const noexcept;
+    /** @brief Converts clip coordinates to NDC by dividing by w. */
     glm::vec3 clip_to_ndc(const glm::vec4& clip) const noexcept;
+    /** @brief Returns camera basis matrix (right, up, forward). */
     glm::mat3 orientation() const noexcept;
+    /** @brief Forward direction. */
     glm::vec3 forward() const noexcept;
+    /** @brief Right direction. */
     glm::vec3 right() const noexcept;
+    /** @brief Up direction. */
     glm::vec3 up() const noexcept;
+    /** @brief Begins orbiting around a target at current radius. */
     void start_orbiting(glm::vec3 target) noexcept;
+    /** @brief Updates orbit if active. */
     void orbiting() noexcept;
+    /** @brief Stops orbiting. */
     void stop_orbiting() noexcept;
+    /** @brief Applies yaw/pitch deltas with pitch clamp. */
     void rotate(FloatType delta_yaw, FloatType delta_pitch) noexcept;
+    /** @brief Applies roll delta. */
     void roll(FloatType delta_roll) noexcept;
+    /** @brief Moves in local axes scaled by dt. */
     void move(FloatType forward_delta, FloatType right_delta, FloatType up_delta, FloatType dt) noexcept;
+    /** @brief Sets position. */
     void set_position(const glm::vec3& pos) noexcept;
+    /** @brief Sets yaw. */
     void set_yaw(FloatType y) noexcept;
+    /** @brief Sets pitch. */
     void set_pitch(FloatType p) noexcept;
+    /** @brief Sets roll. */
     void set_roll(FloatType r) noexcept;
+    /** @brief Generates a ray through a pixel center. */
     std::pair<glm::vec3, glm::vec3> generate_ray(int pixel_x, int pixel_y, int screen_width, int screen_height, double aspect_ratio) const noexcept;
+    /** @brief Generates a ray from normalized UV. */
     std::pair<glm::vec3, glm::vec3> generate_ray_uv(FloatType u, FloatType v, int screen_width, int screen_height, double aspect_ratio) const noexcept;
 };
 
@@ -185,6 +237,9 @@ struct Object {
     std::vector<Face> faces;
 };
 
+/**
+ * @brief Aggregates objects, geometry arrays, and materials for a scene asset.
+ */
 class Model {
 private:
     std::vector<Object> objects_;
@@ -196,13 +251,20 @@ private:
     std::vector<glm::vec3> vertex_normals_by_vertex_;
 public:
     Model() noexcept = default;
+    /** @brief Loads an OBJ file into this model. */
     void load_file(std::string filename);
+    /** @brief Loads a text scene file into this model. */
     void load_scene_txt(std::string filename);
     friend class SceneLoader;
+    /** @brief Flattened faces for iteration. */
     const std::vector<Face>& all_faces() const noexcept { return all_faces_; }
+    /** @brief Shared vertex positions. */
     const std::vector<glm::vec3>& vertices() const noexcept { return vertices_; }
+    /** @brief Shared texture coordinates. */
     const std::vector<glm::vec2>& texture_coords() const noexcept { return texture_coords_; }
+    /** @brief Shared OBJ vertex normals. */
     const std::vector<glm::vec3>& vertex_normals() const noexcept { return vertex_normals_; }
+    /** @brief Optional per-vertex normals authored inline. */
     const std::vector<glm::vec3>& vertex_normals_by_vertex() const noexcept { return vertex_normals_by_vertex_; }
     private:
     void load_materials(std::string filename);
@@ -211,6 +273,9 @@ public:
     void compute_face_normals() noexcept;
 };
 
+/**
+ * @brief SAH-based BVH over triangle indices for fast intersection and shadows.
+ */
 class BVHAccelerator {
 public:
     struct AABB {
@@ -233,17 +298,29 @@ private:
     const std::vector<glm::vec3>* normals_by_vertex_ = nullptr;
 public:
     BVHAccelerator() noexcept = default;
+    /** @brief Returns true if no nodes are built. */
     bool empty() const noexcept;
+    /** @brief Binds vertex array used by intersection. */
     void set_vertices(const std::vector<glm::vec3>& verts) noexcept;
+    /** @brief Binds texture coordinate array. */
     void set_texcoords(const std::vector<glm::vec2>& uvs) noexcept;
+    /** @brief Binds vertex normals array. */
     void set_normals(const std::vector<glm::vec3>& norms) noexcept;
+    /** @brief Binds per-vertex normals array. */
     void set_normals_by_vertex(const std::vector<glm::vec3>& norms) noexcept;
+    /** @brief Builds BVH nodes over provided faces. */
     void build(const std::vector<Face>& faces) noexcept;
+    /** @brief Ray–AABB test used by traversal. */
     static bool IntersectAABB(const glm::vec3& ro, const glm::vec3& rd, const AABB& box, FloatType tmax) noexcept;
+    /** @brief Intersects ray with triangles; returns closest hit or miss. */
     RayTriangleIntersection intersect(const glm::vec3& ro, const glm::vec3& rd, const std::vector<Face>& faces) const noexcept;
+    /** @brief Computes shadow transmittance along a segment to the light. */
     glm::vec3 transmittance(const glm::vec3& point, const glm::vec3& light_pos, const std::vector<Face>& faces) const noexcept;
 };
 
+/**
+ * @brief Scene container; merges models, builds BVH, and exposes accessors.
+ */
 class World {
 private:
     std::vector<Model> models_;
@@ -258,7 +335,12 @@ private:
 public:
     Camera camera_;
     
+    /** @brief Constructs an empty world. */
     World();
+    /**
+     * @brief Loads environment and models from files; builds BVH.
+     * @param filenames List of scene asset paths.
+     */
     void load_files(const std::vector<std::string>& filenames);
     // Accessors for Renderer
     const std::vector<Model>& models() const noexcept;
@@ -267,7 +349,10 @@ public:
     const std::vector<glm::vec2>& all_texcoords() const noexcept;
     const std::vector<glm::vec3>& all_vertex_normals() const noexcept;
     const std::vector<glm::vec3>& all_vertex_normals_by_vertex() const noexcept;
+    /** @brief HDR environment map accessor. */
     const EnvironmentMap& env_map() const noexcept;
+    /** @brief List of emissive faces (area lights). */
     const std::vector<const Face*>& area_lights() const noexcept;
+    /** @brief BVH accelerator accessor. */
     const BVHAccelerator& accelerator() const noexcept;
 };
