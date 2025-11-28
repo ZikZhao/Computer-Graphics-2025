@@ -7,8 +7,6 @@
 #include "photon_map.hpp"
 #include "raytracer.hpp"
 
- 
-
 constexpr uint32_t RayTracer::PcgHash(uint32_t v) noexcept {
     uint32_t state = v * 747796405u + 2891336453u;
     uint32_t word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
@@ -402,10 +400,6 @@ HitRecord RayTracer::hit(const glm::vec3& ro, const glm::vec3& rd) const noexcep
 glm::vec3 RayTracer::compute_transmittance_bvh(const glm::vec3& point, const glm::vec3& light_pos) const noexcept {
     return world_.accelerator().transmittance(point, light_pos, world_.all_faces());
 }
-
- 
-
-
 
 glm::vec3 RayTracer::SampleSphereHalton(int index, FloatType radius, const glm::vec3& center) noexcept {
     FloatType u = Halton(index, 2);

@@ -506,7 +506,7 @@ public:
                 }
                 glm::vec3 absorption = glm::vec3(std::exp(-effective_sigma_a.r * distance_in_medium), std::exp(-effective_sigma_a.g * distance_in_medium), std::exp(-effective_sigma_a.b * distance_in_medium));
                 trans = trans * absorption;
-                ++i;
+                i++;
             }
             if (trans.r < 0.001f && trans.g < 0.001f && trans.b < 0.001f) {
                 return glm::vec3(0.0f, 0.0f, 0.0f);

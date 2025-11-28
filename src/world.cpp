@@ -10,10 +10,11 @@
 
 #include "../libs/stb_image.h"
 
-// parsing helpers moved to scene_loader.cpp
+// Parsing helpers moved to scene_loader.cpp
 
 // Camera implementation
 glm::vec4 Camera::world_to_clip(const glm::vec3& vertex, double aspect_ratio) const noexcept {
+    // Step: Transform world-space vertex into camera view space, then project to homogeneous clip
     glm::vec3 view_vector = vertex - position_;
     glm::mat3 view_rotation = glm::transpose(orientation());
     glm::vec3 view_space = view_rotation * view_vector;
@@ -30,10 +31,12 @@ glm::vec3 Camera::clip_to_ndc(const glm::vec4& clip) const noexcept {
     if (std::abs(clip.w) < 1e-6f) {
         return glm::vec3(0.0f, 0.0f, -1.0f);
     }
+    // Step: Divide by w to get NDC; guards above avoid division by near-zero
     return glm::vec3(clip) / clip.w;
 }
 
 glm::mat3 Camera::orientation() const noexcept {
+    // Step: Derive camera basis (right, up, forward) from yaw/pitch, then apply roll about forward
     FloatType cos_pitch = std::cos(pitch_);
     FloatType sin_pitch = std::sin(pitch_);
     FloatType cos_yaw = std::cos(yaw_);
@@ -129,6 +132,7 @@ std::pair<glm::vec3, glm::vec3> Camera::generate_ray(int pixel_x, int pixel_y, i
 }
 
 std::pair<glm::vec3, glm::vec3> Camera::generate_ray_uv(FloatType u, FloatType v, int screen_width, int screen_height, double aspect_ratio) const noexcept {
+    // Step: Map pixel UV to view-space direction using pinhole camera model, then rotate to world space
     FloatType ndc_x = u * 2.0f - 1.0f;
     FloatType ndc_y = 1.0f - v * 2.0f;
     double fov_rad = glm::radians(FOV);
@@ -151,6 +155,7 @@ void Model::load_scene_txt(std::string filename) {
 }
 
 void Model::compute_face_normals() noexcept {
+    // Step: Compute geometric normals per face from vertex positions; used for flat shading and backface tests
     for (auto& obj : objects_) {
         for (auto& f : obj.faces) {
             const glm::vec3& v0 = vertices_[f.v_indices[0]];
@@ -164,6 +169,7 @@ void Model::compute_face_normals() noexcept {
 // Removed smooth_missing_vertex_normals as part of code cleanup
 
 void Model::cache_faces() noexcept {
+    // Step: Flatten per-object faces into a contiguous array for fast traversal and BVH build
     all_faces_.clear();
     all_faces_.reserve(std::accumulate(objects_.begin(), objects_.end(), std::size_t(0),
         [](std::size_t sum, const Object& obj) { return sum + obj.faces.size(); }));
@@ -174,6 +180,7 @@ void Model::cache_faces() noexcept {
 }
 
 void Model::load_materials(std::string filename) {
+    // MTL loader: populate material table (albedo, shininess, metallic, IOR, transmission, absorption, emission, textures)
     auto current_material = materials_.end();
     std::ifstream file(filename);
     if (!file.is_open()) {
@@ -244,6 +251,7 @@ void Model::load_materials(std::string filename) {
 }
 
 Texture Model::load_texture(std::string filename) {
+    // PPM (P6) loader: parse header, dimensions and raw RGB data into a Texture
     std::ifstream file(filename, std::ifstream::binary);
     if (!file.is_open()) {
         throw std::runtime_error("Could not open texture file: " + filename);
@@ -289,6 +297,7 @@ Texture Model::load_texture(std::string filename) {
 
 // EnvironmentMap implementation
 FloatType EnvironmentMap::ComputeAutoExposure(const std::vector<ColourHDR>& hdr_data) noexcept {
+    // Step: Compute robust exposure using log-average luminance blended with 90th percentile
     if (hdr_data.empty()) return 1.0f;
     
     std::vector<FloatType> luminances;
@@ -329,11 +338,13 @@ FloatType EnvironmentMap::ComputeAutoExposure(const std::vector<ColourHDR>& hdr_
 World::World() {}
 
 void World::load_files(const std::vector<std::string>& filenames) {
+    // Scene ingestion: load HDR environment, OBJ models or text scenes; then merge into a single geometry store
     for (const auto& filename : filenames) {
         std::string ext = std::filesystem::path(filename).extension().string();
         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
         
         if (ext == ".hdr") {
+            // Step 1: Load environment map and compute auto exposure
             int width, height, channels;
             float* data = stbi_loadf(filename.c_str(), &width, &height, &channels, 3);
             
@@ -357,6 +368,7 @@ void World::load_files(const std::vector<std::string>& filenames) {
                 throw std::runtime_error("Failed to load HDR environment map: " + filename);
             }
         } else if (ext == ".txt") {
+            // Step 2: Text scene — optionally references HDR via Environ; then load embedded geometry
             {
                 std::ifstream file(filename);
                 if (file.is_open()) {
@@ -394,6 +406,7 @@ void World::load_files(const std::vector<std::string>& filenames) {
             group.load_scene_txt(filename);
             models_.emplace_back(std::move(group));
         } else {
+            // Step 3: Standard OBJ model
             Model group;
             group.load_file(filename);
             models_.emplace_back(std::move(group));
@@ -402,6 +415,7 @@ void World::load_files(const std::vector<std::string>& filenames) {
     
     
     
+    // Step 4: Flatten all models into shared arrays (vertices, texcoords, normals, faces)
     std::size_t total_vertices = 0;
     std::size_t total_texcoords = 0;
     std::size_t total_normals = 0;
@@ -479,6 +493,7 @@ void World::load_files(const std::vector<std::string>& filenames) {
     }
 
     emissive_faces_.clear();
+    // Step 5: Identify emissive faces (area lights)
     for (const auto& f : all_faces_) {
         if (glm::length(f.material.emission) > 1e-6f) {
             emissive_faces_.push_back(&f);
@@ -489,6 +504,7 @@ void World::load_files(const std::vector<std::string>& filenames) {
     accelerator_.set_texcoords(all_texcoords_);
     accelerator_.set_normals(all_vertex_normals_);
     accelerator_.set_normals_by_vertex(all_vertex_normals_by_vertex_);
+    // Step 6: Build acceleration structure (BVH) over all faces
     accelerator_.build(all_faces_);
 }
 

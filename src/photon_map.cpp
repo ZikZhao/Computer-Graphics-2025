@@ -4,13 +4,11 @@
 #include "photon_map.hpp"
 
 PhotonMap::PhotonMap(const World& world) 
-    : world_(world) 
-{
+    : world_(world) {
     worker_thread_ = std::jthread([this]() { trace_photons(); });
 }
 
-std::vector<Photon> PhotonMap::query_photons(const Face* face, const glm::vec3& point, 
-                                             FloatType radius) const {
+std::vector<Photon> PhotonMap::query_photons(const Face* face, const glm::vec3& point, FloatType radius) const {
     std::vector<Photon> result;
     GridCell center_cell = GetGridCell(point);
     auto [cx, cy, cz] = center_cell;
@@ -155,7 +153,6 @@ void PhotonMap::emit_photons_from_area_light(const Face& light_face, const glm::
     glm::vec3 photon_power = Le * (area / static_cast<FloatType>(std::max(1, num_photons)));
     photon_power *= 5.0f;
     
-    
     for (int i = 0; i < num_photons; ++i) {
         FloatType u1 = Halton(i, 2);
         FloatType u2 = Halton(i, 3);
@@ -178,14 +175,10 @@ void PhotonMap::trace_single_photon(const glm::vec3& origin, const glm::vec3& di
                                     const glm::vec3& medium_entry_point,
                                     bool interacted_with_transparent) {
     
-    if (depth >= MaxPhotonBounces) {
-        return;
-    }
+    if (depth >= MaxPhotonBounces) return;
     
     auto hit_opt = find_intersection(origin, direction);
-    if (!hit_opt.has_value()) {
-        return;
-    }
+    if (!hit_opt.has_value()) return;
     
     const auto& hit = hit_opt.value();
     const Face* hit_face = &world_.all_faces()[hit.triangleIndex];

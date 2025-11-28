@@ -3,6 +3,9 @@
 #include "window.hpp"
 #include "utils.hpp"
 
+// Rasterization backend: triangle clipping, projection and scanline fill
+// This class handles CPU rasterization for wireframe and textured triangles.
+// Comments follow the Logical Blocks rule, focusing on CG intent rather than syntax.
 Rasterizer::Rasterizer(int width, int height)
     : width_(width), height_(height), z_buffer_(width * height, 0.0f) {}
 
@@ -25,6 +28,7 @@ FloatType Rasterizer::get_depth(int x, int y) const noexcept {
 void Rasterizer::draw_model_wireframe(const Camera& camera, const std::vector<Face>& faces,
                                       const std::vector<glm::vec3>& vertices,
                                       Window& window, double aspect_ratio) noexcept {
+    // Step 1: For each face, clip it to the view frustum and draw edges in screen space
     for (const auto& face : faces) {
         wireframe_render(camera, face, vertices, std::vector<glm::vec2>{}, window, aspect_ratio);
     }
@@ -34,19 +38,25 @@ void Rasterizer::draw_model_rasterized(const Camera& camera, const std::vector<F
                                        const std::vector<glm::vec3>& vertices,
                                        const std::vector<glm::vec2>& texcoords,
                                        Window& window, double aspect_ratio) noexcept {
+    // Step 1: For each face, clip to frustum, project to screen, then fill via scanlines with depth test
     for (const auto& face : faces) {
         rasterized_render(camera, face, vertices, texcoords, window, aspect_ratio);
     }
 }
 
 void Rasterizer::wireframe_render(const Camera& camera, const Face& face, const std::vector<glm::vec3>& vertices, const std::vector<glm::vec2>& texcoords, Window& window, double aspect_ratio) noexcept {
+    // Step 1: Clip triangle to the view frustum (Sutherland–Hodgman on clip-space planes)
     auto clipped = clip_triangle(camera, face, vertices, texcoords, aspect_ratio);
     if (clipped.size() < 3) return;
+
+    // Step 2: Project clipped polygon to NDC and convert to screen; carry 1/w for depth
     InplaceVector<ScreenNdcCoord, 9> screen_verts;
     for (size_t i = 0; i < clipped.size(); i++) {
         glm::vec3 ndc = camera.clip_to_ndc(clipped[i].position_clip);
         screen_verts.push_back(ndc_to_screen(ndc, clipped[i].uv, clipped[i].position_clip.w));
     }
+
+    // Step 3: Rasterize edges using a simple DDA; perform inverse-z depth test per pixel
     Colour colour = clipped[0].colour;
     for (size_t i = 0; i < screen_verts.size(); i++) {
         ScreenNdcCoord from = screen_verts[i];
@@ -84,13 +94,18 @@ void Rasterizer::wireframe_render(const Camera& camera, const Face& face, const 
 }
 
 void Rasterizer::rasterized_render(const Camera& camera, const Face& face, const std::vector<glm::vec3>& vertices, const std::vector<glm::vec2>& texcoords, Window& window, double aspect_ratio) noexcept {
+    // Step 1: Clip triangle against all frustum planes; early out if culled
     auto clipped = clip_triangle(camera, face, vertices, texcoords, aspect_ratio);
     if (clipped.size() < 3) { return; }
+
+    // Step 2: Project to NDC and convert to screen space, tracking inv_w for perspective-correct interpolation
     InplaceVector<ScreenNdcCoord, 9> screen_verts;
     for (size_t i = 0; i < clipped.size(); i++) {
         glm::vec3 ndc = camera.clip_to_ndc(clipped[i].position_clip);
         screen_verts.push_back(ndc_to_screen(ndc, clipped[i].uv, clipped[i].position_clip.w));
     }
+
+    // Step 3: Triangulate convex polygon fan-wise and perform two-pass scanline fill (top/bottom)
     for (size_t i = 1; i + 1 < clipped.size(); i++) {
         ScreenNdcCoord v0 = screen_verts[0];
         ScreenNdcCoord v1 = screen_verts[i];
@@ -98,12 +113,16 @@ void Rasterizer::rasterized_render(const Camera& camera, const Face& face, const
         if (v0.y > v1.y) std::swap(v0, v1);
         if (v0.y > v2.y) std::swap(v0, v2);
         if (v1.y > v2.y) std::swap(v1, v2);
+
+        // Step 4: Compute inverse slopes for edge stepping; derive scan ranges
         std::int64_t from_y = std::max<std::int64_t>(static_cast<std::int64_t>(std::ceil(v0.y)), 0);
         std::int64_t mid_y = std::min<std::int64_t>(static_cast<std::int64_t>(std::ceil(v1.y)), static_cast<std::int64_t>(height_ - 1));
         std::int64_t to_y = std::min<std::int64_t>(static_cast<std::int64_t>(std::ceil(v2.y)), static_cast<std::int64_t>(height_ - 1));
         FloatType inv_slope_v0v1 = (v1.y - v0.y) == 0 ? 0 : (v1.x - v0.x) / (v1.y - v0.y);
         FloatType inv_slope_v0v2 = (v2.y - v0.y) == 0 ? 0 : (v2.x - v0.x) / (v2.y - v0.y);
         FloatType inv_slope_v1v2 = (v2.y - v1.y) == 0 ? 0 : (v2.x - v1.x) / (v2.y - v1.y);
+
+        // Step 5: Upper half scanlines — compute barycentrics, sample texture with perspective correction, depth test
         for (std::int64_t y = from_y; y < mid_y; y++) {
             FloatType y_center = static_cast<FloatType>(y) + 0.5f;
             FloatType x01 = inv_slope_v0v1 * (y_center - v0.y) + v0.x;
@@ -124,6 +143,8 @@ void Rasterizer::rasterized_render(const Camera& camera, const Face& face, const
                 }
             }
         }
+
+        // Step 6: Lower half scanlines — same process with bottom edges
         for (std::int64_t y = mid_y; y <= to_y; y++) {
             FloatType y_center = static_cast<FloatType>(y) + 0.5f;
             FloatType x12 = inv_slope_v1v2 * (y_center - v1.y) + v1.x;
@@ -149,6 +170,7 @@ void Rasterizer::rasterized_render(const Camera& camera, const Face& face, const
 
  
 
+// Clip-space half-space test: determines whether a homogeneous vertex lies inside a given frustum plane
 constexpr bool Rasterizer::InsidePlane(const glm::vec4& v, ClipPlane plane) noexcept {
     switch (plane) {
         case ClipPlane::LEFT:   return v.x >= -v.w;
@@ -161,6 +183,7 @@ constexpr bool Rasterizer::InsidePlane(const glm::vec4& v, ClipPlane plane) noex
     return false;
 }
 
+// Compute edge-plane intersection parameter t in clip space; distances are measured in homogeneous coordinates
 constexpr FloatType Rasterizer::ComputeIntersectionT(const glm::vec4& v0, const glm::vec4& v1, ClipPlane plane) noexcept {
     FloatType d0, d1;
     switch (plane) {
@@ -197,6 +220,7 @@ constexpr FloatType Rasterizer::ComputeIntersectionT(const glm::vec4& v0, const 
     return d0 / (d0 - d1);
 }
 
+// Interpolate vertex attributes at the clip-plane intersection (colour and UV carried linearly in clip space)
 ClipVertex Rasterizer::IntersectPlane(const ClipVertex& v0, const ClipVertex& v1, ClipPlane plane) noexcept {
     FloatType t = ComputeIntersectionT(v0.position_clip, v1.position_clip, plane);
     return ClipVertex{
@@ -210,6 +234,7 @@ ClipVertex Rasterizer::IntersectPlane(const ClipVertex& v0, const ClipVertex& v1
     };
 }
 
+// Sutherland–Hodgman polygon clipping against a single frustum plane in homogeneous clip space
 InplaceVector<ClipVertex, 9> Rasterizer::ClipAgainstPlane(const InplaceVector<ClipVertex, 9>& input, ClipPlane plane) noexcept {
     InplaceVector<ClipVertex, 9> output;
     
@@ -237,6 +262,7 @@ InplaceVector<ClipVertex, 9> Rasterizer::ClipAgainstPlane(const InplaceVector<Cl
     return output;
 }
 
+// Clip a single triangle to the full frustum: convert to clip space, then clip against LEFT/RIGHT/BOTTOM/TOP/NEAR/FAR
 InplaceVector<ClipVertex, 9> Rasterizer::clip_triangle(const Camera& camera, const Face& face, const std::vector<glm::vec3>& vertices, const std::vector<glm::vec2>& texcoords, double aspect_ratio) noexcept {
     Colour vertex_color{
         .red = static_cast<std::uint8_t>(std::clamp(face.material.base_color.r * 255.0f, 0.0f, 255.0f)),
@@ -244,6 +270,7 @@ InplaceVector<ClipVertex, 9> Rasterizer::clip_triangle(const Camera& camera, con
         .blue = static_cast<std::uint8_t>(std::clamp(face.material.base_color.b * 255.0f, 0.0f, 255.0f))
     };
     
+    // Step 1: Gather vertex positions and optional UVs
     const glm::vec3& v0 = vertices[face.v_indices[0]];
     const glm::vec3& v1 = vertices[face.v_indices[1]];
     const glm::vec3& v2 = vertices[face.v_indices[2]];
@@ -253,12 +280,14 @@ InplaceVector<ClipVertex, 9> Rasterizer::clip_triangle(const Camera& camera, con
         if (face.vt_indices[1] < texcoords.size()) uv1 = texcoords[face.vt_indices[1]];
         if (face.vt_indices[2] < texcoords.size()) uv2 = texcoords[face.vt_indices[2]];
     }
+    // Step 2: Transform to clip space (homogeneous); attributes travel with the polygon
     InplaceVector<ClipVertex, 9> polygon = {
         ClipVertex{ .position_clip = camera.world_to_clip(v0, aspect_ratio), .colour = vertex_color, .uv = uv0 },
         ClipVertex{ .position_clip = camera.world_to_clip(v1, aspect_ratio), .colour = vertex_color, .uv = uv1 },
         ClipVertex{ .position_clip = camera.world_to_clip(v2, aspect_ratio), .colour = vertex_color, .uv = uv2 }
     };
     
+    // Step 3: Sequentially clip against each frustum plane; bail out if polygon fully disappears
     polygon = ClipAgainstPlane(polygon, ClipPlane::LEFT);
     if (polygon.size() < 3) return {};
     
@@ -276,18 +305,22 @@ InplaceVector<ClipVertex, 9> Rasterizer::clip_triangle(const Camera& camera, con
     
     polygon = ClipAgainstPlane(polygon, ClipPlane::FAR);
     
+    // Step 4: Return final clipped polygon (may have 3–9 vertices)
     return polygon;
 }
 
+// Shade a fragment: perspective-correct interpolation of UVs and base color modulation
 Colour Rasterizer::sample_texture(const Face& face, const glm::vec3& bary,
                                   const ScreenNdcCoord& v0, const ScreenNdcCoord& v1, const ScreenNdcCoord& v2) noexcept {
     glm::vec3 base_color;
     
+    // Step 1: If textured, reconstruct UV with 1/w weighting to avoid affine distortion
     if (face.material.texture) {
         FloatType inv_w = bary.x * v0.inv_w + bary.y * v1.inv_w + bary.z * v2.inv_w;
         FloatType u = (bary.x * v0.uv.x * v0.inv_w + bary.y * v1.uv.x * v1.inv_w + bary.z * v2.uv.x * v2.inv_w) / inv_w;
         FloatType v = (bary.x * v0.uv.y * v0.inv_w + bary.y * v1.uv.y * v1.inv_w + bary.z * v2.uv.y * v2.inv_w) / inv_w;
         
+        // Step 2: Sample texture and modulate by material albedo
         Colour tex_sample = face.material.texture->sample(u, v);
         base_color = glm::vec3(
             (tex_sample.red / 255.0f) * face.material.base_color.r,
@@ -295,9 +328,11 @@ Colour Rasterizer::sample_texture(const Face& face, const glm::vec3& bary,
             (tex_sample.blue / 255.0f) * face.material.base_color.b
         );
     } else {
+        // Step 2 (no texture): use flat material base color
         base_color = face.material.base_color;
     }
     
+    // Step 3: Convert to 8-bit colour for the backbuffer
     return Colour{
         .red = static_cast<std::uint8_t>(std::clamp(base_color.r * 255.0f, 0.0f, 255.0f)),
         .green = static_cast<std::uint8_t>(std::clamp(base_color.g * 255.0f, 0.0f, 255.0f)),
@@ -306,6 +341,7 @@ Colour Rasterizer::sample_texture(const Face& face, const glm::vec3& bary,
 }
 
 
+// Convert NDC [-1,1] to pixel coordinates; store 1/w for perspective correction downstream
 ScreenNdcCoord Rasterizer::ndc_to_screen(const glm::vec3& ndc, const glm::vec2& uv, FloatType w) const noexcept {
     return ScreenNdcCoord{
         .x = (ndc.x + 1.0f) * 0.5f * width_,

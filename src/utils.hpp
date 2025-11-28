@@ -28,14 +28,13 @@ constexpr FloatType ComputeInvZndc(std::array<FloatType, 3> bary, std::array<Flo
            bary[2] / vertices_z_ndc[2];
 }
 
-// Container Utilities (InplaceVector)
+// InplaceVector Container
 // ----------------------------------------------------------------------------
 // Rationale: std::inplace_vector is standardized in C++26 (late C++23). Our
 // build targets C++20/partial C++23, so this lightweight backport exists to
 // keep small, fixed-capacity arrays on the stack. That avoids heap traffic and
 // fragmentation in tight loops (e.g., clipping, micro-partitioning), improving
 // cache locality and deterministic performance.
-// ============================================================================
 
 template<typename T, std::size_t N>
 class InplaceVector {
@@ -50,12 +49,12 @@ public:
     constexpr void push_back(const T& value) noexcept {
         assert(size_ < N);
         new (&data_[size_ * sizeof(T)]) T(value);
-        ++size_;
+        size_++;
     }
     constexpr void emplace_back(T&& value) noexcept {
         assert(size_ < N);
         new (&data_[size_ * sizeof(T)]) T(std::move(value));
-        ++size_;
+        size_++;
     }
     constexpr std::size_t size() const noexcept { return size_; }
     constexpr T& operator[](std::size_t index) noexcept { return *reinterpret_cast<T*>(&data_[index * sizeof(T)]); }
