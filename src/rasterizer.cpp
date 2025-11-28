@@ -158,7 +158,7 @@ void Rasterizer::rasterized_render(
                 static_cast<std::int64_t>(std::ceil(std::max(x01, x02))), static_cast<std::int64_t>(width - 1));
             for (std::int64_t x = start_x; x <= end_x; x++) {
                 FloatType x_center = static_cast<FloatType>(x) + 0.5f;
-                glm::vec3 bary = CalculateBarycentric({v0.x, v0.y}, {v1.x, v1.y}, {v2.x, v2.y}, {x_center, y_center});
+                glm::vec3 bary = Barycentric({v0.x, v0.y}, {v1.x, v1.y}, {v2.x, v2.y}, {x_center, y_center});
                 if (bary.x >= 0.0f && bary.y >= 0.0f && bary.z >= 0.0f) {
                     Colour colour = sample_texture(face, bary, v0, v1, v2);
                     FloatType inv_z = ComputeInvZndc(
@@ -183,7 +183,7 @@ void Rasterizer::rasterized_render(
                 static_cast<std::int64_t>(std::ceil(std::max(x12, x02))), static_cast<std::int64_t>(width - 1));
             for (std::int64_t x = start_x; x <= end_x; x++) {
                 FloatType x_center = static_cast<FloatType>(x) + 0.5f;
-                glm::vec3 bary = CalculateBarycentric({v0.x, v0.y}, {v1.x, v1.y}, {v2.x, v2.y}, {x_center, y_center});
+                glm::vec3 bary = Barycentric({v0.x, v0.y}, {v1.x, v1.y}, {v2.x, v2.y}, {x_center, y_center});
                 if (bary.x >= 0.0f && bary.y >= 0.0f && bary.z >= 0.0f) {
                     Colour colour = sample_texture(face, bary, v0, v1, v2);
                     FloatType inv_z = ComputeInvZndc(

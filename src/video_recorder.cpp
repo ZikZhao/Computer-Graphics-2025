@@ -1,7 +1,9 @@
 #include "video_recorder.hpp"
 
 #include <cstdlib>
+#include <cassert>
 #include <iostream>
+#include <format>
 
 VideoRecorder::VideoRecorder(const std::vector<uint32_t>& pixel_buffer, size_t width, size_t height)
     : pixel_buffer_(pixel_buffer), recording_(false), frame_count_(0), width_(width), height_(height) {}
@@ -10,19 +12,16 @@ VideoRecorder::~VideoRecorder() = default;
 
 void VideoRecorder::start_recording() {
     // Open Y4M stream and initialize recording state
-    if (recording_) {
-        std::cout << "Already recording!" << std::endl;
-        return;
-    }
+    assert(!recording_ && "Recording is already in progress");
     file_stream_.open(Y4MFilename, std::ios::binary | std::ios::out);
     if (!file_stream_.is_open()) {
-        std::cerr << "Failed to open file for recording: " << Y4MFilename << std::endl;
+        std::cerr << "[Recording] Failed to open file for recording: " << Y4MFilename << std::endl;
         return;
     }
     recording_ = true;
     frame_count_ = 0;
     write_header();
-    std::cout << "Started recording to " << Y4MFilename << std::endl;
+    std::cout << std::format("[Recording] Started recording to {}\n", Y4MFilename);
 }
 
 void VideoRecorder::stop_recording() {
@@ -30,8 +29,7 @@ void VideoRecorder::stop_recording() {
     if (!recording_) return;
     recording_ = false;
     file_stream_.close();
-    std::cout << "Stopped recording. Captured " << frame_count_ << " frames." << std::endl;
-    std::cout << "Converting to MP4..." << std::endl;
+    std::cout << std::format("[Recording] Stopped recording, converting to MP4 | Captured {} Frames\n", frame_count_);
     conversion_thread_ = std::jthread([this]() { convert_to_mp4(); });
 }
 
@@ -95,13 +93,12 @@ void VideoRecorder::convert_to_mp4() {
 #else
     std::string null_device = "/dev/null";
 #endif
-    std::string command =
-        std::string("ffmpeg -y -i ") + Y4MFilename + " " + MP4Filename + " > " + null_device + " 2>&1";
+    std::string command = std::format("ffmpeg -y -i {} {} > {} 2>&1", Y4MFilename, MP4Filename, null_device);
     int result = std::system(command.c_str());
     if (result == 0) {
         std::ignore = std::system((std::string("rm ") + Y4MFilename).c_str());
-        std::cout << "Video saved as " << MP4Filename << std::endl;
+        std::cout << std::format("[Recording] Video saved as {}\n", MP4Filename);
     } else {
-        std::cerr << "Failed to convert to MP4. Make sure ffmpeg is installed." << std::endl;
+        std::cerr << "[Recording] Failed to convert to MP4. Make sure ffmpeg is installed.\n";
     }
 }

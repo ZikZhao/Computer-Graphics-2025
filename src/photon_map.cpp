@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <format>
+#include <chrono>
 
 PhotonMap::PhotonMap(const World& world) : world_(world) {
     worker_thread_ = std::jthread([this]() { trace_photons(); });
@@ -65,11 +67,6 @@ std::size_t PhotonMap::total_photons() const noexcept {
 
 void PhotonMap::trace_photons() {
     const auto& area_lights = world_.area_lights();
-    if (area_lights.empty()) {
-        std::cerr << "PhotonMap: No area lights found, skipping photon tracing\n";
-        is_ready_.store(true, std::memory_order_release);
-        return;
-    }
 
     // Find all transparent (refractive) objects in the scene and compute global AABB
     std::vector<const Face*> transparent_faces;
@@ -85,14 +82,17 @@ void PhotonMap::trace_photons() {
         }
     }
 
-    if (transparent_faces.empty()) {
-        std::cout << "PhotonMap: No transparent objects found, skipping photon emission\n";
+    if (area_lights.empty() || transparent_faces.empty()) {
+        auto end_time = std::chrono::steady_clock::now();
+        std::cout << std::format("[PhotonMap] No Emissive or Refractive Faces\n");
         is_ready_.store(true, std::memory_order_release);
         return;
     }
 
-    std::cout << "PhotonMap: Found " << transparent_faces.size() << " transparent faces\n";
-    std::cout << "PhotonMap: Emitting photons from " << area_lights.size() << " area lights\n";
+    std::cout << std::format("[PhotonMap] Start Tracing: {} Emissive Faces | {} Refractive Faces\n", 
+                             area_lights.size(), transparent_faces.size());
+                             
+    auto start_time = std::chrono::steady_clock::now();
 
     glm::vec3 target_center = (aabb_min + aabb_max) * 0.5f;
     FloatType target_radius = glm::length(aabb_max - target_center);
@@ -137,8 +137,12 @@ void PhotonMap::trace_photons() {
         photons_emitted += photons_for_light;
     }
 
-    std::cout << "PhotonMap: Emitted " << photons_emitted << " photons\n";
-    std::cout << "PhotonMap: Photon tracing complete. Total photons stored: " << total_photons() << "\n";
+    auto end_time = std::chrono::steady_clock::now();
+    std::chrono::duration<double> elapsed = end_time - start_time;
+    double percentage = photons_emitted > 0 ? (static_cast<double>(total_photons()) / photons_emitted) * 100.0 : 0.0;
+    
+    std::cout << std::format("[PhotonMap] End Tracing: Stored {} / {} ({:.1f}%) | Time: {:#.3g}s\n", 
+                             total_photons(), photons_emitted, percentage, elapsed.count());
 
     is_ready_.store(true, std::memory_order_release);
 }

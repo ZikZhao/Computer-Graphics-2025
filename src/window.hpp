@@ -32,6 +32,7 @@ public:
     using KeyState = std::array<bool, SDL_NUM_SCANCODES>;
     using KeyHandler = std::function<void(const KeyState&, float)>;
     using MouseHandler = std::function<void(int, int, float)>;
+    using ScrollHandler = std::function<void(int)>;
 
 private:
     // SDL components
@@ -74,6 +75,7 @@ private:
         bool time_initialized = false;
     };
     std::vector<MouseBinding> mouse_bindings_;
+    std::vector<ScrollHandler> scroll_handlers_;
     size_t next_event_id_ = 0;
 
     // Helper methods
@@ -118,6 +120,12 @@ public:
      * @param handler Callback receiving xrel, yrel, dt.
      */
     void register_mouse(Uint8 button, Trigger trigger, MouseHandler handler) noexcept;
+
+    /**
+     * @brief Registers a scroll handler.
+     * @param handler Callback receiving y_offset.
+     */
+    void register_scroll(ScrollHandler handler) noexcept;
 
     // Main loop methods
     /** @brief Polls SDL events and dispatches registered handlers. */

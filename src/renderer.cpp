@@ -87,6 +87,22 @@ void Renderer::render() noexcept {
         depth_of_field_render();
         break;
     }
+
+    // FPS counter
+    static std::uint32_t fps = 0;
+    static auto last_print = std::chrono::steady_clock::now();
+
+    fps++;
+    auto now = std::chrono::steady_clock::now();
+    std::chrono::duration<double> elapsed = now - last_print;
+    if (elapsed >= std::chrono::seconds(1)) {
+        std::cout << std::format(
+            "[Renderer] FPS: {:#.3g} | Avg Frame Time: {:#.3g} ms\n",
+            static_cast<double>(fps) / elapsed.count(), 
+            elapsed.count() / static_cast<double>(fps) * 1000.0);
+        fps = 0;
+        last_print = now;
+    }
 }
 
 void Renderer::reset_accumulation() noexcept {

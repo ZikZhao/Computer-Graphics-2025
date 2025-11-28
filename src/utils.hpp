@@ -135,7 +135,7 @@ inline bool IntersectRayTriangle(
  * @param p Point to evaluate.
  * @return Barycentric weights (w0, w1, w2) that sum to 1.
  */
-inline glm::vec3 CalculateBarycentric(glm::vec2 v0, glm::vec2 v1, glm::vec2 v2, glm::vec2 p) noexcept {
+inline glm::vec3 Barycentric(glm::vec2 v0, glm::vec2 v1, glm::vec2 v2, glm::vec2 p) noexcept {
     glm::vec2 e0 = v1 - v0;
     glm::vec2 e1 = v2 - v0;
     glm::vec2 e2 = p - v0;

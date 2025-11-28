@@ -10,10 +10,7 @@
 #include "photon_map.hpp"
 
 RayTracer::RayTracer(const World& world) : world_(world) {
-    // Initialize photon map (starts background thread automatically)
-    std::cout << "RayTracer: Initializing photon map for caustics..." << std::endl;
     photon_map_ = std::make_unique<PhotonMap>(world);
-    std::cout << "RayTracer: Photon map initialized (computing in background)" << std::endl;
 }
 
 ColourHDR RayTracer::render_pixel(

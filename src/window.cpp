@@ -70,6 +70,10 @@ void Window::register_mouse(Uint8 button, Trigger trigger, MouseHandler handler)
         .time_initialized = false});
 }
 
+void Window::register_scroll(ScrollHandler handler) noexcept {
+    scroll_handlers_.push_back(handler);
+}
+
 bool Window::process_events() noexcept {
     // Reset per-frame input state, then drain SDL event queue
     SDL_Event event;
@@ -123,6 +127,17 @@ bool Window::process_events() noexcept {
             mouse_motion_this_frame_ = true;
             mouse_xrel_ += event.motion.xrel;
             mouse_yrel_ += event.motion.yrel;
+        }
+
+        // Mouse wheel scrolling
+        if (event.type == SDL_MOUSEWHEEL) {
+            int y = event.wheel.y;
+            if (event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) {
+                y *= -1;
+            }
+            for (auto& handler : scroll_handlers_) {
+                handler(y);
+            }
         }
     }
 

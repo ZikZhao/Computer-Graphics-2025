@@ -84,13 +84,39 @@ int main(int argc, char* argv[]) {
     window.register_key({SDL_SCANCODE_P}, Window::Trigger::ANY_JUST_PRESSED, [&](const Window::KeyState&, float) {
         if (renderer.is_photon_map_ready()) {
             renderer.set_caustics_enabled(!renderer.caustics_enabled());
-            std::cout << "Caustics (photon mapping): " << (renderer.caustics_enabled() ? "ENABLED" : "DISABLED")
-                      << std::endl;
+            std::cout << std::format("[PhotonMap] Caustics {}\n", (renderer.caustics_enabled() ? "ENABLED" : "DISABLED"));
             renderer.reset_accumulation();
         } else {
-            std::cout << "Photon map not ready yet, please wait..." << std::endl;
+            std::cout << "[PhotonMap] Caustics photon map is not ready yet" << std::endl;
         }
     });
+
+    // Aperture control (+/-)
+    window.register_key(
+        {SDL_SCANCODE_EQUALS, SDL_SCANCODE_MINUS},
+        Window::Trigger::ANY_PRESSED_NO_MODIFIER,
+        [&](const Window::KeyState& ks, float) {
+            FloatType current_aperture = renderer.aperture_size();
+            constexpr FloatType step = 0.01f;
+            FloatType new_aperture = current_aperture;
+
+            if (ks[SDL_SCANCODE_EQUALS]) {
+                new_aperture += step;
+            }
+            if (ks[SDL_SCANCODE_MINUS]) {
+                new_aperture -= step;
+            }
+
+            // Clamp values
+            if (new_aperture < 0.0f) new_aperture = 0.0f;
+            if (new_aperture > 2.0f) new_aperture = 2.0f;
+
+            if (std::abs(new_aperture - current_aperture) > 0.0001f) {
+                renderer.set_aperture_size(new_aperture);
+                std::cout << std::format("[DepthOfField] Aperture Size: {:.2f}\n", new_aperture);
+                renderer.reset_accumulation();
+            }
+        });
 
     // Screenshot save (Ctrl+S)
     window.register_key(
@@ -99,7 +125,7 @@ int main(int argc, char* argv[]) {
         [&](const Window::KeyState& ks, float) {
             window.save_ppm("screenshot.ppm");
             window.save_bmp("screenshot.bmp");
-            std::cout << "Screenshot saved as screenshot.ppm and screenshot.bmp" << std::endl;
+            std::cout << "[Screenshot] Saved as screenshot.ppm and screenshot.bmp\n";
         });
 
     window.register_key(
@@ -108,7 +134,7 @@ int main(int argc, char* argv[]) {
         [&](const Window::KeyState& ks, float) {
             window.save_ppm("screenshot.ppm");
             window.save_bmp("screenshot.bmp");
-            std::cout << "Screenshot saved as screenshot.ppm and screenshot.bmp" << std::endl;
+            std::cout << "[Screenshot] Saved as screenshot.ppm and screenshot.bmp\n";
         });
 
     // Video recording toggle (Ctrl+Shift+S)
@@ -143,8 +169,22 @@ int main(int argc, char* argv[]) {
         renderer.reset_accumulation();
     });
 
-    auto last_print = std::chrono::steady_clock::now();
-    std::size_t fps = 0;
+    // Focal distance control via scroll
+    window.register_scroll([&](int y_offset) {
+        if (y_offset == 0) return;
+        FloatType current_fd = renderer.focal_distance();
+        FloatType step = 0.5f;
+        FloatType new_fd = current_fd + (y_offset * step);
+        
+        // Clamp to ensure it doesn't go below 1.0
+        if (new_fd < 1.0f) new_fd = 1.0f;
+        
+        if (std::abs(new_fd - current_fd) > 0.0001f) {
+            renderer.set_focal_distance(new_fd);
+            std::cout << std::format("[DepthOfField] Focal Distance: {:.2f}\n", new_fd);
+            renderer.reset_accumulation();
+        }
+    });
 
     while (true) {
         // Advance any orbit animation and render the frame
@@ -160,16 +200,5 @@ int main(int argc, char* argv[]) {
 
         // Present backbuffer
         window.update();
-
-        // FPS counter
-        fps++;
-        auto now = std::chrono::steady_clock::now();
-        std::chrono::duration<double> elapsed = now - last_print;
-        if (elapsed >= std::chrono::seconds(1)) {
-            std::cout << "FPS: " << std::fixed << std::setprecision(1) << static_cast<double>(fps / elapsed.count())
-                      << std::endl;
-            fps = 0;
-            last_print = now;
-        }
     }
 }

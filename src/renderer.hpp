@@ -96,6 +96,12 @@ public:
     /** @brief Indicates whether the photon map is ready. */
     [[nodiscard]] bool is_photon_map_ready() const noexcept { return raytracer_ && raytracer_->is_photon_map_ready(); }
 
+    [[nodiscard]] FloatType focal_distance() const noexcept { return focal_distance_; }
+    void set_focal_distance(FloatType d) noexcept { focal_distance_ = d; }
+
+    [[nodiscard]] FloatType aperture_size() const noexcept { return aperture_size_; }
+    void set_aperture_size(FloatType size) noexcept { aperture_size_ = size; }
+
     [[nodiscard]] int get_width() const noexcept { return rasterizer_->get_width(); }
     [[nodiscard]] int get_height() const noexcept { return rasterizer_->get_height(); }
 
