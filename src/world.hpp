@@ -262,6 +262,10 @@ public:
     /** @brief Loads a text scene file into this model. */
     void load_scene_txt(std::string filename);
     friend class SceneLoader;
+    /** @brief Number of objects in the model. */
+    [[nodiscard]] std::size_t object_count() const noexcept { return objects_.size(); }
+    /** @brief Number of materials in the model. */
+    [[nodiscard]] std::size_t material_count() const noexcept { return materials_.size(); }
     /** @brief Flattened faces for iteration. */
     [[nodiscard]] const std::vector<Face>& all_faces() const noexcept { return all_faces_; }
     /** @brief Shared vertex positions. */
@@ -308,7 +312,7 @@ private:
 public:
     BVHAccelerator() noexcept = default;
     /** @brief Returns true if no nodes are built. */
-    [[nodiscard]] bool empty() const noexcept;
+    [[nodiscard]] bool empty() const noexcept { return nodes_.empty(); }
     /** @brief Binds vertex array used by intersection. */
     void set_vertices(const std::vector<glm::vec3>& verts) noexcept;
     /** @brief Binds texture coordinate array. */
@@ -355,16 +359,16 @@ public:
      */
     void load_files(const std::vector<std::string>& filenames);
     // Accessors for Renderer
-    [[nodiscard]] const std::vector<Model>& models() const noexcept;
-    [[nodiscard]] const std::vector<Face>& all_faces() const noexcept;
-    [[nodiscard]] const std::vector<glm::vec3>& all_vertices() const noexcept;
-    [[nodiscard]] const std::vector<glm::vec2>& all_texcoords() const noexcept;
-    [[nodiscard]] const std::vector<glm::vec3>& all_vertex_normals() const noexcept;
-    [[nodiscard]] const std::vector<glm::vec3>& all_vertex_normals_by_vertex() const noexcept;
+    [[nodiscard]] const std::vector<Model>& models() const noexcept { return models_; }
+    [[nodiscard]] const std::vector<Face>& all_faces() const noexcept { return all_faces_; }
+    [[nodiscard]] const std::vector<glm::vec3>& all_vertices() const noexcept { return all_vertices_; }
+    [[nodiscard]] const std::vector<glm::vec2>& all_texcoords() const noexcept { return all_texcoords_; }
+    [[nodiscard]] const std::vector<glm::vec3>& all_vertex_normals() const noexcept { return all_vertex_normals_; }
+    [[nodiscard]] const std::vector<glm::vec3>& all_vertex_normals_by_vertex() const noexcept { return all_vertex_normals_by_vertex_; }
     /** @brief HDR environment map accessor. */
-    [[nodiscard]] const EnvironmentMap& env_map() const noexcept;
+    [[nodiscard]] const EnvironmentMap& env_map() const noexcept { return env_map_; }
     /** @brief List of emissive faces (area lights). */
-    [[nodiscard]] const std::vector<const Face*>& area_lights() const noexcept;
+    [[nodiscard]] const std::vector<const Face*>& area_lights() const noexcept { return emissive_faces_; }
     /** @brief BVH accelerator accessor. */
-    [[nodiscard]] const BVHAccelerator& accelerator() const noexcept;
+    [[nodiscard]] const BVHAccelerator& accelerator() const noexcept { return accelerator_; }
 };

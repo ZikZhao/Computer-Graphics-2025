@@ -5,7 +5,7 @@
 Window::Window(int w, int h, bool fullscreen) noexcept : width_(w), height_(h), pixel_buffer_(w * h) {
     // Initialize SDL video subsystem
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
-        std::cerr << std::format("[System] Could not initialise SDL: {}\n", SDL_GetError());
+        std::cerr << std::format("[SDL] Could not initialise SDL: {}\n", SDL_GetError());
         std::terminate();
     }
 
@@ -16,7 +16,7 @@ Window::Window(int w, int h, bool fullscreen) noexcept : width_(w), height_(h), 
     int anywhere = SDL_WINDOWPOS_UNDEFINED;
     window_ = SDL_CreateWindow("COMS30020", anywhere, anywhere, width_, height_, flags);
     if (!window_) {
-        std::cerr << std::format("[System] Could not set video mode: {}\n", SDL_GetError());
+        std::cerr << std::format("[SDL] Could not set video mode: {}\n", SDL_GetError());
         std::terminate();
     }
 
@@ -24,7 +24,7 @@ Window::Window(int w, int h, bool fullscreen) noexcept : width_(w), height_(h), 
     flags = SDL_RENDERER_SOFTWARE;
     renderer_ = SDL_CreateRenderer(window_, -1, flags);
     if (!renderer_) {
-        std::cerr << std::format("[System] Could not create renderer: {}\n", SDL_GetError());
+        std::cerr << std::format("[SDL] Could not create renderer: {}\n", SDL_GetError());
         std::terminate();
     }
 
@@ -35,7 +35,7 @@ Window::Window(int w, int h, bool fullscreen) noexcept : width_(w), height_(h), 
     int pixel_format = SDL_PIXELFORMAT_ARGB8888;
     texture_ = SDL_CreateTexture(renderer_, pixel_format, SDL_TEXTUREACCESS_STATIC, width_, height_);
     if (!texture_) {
-        std::cerr << std::format("[System] Could not allocate texture: {}\n", SDL_GetError());
+        std::cerr << std::format("[SDL] Could not allocate texture: {}\n", SDL_GetError());
         std::terminate();
     }
 }
@@ -359,7 +359,7 @@ std::uint32_t Window::operator[](const std::pair<int, int>& xy) const noexcept {
 
 void Window::clear_pixels() noexcept { std::fill(pixel_buffer_.begin(), pixel_buffer_.end(), 0); }
 
-const std::vector<uint32_t>& Window::get_pixel_buffer() const noexcept { return pixel_buffer_; }
+
 
 void Window::save_ppm(const std::string& filename) const {
     std::ofstream output_stream(filename, std::ofstream::out);

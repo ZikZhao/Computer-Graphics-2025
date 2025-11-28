@@ -141,7 +141,7 @@ public:
     /** @brief Const pixel read by (x,y). */
     [[nodiscard]] std::uint32_t operator[](const std::pair<int, int>& xy) const noexcept;
     /** @brief Returns the underlying pixel buffer. */
-    [[nodiscard]] const std::vector<uint32_t>& get_pixel_buffer() const noexcept;
+    [[nodiscard]] const std::vector<uint32_t>& get_pixel_buffer() const noexcept { return pixel_buffer_; }
 
     // File operations
     /** @brief Saves the backbuffer as raw PPM (P6) file.

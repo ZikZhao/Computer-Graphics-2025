@@ -83,14 +83,15 @@ void PhotonMap::trace_photons() {
     }
 
     if (area_lights.empty() || transparent_faces.empty()) {
-        auto end_time = std::chrono::steady_clock::now();
-        std::cout << std::format("[PhotonMap] No Emissive or Refractive Faces\n");
+        std::cout << "[PhotonMap] No Emissive or Refractive Faces\n";
         is_ready_.store(true, std::memory_order_release);
         return;
     }
 
-    std::cout << std::format("[PhotonMap] Start Tracing: {} Emissive Faces | {} Refractive Faces\n", 
-                             area_lights.size(), transparent_faces.size());
+    std::cout << std::format(
+        "[PhotonMap] Start Tracing: {} Emissive Faces | {} Refractive Faces\n", 
+        area_lights.size(),
+        transparent_faces.size());
                              
     auto start_time = std::chrono::steady_clock::now();
 

@@ -30,7 +30,7 @@ public:
     /** @brief Appends the current frame to the Y4M stream. */
     void capture_frame();
     /** @brief Returns true when recording is active. */
-    bool is_recording() const noexcept;
+    [[nodiscard]] bool is_recording() const noexcept { return recording_; }
 
 private:
     const std::vector<uint32_t>& pixel_buffer_;

@@ -48,8 +48,6 @@ void VideoRecorder::capture_frame() {
     frame_count_++;
 }
 
-bool VideoRecorder::is_recording() const noexcept { return recording_; }
-
 void VideoRecorder::write_header() {
     // Minimal Y4M header describing resolution and format
     file_stream_ << "YUV4MPEG2 W" << width_ << " H" << height_ << " F30:1 Ip A1:1 C420jpeg\n";

@@ -6,6 +6,8 @@
 #include <limits>
 #include <numeric>
 #include <random>
+#include <iostream>
+#include <format>
 
 #include "../libs/stb_image.h"
 #include "scene_loader.hpp"
@@ -350,8 +352,6 @@ FloatType EnvironmentMap::ComputeAutoExposure(const std::vector<ColourHDR>& hdr_
 
     return auto_exposure * 0.5f;
 }
-
-bool BVHAccelerator::empty() const noexcept { return nodes_.empty(); }
 
 void BVHAccelerator::set_vertices(const std::vector<glm::vec3>& verts) noexcept { vertices_ = &verts; }
 void BVHAccelerator::set_texcoords(const std::vector<glm::vec2>& uvs) noexcept { texcoords_ = &uvs; }
@@ -798,6 +798,22 @@ void World::load_files(const std::vector<std::string>& filenames) {
         }
     }
 
+    std::size_t total_objects = 0;
+    std::size_t total_materials = 0;
+    for (const auto& model : models_) {
+        total_objects += model.object_count();
+        total_materials += model.material_count();
+    }
+
+    std::cout << std::format(
+        "[World] All models loaded: Object: {} | Material: {} | Vertex: {} | Vertex Normal: {} | Face: {} | Environment: {}\n",
+        total_objects,
+        total_materials,
+        all_vertices_.size(),
+        all_vertex_normals_.size() + all_vertex_normals_by_vertex_.size(),
+        all_faces_.size(),
+        env_map_.is_loaded());
+
     emissive_faces_.clear();
     // Identify emissive faces (area lights)
     for (const auto& f : all_faces_) {
@@ -813,16 +829,3 @@ void World::load_files(const std::vector<std::string>& filenames) {
     // Build acceleration structure (BVH) over all faces
     accelerator_.build(all_faces_);
 }
-
-// World accessors
-const std::vector<Model>& World::models() const noexcept { return models_; }
-const std::vector<Face>& World::all_faces() const noexcept { return all_faces_; }
-const std::vector<glm::vec3>& World::all_vertices() const noexcept { return all_vertices_; }
-const std::vector<glm::vec2>& World::all_texcoords() const noexcept { return all_texcoords_; }
-const std::vector<glm::vec3>& World::all_vertex_normals() const noexcept { return all_vertex_normals_; }
-const std::vector<glm::vec3>& World::all_vertex_normals_by_vertex() const noexcept {
-    return all_vertex_normals_by_vertex_;
-}
-const EnvironmentMap& World::env_map() const noexcept { return env_map_; }
-const std::vector<const Face*>& World::area_lights() const noexcept { return emissive_faces_; }
-const BVHAccelerator& World::accelerator() const noexcept { return accelerator_; }
