@@ -1,5 +1,6 @@
 #include "rasterizer.hpp"
 #include "window.hpp"
+#include "math_utils.hpp"
 #include <algorithm>
 
 Rasterizer::Rasterizer(int width, int height)

@@ -10,6 +10,7 @@
 #include "renderer.hpp"
 #include "raytracer.hpp"
 #include "utils.hpp"
+#include "video_recorder.hpp"
 
 constexpr std::size_t WIDTH = 960;
 constexpr std::size_t HEIGHT = 540;

@@ -17,6 +17,7 @@
 #include <atomic>
 #include <thread>
 #include "utils.hpp"
+#include "math_utils.hpp"
 
 // Clipping planes for frustum
 enum class ClipPlane {

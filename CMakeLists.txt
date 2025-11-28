@@ -40,7 +40,8 @@ add_executable(CG-CW
         src/rasterizer.cpp
         src/renderer.cpp
         src/photon_map.cpp
-        src/scene_loader.cpp)
+        src/scene_loader.cpp
+        src/video_recorder.cpp)
 
 if (MSVC)
     target_compile_options(CG-CW
