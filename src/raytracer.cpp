@@ -134,23 +134,19 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
         } else {
             env_color = ColourHDR{ .red = 0.0f, .green = 0.0f, .blue = 0.0f };
         }
-        {
-            ColourHDR out = env_color * medium_absorption;
-            if (depth > 0) out = ClampRadiance(out, 10.0f);
-            return out;
-        }
+        ColourHDR out = env_color * medium_absorption;
+        if (depth > 0) out = ClampRadiance(out, 10.0f);
+        return out;
     }
     
     const std::vector<Face>& all_faces = world_.all_faces();
     const Face& face = all_faces[intersection.triangleIndex];
 
-    {
-        glm::vec3 Le = face.material.emission;
-        if (glm::length(Le) > 1e-6f) {
-            ColourHDR out = ColourHDR{ .red = Le.r, .green = Le.g, .blue = Le.b } * medium_absorption;
-            if (depth > 0) out = ClampRadiance(out, 10.0f);
-            return out;
-        }
+    glm::vec3 Le = face.material.emission;
+    if (glm::length(Le) > 1e-6f) {
+        ColourHDR out = ColourHDR{ .red = Le.r, .green = Le.g, .blue = Le.b } * medium_absorption;
+        if (depth > 0) out = ClampRadiance(out, 10.0f);
+        return out;
     }
     const auto& area_lights = world_.area_lights();
     
@@ -234,21 +230,17 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
             result_color = result_color + hdr_colour * ambient * direct_weight;
         }
         
-        {
-            ColourHDR out = result_color * medium_absorption;
-            if (depth > 0) out = ClampRadiance(out, 10.0f);
-            return out;
-        }
+        ColourHDR out = result_color * medium_absorption;
+        if (depth > 0) out = ClampRadiance(out, 10.0f);
+        return out;
     }
     
     glm::vec3 to_camera_hit = -ray_dir;
     
     ColourHDR shadow_color;
     bool backface_view_gate = false;
-    {
-        backface_view_gate = false;
-        shadow_color = ColourHDR{ .red = 1.0f, .green = 1.0f, .blue = 1.0f };
-    }
+    backface_view_gate = false;
+    shadow_color = ColourHDR{ .red = 1.0f, .green = 1.0f, .blue = 1.0f };
     
     ColourHDR hdr_colour = ColourHDR{ .red = intersection.color.r, .green = intersection.color.g, .blue = intersection.color.b };
     FloatType ambient = 0.025f;
@@ -361,11 +353,9 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
             .green = reflected_color.green * hdr_colour.green,
             .blue  = reflected_color.blue  * hdr_colour.blue
         };
-        {
-            ColourHDR out = direct_lighting * (1.0f - face.material.metallic) + metallic_reflection * face.material.metallic;
-            if (depth > 0) out = ClampRadiance(out, 10.0f);
-            return out;
-        }
+        ColourHDR out = direct_lighting * (1.0f - face.material.metallic) + metallic_reflection * face.material.metallic;
+        if (depth > 0) out = ClampRadiance(out, 10.0f);
+        return out;
     }
     
     ColourHDR caustics_contribution(0.0f, 0.0f, 0.0f);
@@ -384,11 +374,9 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
         caustics_contribution = caustics_contribution * 0.25f;
     }
     
-    {
-        ColourHDR out = (direct_lighting + caustics_contribution) * medium_absorption;
-        if (depth > 0) out = ClampRadiance(out, 10.0f);
-        return out;
-    }
+    ColourHDR out = (direct_lighting + caustics_contribution) * medium_absorption;
+    if (depth > 0) out = ClampRadiance(out, 10.0f);
+    return out;
 }
 
 HitRecord RayTracer::hit(const glm::vec3& ro, const glm::vec3& rd) const noexcept {

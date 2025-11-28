@@ -102,15 +102,15 @@ void Renderer::clear() noexcept {
 }
 
 void Renderer::wireframe_render() noexcept {
-    rasterizer_->draw_model_wireframe(world_.camera(), world_.all_faces(), world_.all_vertices(), window_, aspect_ratio_);
+    rasterizer_->draw_model_wireframe(world_.camera_, world_.all_faces(), world_.all_vertices(), window_, aspect_ratio_);
 }
 
 void Renderer::rasterized_render() noexcept {
-    rasterizer_->draw_model_rasterized(world_.camera(), world_.all_faces(), world_.all_vertices(), world_.all_texcoords(), window_, aspect_ratio_);
+    rasterizer_->draw_model_rasterized(world_.camera_, world_.all_faces(), world_.all_vertices(), world_.all_texcoords(), window_, aspect_ratio_);
 }
 
 void Renderer::raytraced_render() noexcept {
-    current_camera_ = &world_.camera();
+    current_camera_ = &world_.camera_;
     tile_counter_.store(0, std::memory_order_relaxed);
     glm::vec3 cur_pos = current_camera_->position_;
     FloatType cur_yaw = current_camera_->yaw_;
@@ -134,7 +134,7 @@ void Renderer::raytraced_render() noexcept {
 }
 
 void Renderer::depth_of_field_render() noexcept {
-    current_camera_ = &world_.camera();
+    current_camera_ = &world_.camera_;
     tile_counter_.store(0, std::memory_order_relaxed);
     rendering_frame_count_ = frame_count_ + 1;
     
