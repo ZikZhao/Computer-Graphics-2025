@@ -77,8 +77,6 @@ private:
     // Main photon tracing worker (runs in jthread)
     void trace_photons();
     
-    // Emit photons from legacy point light toward transparent objects
-    void emit_photons_to_object(const Face& target_face, int num_photons);
 
     // Emit photons from an area light toward transparent targets
     void emit_photons_from_area_light(const Face& light_face, const glm::vec3& target_center, FloatType target_radius, int num_photons);

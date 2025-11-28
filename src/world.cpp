@@ -326,7 +326,7 @@ FloatType EnvironmentMap::ComputeAutoExposure(const std::vector<ColourHDR>& hdr_
 }
 
 // World implementation
-World::World() : light_position_(0.0f, 0.0f, 0.0f), has_light_(false) {}
+World::World() {}
 
 void World::load_files(const std::vector<std::string>& filenames) {
     for (const auto& filename : filenames) {
@@ -400,17 +400,7 @@ void World::load_files(const std::vector<std::string>& filenames) {
         }
     }
     
-    glm::vec3 light_pos(0.0f, 0.0f, 0.0f);
-    bool found_light = false;
-    for (const auto& model : models_) {
-        if (model.has_light()) {
-            light_pos = model.light_position();
-            found_light = true;
-            break;
-        }
-    }
-    const_cast<glm::vec3&>(light_position_) = light_pos;
-    const_cast<bool&>(has_light_) = found_light;
+    
     
     std::size_t total_vertices = 0;
     std::size_t total_texcoords = 0;

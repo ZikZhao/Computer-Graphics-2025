@@ -218,8 +218,6 @@ private:
     std::vector<glm::vec2> texture_coords_;  // vt coordinates from OBJ
     std::vector<glm::vec3> vertex_normals_;  // vn normals from OBJ
     std::vector<glm::vec3> vertex_normals_by_vertex_;
-    bool has_light_ = false;
-    glm::vec3 light_position_ = glm::vec3(0.0f, 0.0f, 0.0f);
 public:
     Model() noexcept = default;
     void load_file(std::string filename);
@@ -231,10 +229,7 @@ public:
     const std::vector<glm::vec2>& texture_coords() const noexcept { return texture_coords_; }
     const std::vector<glm::vec3>& vertex_normals() const noexcept { return vertex_normals_; }
     const std::vector<glm::vec3>& vertex_normals_by_vertex() const noexcept { return vertex_normals_by_vertex_; }
-    // Light accessors
-    bool has_light() const noexcept { return has_light_; }
-    const glm::vec3& light_position() const noexcept { return light_position_; }
-private:
+    private:
     void load_materials(std::string filename);
     Texture load_texture(std::string filename);
     void cache_faces() noexcept;  // Build all_faces_ from objects_
@@ -532,10 +527,6 @@ private:
     std::vector<glm::vec2> all_texcoords_;
     std::vector<glm::vec3> all_vertex_normals_;
     std::vector<glm::vec3> all_vertex_normals_by_vertex_;
-    const glm::vec3 light_position_;  // Immutable after loading
-    const bool has_light_;
-    FloatType light_intensity_ = 100.0f;  // Adjustable light intensity constant
-    static constexpr FloatType light_radius_ = 0.05f;  // Sphere light radius for soft shadows
     EnvironmentMap env_map_;  // HDR environment map
     std::vector<const Face*> emissive_faces_;
     BvhAccelerator accelerator_;
@@ -555,11 +546,6 @@ public:
     const std::vector<glm::vec2>& all_texcoords() const noexcept { return all_texcoords_; }
     const std::vector<glm::vec3>& all_vertex_normals() const noexcept { return all_vertex_normals_; }
     const std::vector<glm::vec3>& all_vertex_normals_by_vertex() const noexcept { return all_vertex_normals_by_vertex_; }
-    const glm::vec3& light_position() const noexcept { return light_position_; }
-    bool has_light() const noexcept { return has_light_; }
-    FloatType light_intensity() const noexcept { return light_intensity_; }
-    FloatType light_radius() const noexcept { return light_radius_; }
-    void set_light_intensity(FloatType intensity) noexcept { light_intensity_ = intensity; }
     const EnvironmentMap& env_map() const noexcept { return env_map_; }
     const std::vector<const Face*>& area_lights() const noexcept { return emissive_faces_; }
     const BvhAccelerator& accelerator() const noexcept { return accelerator_; }

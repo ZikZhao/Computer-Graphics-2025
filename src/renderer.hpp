@@ -30,7 +30,6 @@ private:
     const World& world_;
     Mode mode_ = Mode::RASTERIZED;
     FloatType gamma_ = 2.2f;
-    bool soft_shadows_enabled_ = false;
     bool caustics_enabled_ = false;
     FloatType focal_distance_ = 8.0f;
     FloatType aperture_size_ = 0.1f;
@@ -62,8 +61,6 @@ public:
     void set_mode(Mode m) noexcept { mode_ = m; }
     FloatType gamma() const noexcept { return gamma_; }
     void set_gamma(FloatType g) noexcept { gamma_ = g; }
-    bool soft_shadows_enabled() const noexcept { return soft_shadows_enabled_; }
-    void set_soft_shadows_enabled(bool e) noexcept { soft_shadows_enabled_ = e; }
     bool caustics_enabled() const noexcept { return caustics_enabled_; }
     void set_caustics_enabled(bool e) noexcept { caustics_enabled_ = e; }
     bool is_photon_map_ready() const noexcept { return raytracer_ && raytracer_->is_photon_map_ready(); }

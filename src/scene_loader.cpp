@@ -46,11 +46,6 @@ void SceneLoader::LoadObj(Model& model, const std::string& filename) {
             iss >> relative_path;
             std::string material_filename = (std::filesystem::path(filename).parent_path() / relative_path).string();
             model.load_materials(std::move(material_filename));
-        } else if (type == "l") {
-            FloatType x, y, z;
-            iss >> x >> y >> z;
-            model.light_position_ = glm::vec3(x, y, z);
-            model.has_light_ = true;
         } else if (type == "o") {
             std::string name;
             iss >> name;

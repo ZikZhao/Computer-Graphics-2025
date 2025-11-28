@@ -156,7 +156,7 @@ void Renderer::process_rows(int y0, int y1) noexcept {
                     ColourHDR hdr = raytracer_->render_pixel_dof(
                         camera, x, y, w, h,
                         focal_distance_, aperture_size_, dof_samples_,
-                        true, world_.light_intensity(), caustics_enabled_
+                        true, caustics_enabled_
                     );
                     pixel_accum = ColourHDR{
                         pixel_accum.red + hdr.red,
@@ -169,7 +169,7 @@ void Renderer::process_rows(int y0, int y1) noexcept {
                     uint32_t sub_seed = base_seed ^ (static_cast<uint32_t>(s) * 0x9e3779b9u);
                     ColourHDR hdr = raytracer_->render_pixel(
                         camera, x, y, w, h,
-                        true, world_.light_intensity(), caustics_enabled_, sample_index, sub_seed
+                        true, caustics_enabled_, sample_index, sub_seed
                     );
                     pixel_accum = ColourHDR{
                         pixel_accum.red + hdr.red,

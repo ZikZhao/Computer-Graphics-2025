@@ -76,8 +76,6 @@ int main(int argc, char *argv[]) {
 
     window.register_key({SDL_SCANCODE_G}, Window::Trigger::ANY_JUST_PRESSED,
         [&](const Window::KeyState&, float) { renderer.set_gamma((renderer.gamma() == 2.2f) ? 1.0f : 2.2f); });
-    window.register_key({SDL_SCANCODE_H}, Window::Trigger::ANY_JUST_PRESSED,
-        [&](const Window::KeyState&, float) { renderer.set_soft_shadows_enabled(!renderer.soft_shadows_enabled()); });
     window.register_key({SDL_SCANCODE_P}, Window::Trigger::ANY_JUST_PRESSED,
         [&](const Window::KeyState&, float) {
             if (renderer.is_photon_map_ready()) {

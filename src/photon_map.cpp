@@ -140,26 +140,6 @@ void PhotonMap::trace_photons() {
     is_ready_.store(true, std::memory_order_release);
 }
 
-void PhotonMap::emit_photons_to_object(const Face& target_face, int num_photons) {
-    const glm::vec3& light_pos = world_.light_position();
-    
-    // Compute face center as target point
-    glm::vec3 face_center = (world_.all_vertices()[target_face.v_indices[0]]
-                           + world_.all_vertices()[target_face.v_indices[1]]
-                           + world_.all_vertices()[target_face.v_indices[2]]) / 3.0f;
-    glm::vec3 to_face = glm::normalize(face_center - light_pos);
-    
-    // Emit photons in a cone toward the face
-    FloatType cone_angle = 15.0f * (std::numbers::pi / 180.0f);  // 15 degree cone
-    // Use reasonable photon power
-    glm::vec3 photon_power(world_.light_intensity() * 0.1f / static_cast<FloatType>(num_photons));
-    
-    for (int i = 0; i < num_photons; ++i) {
-        // Use Halton sequence for stratified sampling instead of random
-        glm::vec3 direction = SampleConeHalton(i, to_face, cone_angle);
-        trace_single_photon(light_pos, direction, photon_power, 0);
-    }
-}
 
 void PhotonMap::emit_photons_from_area_light(const Face& light_face, const glm::vec3& target_center, FloatType target_radius, int num_photons) {
     glm::vec3 e0 = world_.all_vertices()[light_face.v_indices[1]] - world_.all_vertices()[light_face.v_indices[0]];
