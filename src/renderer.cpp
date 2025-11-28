@@ -97,7 +97,7 @@ void Renderer::render() noexcept {
     std::chrono::duration<double> elapsed = now - last_print;
     if (elapsed >= std::chrono::seconds(1)) {
         std::cout << std::format(
-            "[Renderer] FPS: {:#.3g} | Avg Frame Time: {:#.3g} ms\n",
+            "[Renderer] FPS: {:#.3g} | Avg Frame Time: {:#.4g} ms\n",
             static_cast<double>(fps) / elapsed.count(), 
             elapsed.count() / static_cast<double>(fps) * 1000.0);
         fps = 0;

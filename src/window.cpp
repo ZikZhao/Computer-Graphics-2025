@@ -5,7 +5,7 @@
 Window::Window(int w, int h, bool fullscreen) noexcept : width_(w), height_(h), pixel_buffer_(w * h) {
     // Initialize SDL video subsystem
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
-        std::cerr << "Could not initialise SDL: " << SDL_GetError() << std::endl;
+        std::cerr << std::format("[System] Could not initialise SDL: {}\n", SDL_GetError());
         std::terminate();
     }
 
@@ -16,16 +16,15 @@ Window::Window(int w, int h, bool fullscreen) noexcept : width_(w), height_(h), 
     int anywhere = SDL_WINDOWPOS_UNDEFINED;
     window_ = SDL_CreateWindow("COMS30020", anywhere, anywhere, width_, height_, flags);
     if (!window_) {
-        std::cerr << "Could not set video mode: " << SDL_GetError() << std::endl;
+        std::cerr << std::format("[System] Could not set video mode: {}\n", SDL_GetError());
         std::terminate();
     }
 
     // Renderer bound to window (software for portability)
     flags = SDL_RENDERER_SOFTWARE;
-    // Alternative: SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC for hardware acceleration
     renderer_ = SDL_CreateRenderer(window_, -1, flags);
     if (!renderer_) {
-        std::cerr << "Could not create renderer: " << SDL_GetError() << std::endl;
+        std::cerr << std::format("[System] Could not create renderer: {}\n", SDL_GetError());
         std::terminate();
     }
 
@@ -36,7 +35,7 @@ Window::Window(int w, int h, bool fullscreen) noexcept : width_(w), height_(h), 
     int pixel_format = SDL_PIXELFORMAT_ARGB8888;
     texture_ = SDL_CreateTexture(renderer_, pixel_format, SDL_TEXTUREACCESS_STATIC, width_, height_);
     if (!texture_) {
-        std::cerr << "Could not allocate texture: " << SDL_GetError() << std::endl;
+        std::cerr << std::format("[System] Could not allocate texture: {}\n", SDL_GetError());
         std::terminate();
     }
 }
@@ -81,9 +80,9 @@ bool Window::process_events() noexcept {
     keys_pressed_this_frame_.clear();
     mouse_buttons_last_frame_ = mouse_buttons_this_frame_;
     mouse_buttons_updated_this_frame_.clear();
-    mouse_motion_this_frame_ = false;
     mouse_xrel_ = 0;
     mouse_yrel_ = 0;
+    mouse_scroll_ = 0;
     while (SDL_PollEvent(&event)) {
         if (event.type == SDL_QUIT || (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE) ||
             (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE)) {
@@ -124,26 +123,26 @@ bool Window::process_events() noexcept {
 
         // Accumulate relative motion for bound handlers
         if (event.type == SDL_MOUSEMOTION) {
-            mouse_motion_this_frame_ = true;
             mouse_xrel_ += event.motion.xrel;
             mouse_yrel_ += event.motion.yrel;
         }
 
         // Mouse wheel scrolling
         if (event.type == SDL_MOUSEWHEEL) {
-            int y = event.wheel.y;
-            if (event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) {
-                y *= -1;
-            }
-            for (auto& handler : scroll_handlers_) {
-                handler(y);
-            }
+            mouse_scroll_ = (event.wheel.y > 0) ? 1 : -1;
         }
     }
 
     // Dispatch registered input handlers
     process_key_bindings();
     process_mouse_bindings();
+    
+    if (mouse_scroll_ != 0) {
+        for (auto& handler : scroll_handlers_) {
+            handler(mouse_scroll_);
+        }
+    }
+
     return true;
 }
 
@@ -200,7 +199,20 @@ void Window::process_key_bindings() noexcept {
             }
         } else {
             if (check_key_trigger(binding)) {
-                binding.handler(keys_this_frame_, 0.0f);
+                // When handling JUST_PRESSED (or any non-continuous trigger), ensure the handler sees 
+                // keys that were pressed this frame even if they are currently released (e.g. pressed and released quickly).
+                // This is critical for long render frames where input polling is sparse.
+                if (binding.trigger == Trigger::ANY_JUST_PRESSED || binding.trigger == Trigger::ALL_JUST_PRESSED) {
+                    KeyState effective_keys = keys_this_frame_;
+                    for (auto k : keys_pressed_this_frame_) {
+                        if (k >= 0 && k < SDL_NUM_SCANCODES) {
+                            effective_keys[k] = true;
+                        }
+                    }
+                    binding.handler(effective_keys, 0.0f);
+                } else {
+                    binding.handler(keys_this_frame_, 0.0f);
+                }
             }
         }
     }
@@ -304,7 +316,7 @@ void Window::process_mouse_bindings() noexcept {
                     binding.last_time = now;
                     binding.time_initialized = true;
                     binding.first_motion = false;
-                } else if (mouse_motion_this_frame_) {
+                } else if (mouse_xrel_ != 0 || mouse_yrel_ != 0) {
                     if (!binding.time_initialized) {
                         binding.last_time = now;
                         binding.time_initialized = true;
@@ -320,7 +332,6 @@ void Window::process_mouse_bindings() noexcept {
             break;
         }
     }
-    mouse_motion_this_frame_ = false;
     mouse_xrel_ = 0;
     mouse_yrel_ = 0;
 }

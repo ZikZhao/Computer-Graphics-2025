@@ -54,7 +54,7 @@ private:
     std::unordered_set<Uint8> mouse_buttons_updated_this_frame_;
     int mouse_xrel_ = 0;
     int mouse_yrel_ = 0;
-    bool mouse_motion_this_frame_ = false;
+    int mouse_scroll_ = 0;
 
     // Event handling
     struct KeyBinding {

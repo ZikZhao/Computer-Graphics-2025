@@ -68,14 +68,25 @@ int main(int argc, char* argv[]) {
         {SDL_SCANCODE_1, SDL_SCANCODE_2, SDL_SCANCODE_3, SDL_SCANCODE_4},
         Window::Trigger::ANY_JUST_PRESSED,
         [&](const Window::KeyState& ks, float) {
-            if (ks[SDL_SCANCODE_1])
+            std::string_view mode_name;
+            if (ks[SDL_SCANCODE_1]) {
                 renderer.set_mode(Renderer::Mode::WIREFRAME);
-            else if (ks[SDL_SCANCODE_2])
+                mode_name = "WIREFRAME";
+            }
+            else if (ks[SDL_SCANCODE_2]) {
                 renderer.set_mode(Renderer::Mode::RASTERIZED);
-            else if (ks[SDL_SCANCODE_3])
+                mode_name = "RASTERIZED";
+            }
+            else if (ks[SDL_SCANCODE_3]) {
                 renderer.set_mode(Renderer::Mode::RAYTRACED);
-            else if (ks[SDL_SCANCODE_4])
+                mode_name = "RAYTRACED";
+            }
+            else if (ks[SDL_SCANCODE_4]) {
                 renderer.set_mode(Renderer::Mode::DEPTH_OF_FIELD);
+                mode_name = "DEPTH_OF_FIELD";
+            }
+            renderer.reset_accumulation();
+            std::cout << std::format("[Renderer] Mode set to {}\n", mode_name);
         });
 
     window.register_key({SDL_SCANCODE_G}, Window::Trigger::ANY_JUST_PRESSED, [&](const Window::KeyState&, float) {
@@ -128,26 +139,9 @@ int main(int argc, char* argv[]) {
             std::cout << "[Screenshot] Saved as screenshot.ppm and screenshot.bmp\n";
         });
 
+    // Video recording toggle (Ctrl+R)
     window.register_key(
-        {SDL_SCANCODE_RCTRL, SDL_SCANCODE_S},
-        Window::Trigger::ALL_JUST_PRESSED,
-        [&](const Window::KeyState& ks, float) {
-            window.save_ppm("screenshot.ppm");
-            window.save_bmp("screenshot.bmp");
-            std::cout << "[Screenshot] Saved as screenshot.ppm and screenshot.bmp\n";
-        });
-
-    // Video recording toggle (Ctrl+Shift+S)
-    window.register_key(
-        {SDL_SCANCODE_LCTRL, SDL_SCANCODE_LSHIFT, SDL_SCANCODE_S},
-        Window::Trigger::ALL_JUST_PRESSED,
-        [&](const Window::KeyState&, float) {
-            video_recorder.toggle_recording();
-            renderer.video_export_mode_ = video_recorder.is_recording();
-        });
-
-    window.register_key(
-        {SDL_SCANCODE_RCTRL, SDL_SCANCODE_RSHIFT, SDL_SCANCODE_S},
+        {SDL_SCANCODE_LCTRL, SDL_SCANCODE_R},
         Window::Trigger::ALL_JUST_PRESSED,
         [&](const Window::KeyState&, float) {
             video_recorder.toggle_recording();
@@ -173,12 +167,17 @@ int main(int argc, char* argv[]) {
     window.register_scroll([&](int y_offset) {
         if (y_offset == 0) return;
         FloatType current_fd = renderer.focal_distance();
-        FloatType step = 0.5f;
-        FloatType new_fd = current_fd + (y_offset * step);
-        
-        // Clamp to ensure it doesn't go below 1.0
+
+        // Handle 0 or very small case by forcing a base value
+        if (current_fd < 1.0f) current_fd = 1.0f;
+
+        // Logarithmic adjustment: multiply/divide by factor
+        constexpr FloatType factor = 1.1f;
+        FloatType new_fd = current_fd * std::pow(factor, static_cast<FloatType>(y_offset));
+
+        // Boundary safety
         if (new_fd < 1.0f) new_fd = 1.0f;
-        
+
         if (std::abs(new_fd - current_fd) > 0.0001f) {
             renderer.set_focal_distance(new_fd);
             std::cout << std::format("[DepthOfField] Focal Distance: {:.2f}\n", new_fd);
