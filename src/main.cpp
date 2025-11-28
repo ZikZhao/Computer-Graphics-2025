@@ -25,7 +25,7 @@ int main(int argc, char* argv[]) {
 
     // Initialize output window and rendering engines
     Window window(WIDTH, HEIGHT, false);
-    Renderer renderer(window, world);
+    Renderer renderer(world, window);
     VideoRecorder video_recorder(window.get_pixel_buffer(), WIDTH, HEIGHT);
 
     // Centralized input callbacks: movement and UI toggles

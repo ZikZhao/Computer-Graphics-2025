@@ -2,93 +2,94 @@
 #include <vector>
 
 #include "utils.hpp"
+#include "window.hpp"
 #include "world.hpp"
 
-class Window;
-
 /**
- * @brief CPU rasterizer for wireframe and textured triangle rendering.
+ * @brief Rasterizer for wireframe and textured triangle rendering.
+ *
+ * This class handles the CPU-based rendering pipeline, including:
+ * - Sutherland-Hodgman clipping against the view frustum.
+ * - Perspective projection and division.
+ * - Conversion to screen coordinates.
+ * - Wireframe rendering using DDA.
+ * - Textured triangle rendering with scanline fill and perspective-correct interpolation.
+ * - Z-buffering for depth testing.
  */
 class Rasterizer {
+private:
+    /** @brief Reference to the output window. */
+    Window& window_;
+    /** @brief Z-buffer for depth testing, storing inverse-Z values. */
+    std::vector<FloatType> z_buffer_;
+
 public:
     /**
-     * @brief Constructs a rasterizer with an internal Z-buffer.
-     * @param width Backbuffer width in pixels.
-     * @param height Backbuffer height in pixels.
+     * @brief Constructs a rasterizer with an internal Z-buffer and a reference to a color buffer.
+     * @param window Reference to the target window.
      */
-    explicit Rasterizer(int width, int height);
+    explicit Rasterizer(Window& window);
 
-    /** @brief Clears the Z-buffer to the default value. */
+    /** @brief Clears the Z-buffer to its default value (0.0f). */
     void clear() noexcept;
 
     /**
      * @brief Resizes internal buffers.
-     * @param w New width.
-     * @param h New height.
      */
-    void resize(int w, int h) noexcept;
+    void resize() noexcept;
 
-    // Render a single model
     /**
      * @brief Draws faces in wireframe.
-     * @param camera Active camera.
+     * @param camera Active camera providing view and projection matrices.
      * @param faces Triangle list to render.
      * @param vertices Shared vertex positions.
-     * @param window Target window backbuffer.
-     * @param aspect_ratio Display aspect ratio.
+     * @param aspect_ratio Display aspect ratio for projection.
      */
     void draw_model_wireframe(
         const Camera& camera,
         const std::vector<Face>& faces,
         const std::vector<glm::vec3>& vertices,
-        Window& window,
         double aspect_ratio) noexcept;
 
     /**
      * @brief Rasterizes textured triangles with depth testing.
-     * @param camera Active camera.
+     * @param camera Active camera providing view and projection matrices.
      * @param faces Triangle list to render.
      * @param vertices Shared vertex positions.
      * @param texcoords Shared texture coordinates.
-     * @param window Target window backbuffer.
-     * @param aspect_ratio Display aspect ratio.
+     * @param aspect_ratio Display aspect ratio for projection.
      */
     void draw_model_rasterized(
         const Camera& camera,
         const std::vector<Face>& faces,
         const std::vector<glm::vec3>& vertices,
         const std::vector<glm::vec2>& texcoords,
-        Window& window,
         double aspect_ratio) noexcept;
 
-    // Get depth for debugging
     /**
-     * @brief Returns inverse-Z stored at a pixel.
-     * @param x Pixel X.
-     * @param y Pixel Y.
-     * @return Inverse-Z value or 0 when out of bounds.
+     * @brief Returns the inverse-Z value stored at a specific pixel.
+     * @param x Pixel X coordinate.
+     * @param y Pixel Y coordinate.
+     * @return Inverse-Z value, or 0 if the coordinates are out of bounds.
      */
     FloatType get_depth(int x, int y) const noexcept;
 
-private:
-    int width_;
-    int height_;
-    std::vector<FloatType> z_buffer_;
+    int get_width() const noexcept { return window_.get_width(); }
+    int get_height() const noexcept { return window_.get_height(); }
 
+private:
     // Per-face rendering helpers
     void wireframe_render(
         const Camera& camera,
         const Face& face,
         const std::vector<glm::vec3>& vertices,
         const std::vector<glm::vec2>& texcoords,
-        Window& window,
         double aspect_ratio) noexcept;
     void rasterized_render(
         const Camera& camera,
         const Face& face,
         const std::vector<glm::vec3>& vertices,
         const std::vector<glm::vec2>& texcoords,
-        Window& window,
         double aspect_ratio) noexcept;
 
     // Clipping logic

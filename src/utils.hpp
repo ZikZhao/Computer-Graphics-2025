@@ -80,7 +80,6 @@ public:
  * @param v2 Third vertex in world space.
  * @return Unit-length geometric normal (right-hand cross).
  */
-
 inline glm::vec3 CalculateNormal(const glm::vec3& v0, const glm::vec3& v1, const glm::vec3& v2) noexcept {
     glm::vec3 edge1 = v1 - v0;
     glm::vec3 edge2 = v2 - v0;

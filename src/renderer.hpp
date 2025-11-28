@@ -8,10 +8,8 @@
 
 #include "rasterizer.hpp"
 #include "raytracer.hpp"
+#include "window.hpp"
 #include "world.hpp"
-
-// Forward declaration
-class Window;
 
 /**
  * @brief Orchestrates rasterization and ray tracing; manages frame tiling.
@@ -37,13 +35,13 @@ public:
     /**
      * @brief ACES filmic tone mapping curve (approximation).
      * @param hdr_value Input HDR component.
-     * @return Mapped component in \[0,1].
+     * @return Mapped component in [0,1].
      */
     static constexpr FloatType AcesToneMapping(FloatType hdr_value) noexcept;
 
 private:
-    Window& window_;
     const World& world_;
+    Window& window_;
     Mode mode_ = Mode::RASTERIZED;
     FloatType gamma_ = 2.2f;
     bool caustics_enabled_ = false;
@@ -71,10 +69,10 @@ private:
 public:
     /**
      * @brief Constructs the renderer with shared window/world.
-     * @param window Output target and event source.
      * @param world Scene data and camera.
+     * @param window Reference to the output window.
      */
-    explicit Renderer(Window& window, const World& world);
+    explicit Renderer(const World& world, Window& window);
 
     /** @brief Destructor joins worker threads and releases resources. */
     ~Renderer();
@@ -97,6 +95,9 @@ public:
     void set_caustics_enabled(bool e) noexcept { caustics_enabled_ = e; }
     /** @brief Indicates whether the photon map is ready. */
     bool is_photon_map_ready() const noexcept { return raytracer_ && raytracer_->is_photon_map_ready(); }
+
+    int get_width() const noexcept { return rasterizer_->get_width(); }
+    int get_height() const noexcept { return rasterizer_->get_height(); }
 
 private:
     void clear() noexcept;

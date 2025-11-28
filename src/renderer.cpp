@@ -3,8 +3,6 @@
 #include <algorithm>
 #include <iostream>
 
-#include "window.hpp"
-
 // Filmic tone mapping (ACES approximation): compress HDR to displayable range
 constexpr FloatType Renderer::AcesToneMapping(FloatType hdr_value) noexcept {
     const FloatType a = 2.51f;
@@ -42,15 +40,15 @@ Colour Renderer::TonemapAndGammaCorrect(const ColourHDR& hdr, FloatType gamma) n
 }
 
 // Renderer orchestrates rasterizer/raytracer and multi-threaded tiling
-Renderer::Renderer(Window& window, const World& world)
-    : window_(window),
-      world_(world),
+Renderer::Renderer(const World& world, Window& window)
+    : world_(world),
+      window_(window),
       hdr_buffer_(window.get_width() * window.get_height(), ColourHDR{}),
       accumulation_buffer_(window.get_width() * window.get_height(), ColourHDR{}),
       frame_barrier_(std::thread::hardware_concurrency() + 1) {
     // Create sub-engines (ray tracing and rasterization backends)
     raytracer_ = std::make_unique<RayTracer>(world);
-    rasterizer_ = std::make_unique<Rasterizer>(window.get_width(), window.get_height());
+    rasterizer_ = std::make_unique<Rasterizer>(window);
 
     // Launch worker threads for tiled rendering; barrier synchronizes frame boundaries
     for (unsigned int i = 0; i < std::thread::hardware_concurrency(); ++i) {
@@ -70,7 +68,7 @@ void Renderer::render() noexcept {
     if (video_export_mode_) {
         reset_accumulation();
     }
-    aspect_ratio_ = static_cast<double>(window_.get_width()) / window_.get_height();
+    aspect_ratio_ = static_cast<double>(rasterizer_->get_width()) / rasterizer_->get_height();
 
     // Dispatch to selected rendering mode
     switch (mode_) {
@@ -98,17 +96,16 @@ void Renderer::reset_accumulation() noexcept {
 
 void Renderer::clear() noexcept {
     rasterizer_->clear();
-    hdr_buffer_.assign(window_.get_width() * window_.get_height(), ColourHDR{});
+    hdr_buffer_.assign(get_width() * get_height(), ColourHDR{});
 }
 
 void Renderer::wireframe_render() noexcept {
-    rasterizer_->draw_model_wireframe(
-        world_.camera_, world_.all_faces(), world_.all_vertices(), window_, aspect_ratio_);
+    rasterizer_->draw_model_wireframe(world_.camera_, world_.all_faces(), world_.all_vertices(), aspect_ratio_);
 }
 
 void Renderer::rasterized_render() noexcept {
     rasterizer_->draw_model_rasterized(
-        world_.camera_, world_.all_faces(), world_.all_vertices(), world_.all_texcoords(), window_, aspect_ratio_);
+        world_.camera_, world_.all_faces(), world_.all_vertices(), world_.all_texcoords(), aspect_ratio_);
 }
 
 void Renderer::raytraced_render() noexcept {
@@ -151,9 +148,9 @@ void Renderer::process_rows(int y0, int y1) noexcept {
 
     // Row-batched loop over pixels; sampling and accumulation
     for (int y = y0; y < y1; ++y) {
-        for (int x = 0; x < static_cast<int>(window_.get_width()); x++) {
-            int w = static_cast<int>(window_.get_width());
-            int h = static_cast<int>(window_.get_height());
+        for (int x = 0; x < get_width(); x++) {
+            int w = get_width();
+            int h = get_height();
             int pixel_index = y * w + x;
             int samples_to_run = video_export_mode_ ? VideoSamples : 1;
             ColourHDR pixel_accum{0.0f, 0.0f, 0.0f};
@@ -184,7 +181,7 @@ void Renderer::process_rows(int y0, int y1) noexcept {
                 pixel_accum.red / static_cast<FloatType>(samples_to_run),
                 pixel_accum.green / static_cast<FloatType>(samples_to_run),
                 pixel_accum.blue / static_cast<FloatType>(samples_to_run)};
-            std::size_t idx = static_cast<std::size_t>(y) * window_.get_width() + static_cast<std::size_t>(x);
+            std::size_t idx = static_cast<std::size_t>(y) * get_width() + static_cast<std::size_t>(x);
             // Update accumulation buffer (video mode vs progressive mode)
             if (video_export_mode_) {
                 accumulation_buffer_[idx] = final_hdr_avg;
@@ -216,13 +213,13 @@ void Renderer::worker_thread(std::stop_token st) noexcept {
         if (st.stop_requested()) break;
 
         // Process tiles until all are done (row-batched for cache locality)
-        const int num_tiles = (window_.get_height() + TileHeight - 1) / TileHeight;
+        const int num_tiles = (get_height() + TileHeight - 1) / TileHeight;
         while (true) {
             int tile_idx = tile_counter_.fetch_add(1, std::memory_order_relaxed);
             if (tile_idx >= num_tiles) break;
 
             int y0 = tile_idx * TileHeight;
-            int y1 = std::min(y0 + TileHeight, static_cast<int>(window_.get_height()));
+            int y1 = std::min(y0 + TileHeight, get_height());
             process_rows(y0, y1);
             if (st.stop_requested()) break;
         }
