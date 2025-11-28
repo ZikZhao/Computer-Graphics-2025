@@ -121,8 +121,9 @@ int main(int argc, char *argv[]) {
     window.register_mouse(SDL_BUTTON_LEFT, Window::Trigger::ANY_PRESSED,
         [&](int xrel, int yrel, float dt) {
             if (xrel == 0 && yrel == 0) return;
-            FloatType dx0 = -static_cast<FloatType>(xrel) * world.camera_.mouse_sensitivity_;
-            FloatType dy0 = static_cast<FloatType>(yrel) * world.camera_.mouse_sensitivity_;
+            constexpr FloatType MOUSE_SENSITIVITY = 0.002f;
+            FloatType dx0 = -static_cast<FloatType>(xrel) * MOUSE_SENSITIVITY;
+            FloatType dy0 = static_cast<FloatType>(yrel) * MOUSE_SENSITIVITY;
             FloatType roll = world.camera_.roll_;
             FloatType c = std::cos(roll);
             FloatType s = std::sin(roll);

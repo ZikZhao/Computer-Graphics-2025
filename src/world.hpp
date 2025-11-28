@@ -16,7 +16,6 @@
 #include <barrier>
 #include <atomic>
 #include <thread>
-#include <SDL.h>
 #include "utils.hpp"
 
 // Clipping planes for frustum
@@ -178,9 +177,6 @@ public:
     glm::vec3 orbit_target_ = { 0.0f, 0.0f, 0.0f };
     bool is_orbiting_ = false;
     FloatType orbit_radius_ = 0.0f;
-    FloatType mouse_sensitivity_ = 0.002f;
-    bool is_dragging_ = false;
-    bool first_drag_motion_ = false;  // Flag to skip first motion event after drag starts
     Camera() noexcept = default;
     glm::vec4 world_to_clip(const glm::vec3& vertex, double aspect_ratio) const noexcept;
     glm::vec3 clip_to_ndc(const glm::vec4& clip) const noexcept;
@@ -194,8 +190,10 @@ public:
     void rotate(FloatType delta_yaw, FloatType delta_pitch) noexcept;
     void roll(FloatType delta_roll) noexcept;
     void move(FloatType forward_delta, FloatType right_delta, FloatType up_delta, FloatType dt) noexcept;
-    void update_movement() noexcept;  // Update camera position based on keyboard state
-    void update() noexcept;  // Legacy update function (calls update_movement)
+    void set_position(const glm::vec3& pos) noexcept { position_ = pos; }
+    void set_yaw(FloatType y) noexcept { yaw_ = y; }
+    void set_pitch(FloatType p) noexcept { pitch_ = p; }
+    void set_roll(FloatType r) noexcept { roll_ = r; }
     std::pair<glm::vec3, glm::vec3> generate_ray(int pixel_x, int pixel_y, int screen_width, int screen_height, double aspect_ratio) const noexcept;
     std::pair<glm::vec3, glm::vec3> generate_ray_uv(FloatType u, FloatType v, int screen_width, int screen_height, double aspect_ratio) const noexcept;
 };
@@ -231,6 +229,7 @@ public:
     Model() noexcept = default;
     void load_file(std::string filename);
     void load_scene_txt(std::string filename);
+    friend class SceneLoader;
     // Getter for all_faces_
     const std::vector<Face>& all_faces() const noexcept { return all_faces_; }
     // Light accessors
