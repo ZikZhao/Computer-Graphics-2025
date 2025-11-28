@@ -360,5 +360,3 @@ bool Window::is_key_just_pressed(SDL_Scancode key) const noexcept {
 bool Window::is_key_just_released(SDL_Scancode key) const noexcept {
     return keys_updated_this_frame_.count(key) && !keys_this_frame_[key];
 }
-
- 

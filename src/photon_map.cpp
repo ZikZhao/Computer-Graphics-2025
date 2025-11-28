@@ -142,7 +142,6 @@ void PhotonMap::trace_photons() {
     is_ready_.store(true, std::memory_order_release);
 }
 
-
 void PhotonMap::emit_photons_from_area_light(const Face& light_face, const glm::vec3& target_center, FloatType target_radius, int num_photons) {
     glm::vec3 e0 = world_.all_vertices()[light_face.v_indices[1]] - world_.all_vertices()[light_face.v_indices[0]];
     glm::vec3 e1 = world_.all_vertices()[light_face.v_indices[2]] - world_.all_vertices()[light_face.v_indices[0]];
@@ -392,7 +391,6 @@ std::optional<RayTriangleIntersection> PhotonMap::intersect_triangle(
     
     return hit;
 }
-
 
 PhotonMap::GridCell PhotonMap::GetGridCell(const glm::vec3& position) const noexcept {
     glm::vec3 local = position - grid_origin_;

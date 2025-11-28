@@ -70,7 +70,7 @@ struct ColourHDR {
 
 struct Face;
 struct RayTriangleIntersection;
-class BvhAccelerator; // forward declaration
+class BVHAccelerator; // forward declaration
 
 class EnvironmentMap {
 public:
@@ -232,7 +232,7 @@ public:
     void compute_face_normals() noexcept;
 };
 
-class BvhAccelerator {
+class BVHAccelerator {
 public:
     struct AABB {
         glm::vec3 min;
@@ -253,7 +253,7 @@ private:
     const std::vector<glm::vec3>* normals_ = nullptr;
     const std::vector<glm::vec3>* normals_by_vertex_ = nullptr;
 public:
-    BvhAccelerator() noexcept = default;
+    BVHAccelerator() noexcept = default;
     bool empty() const noexcept { return nodes_.empty(); }
     void set_vertices(const std::vector<glm::vec3>& verts) noexcept { vertices_ = &verts; }
     void set_texcoords(const std::vector<glm::vec2>& uvs) noexcept { texcoords_ = &uvs; }
@@ -525,14 +525,12 @@ private:
     std::vector<glm::vec3> all_vertex_normals_by_vertex_;
     EnvironmentMap env_map_;  // HDR environment map
     std::vector<const Face*> emissive_faces_;
-    BvhAccelerator accelerator_;
+    BVHAccelerator accelerator_;
 public:
     Camera camera_;
     
     World();
     void load_files(const std::vector<std::string>& filenames);
-    void update() noexcept;  // Update world state (camera movement, etc.)
-    void orbiting() noexcept;
     // Accessors for Renderer
     Camera& camera() noexcept { return camera_; }
     const Camera& camera() const noexcept { return camera_; }
@@ -544,5 +542,5 @@ public:
     const std::vector<glm::vec3>& all_vertex_normals_by_vertex() const noexcept { return all_vertex_normals_by_vertex_; }
     const EnvironmentMap& env_map() const noexcept { return env_map_; }
     const std::vector<const Face*>& area_lights() const noexcept { return emissive_faces_; }
-    const BvhAccelerator& accelerator() const noexcept { return accelerator_; }
+    const BVHAccelerator& accelerator() const noexcept { return accelerator_; }
 };

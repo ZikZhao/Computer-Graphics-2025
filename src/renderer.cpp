@@ -57,7 +57,8 @@ Renderer::Renderer(Window& window, const World& world)
         workers_.emplace_back([this](std::stop_token st) { this->worker_thread(st); });
     }
 }
-void Renderer::~Renderer() {
+
+Renderer::~Renderer() {
     for (auto& w : workers_) {
         w.request_stop();
     }
@@ -88,8 +89,6 @@ void Renderer::render() noexcept {
         depth_of_field_render();
         break;
     }
-    
-    
 }
 
 void Renderer::reset_accumulation() noexcept {
@@ -240,9 +239,3 @@ void Renderer::worker_thread(std::stop_token st) noexcept {
         frame_barrier_.arrive_and_wait();
     }
 }
-
-
-
- 
-
- 

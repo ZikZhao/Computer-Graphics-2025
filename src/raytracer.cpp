@@ -90,7 +90,6 @@ ColourHDR RayTracer::render_pixel_dof(const Camera& cam, int x, int y, int width
     };
 }
 
-
 ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray_dir, int depth,
                                const MediumState& medium, bool soft_shadows, bool use_caustics, int sample_index, const glm::vec3& throughput, uint32_t& rng) const noexcept {
     constexpr int ABS_MAX_DEPTH = 20;
@@ -100,7 +99,6 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
         }
         return ColourHDR{ .red = 0.0f, .green = 0.0f, .blue = 0.0f };
     }
-    
     
     HitRecord intersection = hit(ray_origin, ray_dir);
     

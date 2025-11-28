@@ -168,8 +168,6 @@ void Rasterizer::rasterized_render(const Camera& camera, const Face& face, const
     }
 }
 
- 
-
 // Clip-space half-space test: determines whether a homogeneous vertex lies inside a given frustum plane
 constexpr bool Rasterizer::InsidePlane(const glm::vec4& v, ClipPlane plane) noexcept {
     switch (plane) {
@@ -339,7 +337,6 @@ Colour Rasterizer::sample_texture(const Face& face, const glm::vec3& bary,
         .blue = static_cast<std::uint8_t>(std::clamp(base_color.b * 255.0f, 0.0f, 255.0f))
     };
 }
-
 
 // Convert NDC [-1,1] to pixel coordinates; store 1/w for perspective correction downstream
 ScreenNdcCoord Rasterizer::ndc_to_screen(const glm::vec3& ndc, const glm::vec2& uv, FloatType w) const noexcept {

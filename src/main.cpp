@@ -88,7 +88,6 @@ int main(int argc, char *argv[]) {
             }
         });
     
-    
     // Screenshot Save (Ctrl+S)
     window.register_key({SDL_SCANCODE_LCTRL, SDL_SCANCODE_S}, Window::Trigger::ALL_JUST_PRESSED,
         [&](const Window::KeyState& ks, float) {
@@ -117,6 +116,7 @@ int main(int argc, char *argv[]) {
             renderer.video_export_mode_ = video_recorder.is_recording();
         });
 
+    // Mouse look (left button drag)
     window.register_mouse(SDL_BUTTON_LEFT, Window::Trigger::ANY_PRESSED,
         [&](int xrel, int yrel, float dt) {
             if (xrel == 0 && yrel == 0) return;
@@ -137,15 +137,13 @@ int main(int argc, char *argv[]) {
     
     while (true) {
 
-        world.orbiting();
+        world.camera_.orbiting();
         renderer.video_export_mode_ = video_recorder.is_recording();
         renderer.render();
 
         if (!window.process_events()) break;
 
-        if (video_recorder.is_recording()) {
-            video_recorder.capture_frame();
-        }
+        if (video_recorder.is_recording()) video_recorder.capture_frame();
 
         window.update();
         

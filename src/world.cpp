@@ -413,8 +413,6 @@ void World::load_files(const std::vector<std::string>& filenames) {
         }
     }
     
-    
-    
     // Step 4: Flatten all models into shared arrays (vertices, texcoords, normals, faces)
     std::size_t total_vertices = 0;
     std::size_t total_texcoords = 0;
@@ -506,13 +504,4 @@ void World::load_files(const std::vector<std::string>& filenames) {
     accelerator_.set_normals_by_vertex(all_vertex_normals_by_vertex_);
     // Step 6: Build acceleration structure (BVH) over all faces
     accelerator_.build(all_faces_);
-}
-
-// Legacy SDL event hooks removed; input is handled via keystate callbacks
-
-void World::update() noexcept {
-}
-
-void World::orbiting() noexcept {
-    camera_.orbiting();
 }
