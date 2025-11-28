@@ -266,14 +266,26 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
         {
             glm::vec3 n_shade = (face.material.shading == Material::Shading::FLAT)
                 ? face.face_normal
-                : glm::normalize(w * face.vertex_normals[0] + intersection.u * face.vertex_normals[1] + intersection.v * face.vertex_normals[2]);
+                : [&](){
+                    auto fetch_normal = [&](int idx) -> glm::vec3 {
+                        std::uint32_t ni = face.vn_indices[idx];
+                        if (ni != std::numeric_limits<std::uint32_t>::max() && ni < world_.all_vertex_normals().size()) return world_.all_vertex_normals()[ni];
+                        std::uint32_t vi = face.v_indices[idx];
+                        if (vi < world_.all_vertex_normals_by_vertex().size() && glm::length(world_.all_vertex_normals_by_vertex()[vi]) > 0.001f) return world_.all_vertex_normals_by_vertex()[vi];
+                        return face.face_normal;
+                    };
+                    glm::vec3 n0 = fetch_normal(0);
+                    glm::vec3 n1 = fetch_normal(1);
+                    glm::vec3 n2 = fetch_normal(2);
+                    return glm::normalize(w * n0 + intersection.u * n1 + intersection.v * n2);
+                }();
             lambertian = 0.0f;
             specular = 0.0f;
                 if (!area_lights.empty()) {
                     glm::vec3 diffuse_rgb_accum(0.0f);
                     for (const Face* lf : area_lights) {
-                        glm::vec3 e0 = world_.all_vertices()[lf->vertex_indices[1]] - world_.all_vertices()[lf->vertex_indices[0]];
-                        glm::vec3 e1 = world_.all_vertices()[lf->vertex_indices[2]] - world_.all_vertices()[lf->vertex_indices[0]];
+                        glm::vec3 e0 = world_.all_vertices()[lf->v_indices[1]] - world_.all_vertices()[lf->v_indices[0]];
+                        glm::vec3 e1 = world_.all_vertices()[lf->v_indices[2]] - world_.all_vertices()[lf->v_indices[0]];
                         FloatType area = 0.5f * glm::length(glm::cross(e0, e1));
                         if (area < 1e-6f) continue;
                         FloatType u1 = RandFloat(rng);
@@ -282,7 +294,7 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
                         FloatType b0 = 1.0f - su;
                         FloatType b1 = su * (1.0f - u2);
                         FloatType b2 = su * u2;
-                        glm::vec3 light_p = world_.all_vertices()[lf->vertex_indices[0]] + b1 * e0 + b2 * e1;
+                        glm::vec3 light_p = world_.all_vertices()[lf->v_indices[0]] + b1 * e0 + b2 * e1;
                         glm::vec3 shadow_origin = intersection.intersectionPoint + n_shade * 1e-4f;
                         glm::vec3 to_light = light_p - shadow_origin;
                         if (glm::dot(face.face_normal, to_light) <= 0.0f) continue;
@@ -316,7 +328,19 @@ ColourHDR RayTracer::trace_ray(const glm::vec3& ray_origin, const glm::vec3& ray
                 FloatType dist_light_hit = glm::length(to_light_hit);
                 glm::vec3 n_shade = (face.material.shading == Material::Shading::FLAT)
                     ? face.face_normal
-                    : glm::normalize(w * face.vertex_normals[0] + intersection.u * face.vertex_normals[1] + intersection.v * face.vertex_normals[2]);
+                    : [&](){
+                        auto fetch_normal = [&](int idx) -> glm::vec3 {
+                            std::uint32_t ni = face.vn_indices[idx];
+                            if (ni != std::numeric_limits<std::uint32_t>::max() && ni < world_.all_vertex_normals().size()) return world_.all_vertex_normals()[ni];
+                            std::uint32_t vi = face.v_indices[idx];
+                            if (vi < world_.all_vertex_normals_by_vertex().size() && glm::length(world_.all_vertex_normals_by_vertex()[vi]) > 0.001f) return world_.all_vertex_normals_by_vertex()[vi];
+                            return face.face_normal;
+                        };
+                        glm::vec3 n0 = fetch_normal(0);
+                        glm::vec3 n1 = fetch_normal(1);
+                        glm::vec3 n2 = fetch_normal(2);
+                        return glm::normalize(w * n0 + intersection.u * n1 + intersection.v * n2);
+                    }();
                 lambertian = ComputeLambertianLighting(n_shade, to_light_hit, dist_light_hit, light_intensity);
                 if (lambertian > 0.0f) {
                     specular = ComputeSpecularLighting(n_shade, to_light_hit, to_camera_hit, dist_light_hit, light_intensity, face.material.shininess);

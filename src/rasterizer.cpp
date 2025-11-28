@@ -26,20 +26,21 @@ void Rasterizer::draw_model_wireframe(const Camera& camera, const std::vector<Fa
                                       const std::vector<glm::vec3>& vertices,
                                       Window& window, double aspect_ratio) noexcept {
     for (const auto& face : faces) {
-        wireframe_render(camera, face, vertices, window, aspect_ratio);
+        wireframe_render(camera, face, vertices, std::vector<glm::vec2>{}, window, aspect_ratio);
     }
 }
 
 void Rasterizer::draw_model_rasterized(const Camera& camera, const std::vector<Face>& faces,
                                        const std::vector<glm::vec3>& vertices,
+                                       const std::vector<glm::vec2>& texcoords,
                                        Window& window, double aspect_ratio) noexcept {
     for (const auto& face : faces) {
-        rasterized_render(camera, face, vertices, window, aspect_ratio);
+        rasterized_render(camera, face, vertices, texcoords, window, aspect_ratio);
     }
 }
 
-void Rasterizer::wireframe_render(const Camera& camera, const Face& face, const std::vector<glm::vec3>& vertices, Window& window, double aspect_ratio) noexcept {
-    auto clipped = clip_triangle(camera, face, vertices, aspect_ratio);
+void Rasterizer::wireframe_render(const Camera& camera, const Face& face, const std::vector<glm::vec3>& vertices, const std::vector<glm::vec2>& texcoords, Window& window, double aspect_ratio) noexcept {
+    auto clipped = clip_triangle(camera, face, vertices, texcoords, aspect_ratio);
     if (clipped.size() < 3) return;
     InplaceVector<ScreenNdcCoord, 9> screen_verts;
     for (size_t i = 0; i < clipped.size(); i++) {
@@ -82,8 +83,8 @@ void Rasterizer::wireframe_render(const Camera& camera, const Face& face, const 
     }
 }
 
-void Rasterizer::rasterized_render(const Camera& camera, const Face& face, const std::vector<glm::vec3>& vertices, Window& window, double aspect_ratio) noexcept {
-    auto clipped = clip_triangle(camera, face, vertices, aspect_ratio);
+void Rasterizer::rasterized_render(const Camera& camera, const Face& face, const std::vector<glm::vec3>& vertices, const std::vector<glm::vec2>& texcoords, Window& window, double aspect_ratio) noexcept {
+    auto clipped = clip_triangle(camera, face, vertices, texcoords, aspect_ratio);
     if (clipped.size() < 3) { return; }
     InplaceVector<ScreenNdcCoord, 9> screen_verts;
     for (size_t i = 0; i < clipped.size(); i++) {
@@ -236,20 +237,26 @@ InplaceVector<ClipVertex, 9> Rasterizer::ClipAgainstPlane(const InplaceVector<Cl
     return output;
 }
 
-InplaceVector<ClipVertex, 9> Rasterizer::clip_triangle(const Camera& camera, const Face& face, const std::vector<glm::vec3>& vertices, double aspect_ratio) noexcept {
+InplaceVector<ClipVertex, 9> Rasterizer::clip_triangle(const Camera& camera, const Face& face, const std::vector<glm::vec3>& vertices, const std::vector<glm::vec2>& texcoords, double aspect_ratio) noexcept {
     Colour vertex_color{
         static_cast<std::uint8_t>(std::clamp(face.material.base_color.r * 255.0f, 0.0f, 255.0f)),
         static_cast<std::uint8_t>(std::clamp(face.material.base_color.g * 255.0f, 0.0f, 255.0f)),
         static_cast<std::uint8_t>(std::clamp(face.material.base_color.b * 255.0f, 0.0f, 255.0f))
     };
     
-    const glm::vec3& v0 = vertices[face.vertex_indices[0]];
-    const glm::vec3& v1 = vertices[face.vertex_indices[1]];
-    const glm::vec3& v2 = vertices[face.vertex_indices[2]];
+    const glm::vec3& v0 = vertices[face.v_indices[0]];
+    const glm::vec3& v1 = vertices[face.v_indices[1]];
+    const glm::vec3& v2 = vertices[face.v_indices[2]];
+    glm::vec2 uv0(0.0f), uv1(0.0f), uv2(0.0f);
+    if (!texcoords.empty()) {
+        if (face.vt_indices[0] < texcoords.size()) uv0 = texcoords[face.vt_indices[0]];
+        if (face.vt_indices[1] < texcoords.size()) uv1 = texcoords[face.vt_indices[1]];
+        if (face.vt_indices[2] < texcoords.size()) uv2 = texcoords[face.vt_indices[2]];
+    }
     InplaceVector<ClipVertex, 9> polygon = {
-        ClipVertex{camera.world_to_clip(v0, aspect_ratio), vertex_color, face.texture_coords[0]},
-        ClipVertex{camera.world_to_clip(v1, aspect_ratio), vertex_color, face.texture_coords[1]},
-        ClipVertex{camera.world_to_clip(v2, aspect_ratio), vertex_color, face.texture_coords[2]}
+        ClipVertex{camera.world_to_clip(v0, aspect_ratio), vertex_color, uv0},
+        ClipVertex{camera.world_to_clip(v1, aspect_ratio), vertex_color, uv1},
+        ClipVertex{camera.world_to_clip(v2, aspect_ratio), vertex_color, uv2}
     };
     
     polygon = ClipAgainstPlane(polygon, ClipPlane::LEFT);

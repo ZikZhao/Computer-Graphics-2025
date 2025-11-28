@@ -103,7 +103,7 @@ void Renderer::wireframe_render() noexcept {
 }
 
 void Renderer::rasterized_render() noexcept {
-    rasterizer_->draw_model_rasterized(world_.camera(), world_.all_faces(), world_.all_vertices(), window_, aspect_ratio_);
+    rasterizer_->draw_model_rasterized(world_.camera(), world_.all_faces(), world_.all_vertices(), world_.all_texcoords(), window_, aspect_ratio_);
 }
 
 void Renderer::raytraced_render() noexcept {

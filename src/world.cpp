@@ -153,9 +153,9 @@ void Model::load_scene_txt(std::string filename) {
 void Model::compute_face_normals() noexcept {
     for (auto& obj : objects_) {
         for (auto& f : obj.faces) {
-            const glm::vec3& v0 = vertices_[f.vertex_indices[0]];
-            const glm::vec3& v1 = vertices_[f.vertex_indices[1]];
-            const glm::vec3& v2 = vertices_[f.vertex_indices[2]];
+            const glm::vec3& v0 = vertices_[f.v_indices[0]];
+            const glm::vec3& v1 = vertices_[f.v_indices[1]];
+            const glm::vec3& v2 = vertices_[f.v_indices[2]];
             f.face_normal = CalculateNormal(v0, v1, v2);
         }
     }
@@ -413,31 +413,76 @@ void World::load_files(const std::vector<std::string>& filenames) {
     const_cast<bool&>(has_light_) = found_light;
     
     std::size_t total_vertices = 0;
+    std::size_t total_texcoords = 0;
+    std::size_t total_normals = 0;
+    std::size_t total_normals_by_vertex = 0;
     std::size_t total_faces = 0;
     for (const auto& model : models_) {
         total_vertices += model.vertices().size();
+        total_texcoords += model.texture_coords().size();
+        total_normals += model.vertex_normals().size();
+        total_normals_by_vertex += model.vertex_normals_by_vertex().size();
         total_faces += model.all_faces().size();
     }
     all_vertices_.clear();
     all_vertices_.reserve(total_vertices);
+    all_texcoords_.clear();
+    all_texcoords_.reserve(total_texcoords);
+    all_vertex_normals_.clear();
+    all_vertex_normals_.reserve(total_normals);
+    all_vertex_normals_by_vertex_.clear();
+    all_vertex_normals_by_vertex_.reserve(total_normals_by_vertex);
     all_faces_.clear();
     all_faces_.reserve(total_faces);
     std::vector<std::size_t> vertex_offsets;
+    std::vector<std::size_t> tex_offsets;
+    std::vector<std::size_t> normal_offsets;
+    std::vector<std::size_t> normal_by_vertex_offsets;
     vertex_offsets.reserve(models_.size());
+    tex_offsets.reserve(models_.size());
+    normal_offsets.reserve(models_.size());
+    normal_by_vertex_offsets.reserve(models_.size());
     std::size_t running_offset = 0;
+    std::size_t running_tex_offset = 0;
+    std::size_t running_normal_offset = 0;
+    std::size_t running_normal_by_vertex_offset = 0;
     for (const auto& model : models_) {
         vertex_offsets.push_back(running_offset);
         const auto& verts = model.vertices();
         all_vertices_.insert(all_vertices_.end(), verts.begin(), verts.end());
         running_offset += verts.size();
+        tex_offsets.push_back(running_tex_offset);
+        const auto& uvs = model.texture_coords();
+        all_texcoords_.insert(all_texcoords_.end(), uvs.begin(), uvs.end());
+        running_tex_offset += uvs.size();
+        normal_offsets.push_back(running_normal_offset);
+        const auto& norms = model.vertex_normals();
+        all_vertex_normals_.insert(all_vertex_normals_.end(), norms.begin(), norms.end());
+        running_normal_offset += norms.size();
+        normal_by_vertex_offsets.push_back(running_normal_by_vertex_offset);
+        const auto& norms_by_v = model.vertex_normals_by_vertex();
+        all_vertex_normals_by_vertex_.insert(all_vertex_normals_by_vertex_.end(), norms_by_v.begin(), norms_by_v.end());
+        running_normal_by_vertex_offset += norms_by_v.size();
     }
     for (std::size_t mi = 0; mi < models_.size(); ++mi) {
         const auto& model = models_[mi];
         std::size_t offset = vertex_offsets[mi];
+        std::size_t toffset = tex_offsets[mi];
+        std::size_t noffset = normal_offsets[mi];
         for (const auto& f : model.all_faces()) {
             Face f2 = f;
             for (int k = 0; k < 3; ++k) {
-                f2.vertex_indices[k] = static_cast<std::uint32_t>(offset + f.vertex_indices[k]);
+                f2.v_indices[k] = static_cast<std::uint32_t>(offset + f.v_indices[k]);
+                if (f.vt_indices[k] != std::numeric_limits<std::uint32_t>::max()) {
+                    f2.vt_indices[k] = static_cast<std::uint32_t>(toffset + f.vt_indices[k]);
+                } else {
+                    f2.vt_indices[k] = std::numeric_limits<std::uint32_t>::max();
+                }
+                if (f.vn_indices[k] != std::numeric_limits<std::uint32_t>::max()) {
+                    f2.vn_indices[k] = static_cast<std::uint32_t>(noffset + f.vn_indices[k]);
+                } else {
+                    f2.vn_indices[k] = std::numeric_limits<std::uint32_t>::max();
+                }
             }
             all_faces_.push_back(std::move(f2));
         }
@@ -451,6 +496,9 @@ void World::load_files(const std::vector<std::string>& filenames) {
     }
 
     accelerator_.set_vertices(all_vertices_);
+    accelerator_.set_texcoords(all_texcoords_);
+    accelerator_.set_normals(all_vertex_normals_);
+    accelerator_.set_normals_by_vertex(all_vertex_normals_by_vertex_);
     accelerator_.build(all_faces_);
 }
 

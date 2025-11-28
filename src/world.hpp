@@ -196,11 +196,10 @@ public:
 };
 
 struct Face {
-    std::array<std::uint32_t, 3> vertex_indices;
-    std::array<std::uint8_t, 3> texture_vertices;
-    std::array<glm::vec2, 3> texture_coords;
+    std::array<std::uint32_t, 3> v_indices;
+    std::array<std::uint32_t, 3> vt_indices;
+    std::array<std::uint32_t, 3> vn_indices;
     Material material;
-    std::array<glm::vec3, 3> vertex_normals;
     glm::vec3 face_normal;
 };
 
@@ -229,6 +228,9 @@ public:
     // Getter for all_faces_
     const std::vector<Face>& all_faces() const noexcept { return all_faces_; }
     const std::vector<glm::vec3>& vertices() const noexcept { return vertices_; }
+    const std::vector<glm::vec2>& texture_coords() const noexcept { return texture_coords_; }
+    const std::vector<glm::vec3>& vertex_normals() const noexcept { return vertex_normals_; }
+    const std::vector<glm::vec3>& vertex_normals_by_vertex() const noexcept { return vertex_normals_by_vertex_; }
     // Light accessors
     bool has_light() const noexcept { return has_light_; }
     const glm::vec3& light_position() const noexcept { return light_position_; }
@@ -256,10 +258,16 @@ private:
     std::vector<int> tri_indices_;
     std::vector<BVHNode> nodes_;
     const std::vector<glm::vec3>* vertices_ = nullptr;
+    const std::vector<glm::vec2>* texcoords_ = nullptr;
+    const std::vector<glm::vec3>* normals_ = nullptr;
+    const std::vector<glm::vec3>* normals_by_vertex_ = nullptr;
 public:
     BvhAccelerator() noexcept = default;
     bool empty() const noexcept { return nodes_.empty(); }
     void set_vertices(const std::vector<glm::vec3>& verts) noexcept { vertices_ = &verts; }
+    void set_texcoords(const std::vector<glm::vec2>& uvs) noexcept { texcoords_ = &uvs; }
+    void set_normals(const std::vector<glm::vec3>& norms) noexcept { normals_ = &norms; }
+    void set_normals_by_vertex(const std::vector<glm::vec3>& norms) noexcept { normals_by_vertex_ = &norms; }
     void build(const std::vector<Face>& faces) noexcept {
         if (!vertices_) return;
         tri_indices_.resize(faces.size());
@@ -268,9 +276,9 @@ public:
         std::vector<Cent> data(faces.size());
         for (std::size_t i = 0; i < faces.size(); ++i) {
             const Face& f = faces[i];
-            const glm::vec3& v0 = (*vertices_)[f.vertex_indices[0]];
-            const glm::vec3& v1 = (*vertices_)[f.vertex_indices[1]];
-            const glm::vec3& v2 = (*vertices_)[f.vertex_indices[2]];
+            const glm::vec3& v0 = (*vertices_)[f.v_indices[0]];
+            const glm::vec3& v1 = (*vertices_)[f.v_indices[1]];
+            const glm::vec3& v2 = (*vertices_)[f.v_indices[2]];
             glm::vec3 mn = glm::min(glm::min(v0, v1), v2);
             glm::vec3 mx = glm::max(glm::max(v0, v1), v2);
             AABB b{mn, mx};
@@ -402,9 +410,9 @@ public:
                     int tri_index = tri_indices_[n.start + i];
                     const Face& face = faces[tri_index];
                     FloatType t, u, v;
-                    const glm::vec3& v0 = (*vertices_)[face.vertex_indices[0]];
-                    const glm::vec3& v1 = (*vertices_)[face.vertex_indices[1]];
-                    const glm::vec3& v2 = (*vertices_)[face.vertex_indices[2]];
+                    const glm::vec3& v0 = (*vertices_)[face.v_indices[0]];
+                    const glm::vec3& v1 = (*vertices_)[face.v_indices[1]];
+                    const glm::vec3& v2 = (*vertices_)[face.v_indices[2]];
                     if (IntersectRayTriangle(ro, rd, v0, v1, v2, t, u, v) && t < closest.distanceFromCamera) {
                         closest.distanceFromCamera = t;
                         closest.intersectionPoint = ro + rd * t;
@@ -412,12 +420,29 @@ public:
                         closest.u = u;
                         closest.v = v;
                         FloatType w = 1.0f - u - v;
-                        glm::vec3 interpolated_normal = glm::normalize(w * face.vertex_normals[0] + u * face.vertex_normals[1] + v * face.vertex_normals[2]);
+                        auto fetch_normal = [&](int idx) -> glm::vec3 {
+                            std::uint32_t ni = face.vn_indices[idx];
+                            if (normals_ && ni != std::numeric_limits<std::uint32_t>::max() && ni < normals_->size()) return (*normals_)[ni];
+                            std::uint32_t vi = face.v_indices[idx];
+                            if (normals_by_vertex_ && vi < normals_by_vertex_->size() && glm::length((*normals_by_vertex_)[vi]) > 0.001f) return (*normals_by_vertex_)[vi];
+                            return face.face_normal;
+                        };
+                        glm::vec3 n0 = fetch_normal(0);
+                        glm::vec3 n1 = fetch_normal(1);
+                        glm::vec3 n2 = fetch_normal(2);
+                        glm::vec3 interpolated_normal = glm::normalize(w * n0 + u * n1 + v * n2);
                         if (glm::dot(interpolated_normal, -rd) < 0.0f) {
                             interpolated_normal = -interpolated_normal;
                         }
                         closest.normal = interpolated_normal;
-                        glm::vec2 uv_coord = face.texture_coords[0] * w + face.texture_coords[1] * u + face.texture_coords[2] * v;
+                        glm::vec2 uv_coord(0.0f);
+                        if (texcoords_) {
+                            glm::vec2 uv0(0.0f), uv1(0.0f), uv2(0.0f);
+                            if (face.vt_indices[0] < texcoords_->size()) uv0 = (*texcoords_)[face.vt_indices[0]];
+                            if (face.vt_indices[1] < texcoords_->size()) uv1 = (*texcoords_)[face.vt_indices[1]];
+                            if (face.vt_indices[2] < texcoords_->size()) uv2 = (*texcoords_)[face.vt_indices[2]];
+                            uv_coord = uv0 * w + uv1 * u + uv2 * v;
+                        }
                         if (face.material.texture) {
                             Colour tex_sample = face.material.texture->sample(uv_coord.x, uv_coord.y);
                             closest.color = glm::vec3((tex_sample.red / 255.0f) * face.material.base_color.r, (tex_sample.green / 255.0f) * face.material.base_color.g, (tex_sample.blue / 255.0f) * face.material.base_color.b);
@@ -460,9 +485,9 @@ public:
                     int tri_index = tri_indices_[n.start + i];
                     const Face& face = faces[tri_index];
                     FloatType t, u, v;
-                    const glm::vec3& v0 = (*vertices_)[face.vertex_indices[0]];
-                    const glm::vec3& v1 = (*vertices_)[face.vertex_indices[1]];
-                    const glm::vec3& v2 = (*vertices_)[face.vertex_indices[2]];
+                    const glm::vec3& v0 = (*vertices_)[face.v_indices[0]];
+                    const glm::vec3& v1 = (*vertices_)[face.v_indices[1]];
+                    const glm::vec3& v2 = (*vertices_)[face.v_indices[2]];
                     bool hit = IntersectRayTriangle(point, light_dir, v0, v1, v2, t, u, v);
                     if (hit && t > min_t && t < (light_distance - 1e-4f)) {
                         intersections.push_back({t, &face, u, v});
@@ -504,6 +529,9 @@ private:
     std::vector<Model> models_;
     std::vector<Face> all_faces_;  // Cached flattened faces from all models
     std::vector<glm::vec3> all_vertices_;
+    std::vector<glm::vec2> all_texcoords_;
+    std::vector<glm::vec3> all_vertex_normals_;
+    std::vector<glm::vec3> all_vertex_normals_by_vertex_;
     const glm::vec3 light_position_;  // Immutable after loading
     const bool has_light_;
     FloatType light_intensity_ = 100.0f;  // Adjustable light intensity constant
@@ -524,6 +552,9 @@ public:
     const std::vector<Model>& models() const noexcept { return models_; }
     const std::vector<Face>& all_faces() const noexcept { return all_faces_; }
     const std::vector<glm::vec3>& all_vertices() const noexcept { return all_vertices_; }
+    const std::vector<glm::vec2>& all_texcoords() const noexcept { return all_texcoords_; }
+    const std::vector<glm::vec3>& all_vertex_normals() const noexcept { return all_vertex_normals_; }
+    const std::vector<glm::vec3>& all_vertex_normals_by_vertex() const noexcept { return all_vertex_normals_by_vertex_; }
     const glm::vec3& light_position() const noexcept { return light_position_; }
     bool has_light() const noexcept { return has_light_; }
     FloatType light_intensity() const noexcept { return light_intensity_; }

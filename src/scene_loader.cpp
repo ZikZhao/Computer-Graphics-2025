@@ -92,8 +92,7 @@ void SceneLoader::LoadObj(Model& model, const std::string& filename) {
         } else if (type == "f") {
             assert(current_obj != model.objects_.end());
             glm::vec3 vertice[3];
-            std::uint8_t tex_indices[3];
-            glm::vec2 tex_coords[3];
+            std::uint32_t vt_indices[3];
             int vi_idx[3];
             int normal_indices[3];
             bool has_normals = false;
@@ -103,17 +102,13 @@ void SceneLoader::LoadObj(Model& model, const std::string& filename) {
                 iss >> vertex_index >> slash;
                 vertice[i] = model.vertices_[vertex_index - 1];
                 vi_idx[i] = vertex_index - 1;
-                tex_indices[i] = 0;
-                tex_coords[i] = glm::vec2(0.0f, 0.0f);
+                vt_indices[i] = std::numeric_limits<std::uint32_t>::max();
                 normal_indices[i] = -1;
                 if (int c = iss.peek(); c >= '0' && c <= '9') {
                     int tex_idx;
                     iss >> tex_idx;
-                    tex_indices[i] = tex_idx;
-                    if (tex_idx > 0 && static_cast<size_t>(tex_idx) <= model.texture_coords_.size()) {
-                        tex_coords[i] = model.texture_coords_[tex_idx - 1];
-                    } else {
-                        tex_coords[i] = glm::vec2(0.0f, 0.0f);
+                    if (tex_idx > 0) {
+                        vt_indices[i] = static_cast<std::uint32_t>(tex_idx - 1);
                     }
                 }
                 if (iss.peek() == '/') {
@@ -128,19 +123,13 @@ void SceneLoader::LoadObj(Model& model, const std::string& filename) {
             }
             Face new_face{
                 { static_cast<std::uint32_t>(vi_idx[0]), static_cast<std::uint32_t>(vi_idx[1]), static_cast<std::uint32_t>(vi_idx[2]) },
-                { tex_indices[0], tex_indices[1], tex_indices[2] },
-                { tex_coords[0], tex_coords[1], tex_coords[2] },
+                { vt_indices[0], vt_indices[1], vt_indices[2] },
+                { (has_normals && normal_indices[0] >= 0) ? static_cast<std::uint32_t>(normal_indices[0]) : std::numeric_limits<std::uint32_t>::max(),
+                  (has_normals && normal_indices[1] >= 0) ? static_cast<std::uint32_t>(normal_indices[1]) : std::numeric_limits<std::uint32_t>::max(),
+                  (has_normals && normal_indices[2] >= 0) ? static_cast<std::uint32_t>(normal_indices[2]) : std::numeric_limits<std::uint32_t>::max() },
                 current_obj->material,
-                { glm::vec3(0.0f), glm::vec3(0.0f), glm::vec3(0.0f) },
                 glm::vec3(0.0f)
             };
-            if (has_normals) {
-                for (int i = 0; i < 3; i++) {
-                    if (normal_indices[i] >= 0 && static_cast<size_t>(normal_indices[i]) < model.vertex_normals_.size()) {
-                        new_face.vertex_normals[i] = model.vertex_normals_[normal_indices[i]];
-                    }
-                }
-            }
             current_obj->faces.emplace_back(std::move(new_face));
         }
     }
@@ -286,10 +275,9 @@ void SceneLoader::LoadSceneTxt(Model& model, const std::string& filename) {
             std::string tok[3];
             iss >> tok[0] >> tok[1] >> tok[2];
             glm::vec3 vpos[3];
-            std::uint8_t tex_idx_out[3] = {0,0,0};
-            glm::vec2 uv_out[3] = {glm::vec2(0.0f), glm::vec2(0.0f), glm::vec2(0.0f)};
+            std::uint32_t vt_out[3] = {std::numeric_limits<std::uint32_t>::max(), std::numeric_limits<std::uint32_t>::max(), std::numeric_limits<std::uint32_t>::max()};
             int vi_out[3] = {0,0,0};
-            glm::vec3 vnorm_out[3] = {glm::vec3(0.0f), glm::vec3(0.0f), glm::vec3(0.0f)};
+            int vn_out[3] = {-1, -1, -1};
             bool has_vn = false;
             for (int i = 0; i < 3; ++i) {
                 const std::string& t = tok[i];
@@ -303,16 +291,11 @@ void SceneLoader::LoadSceneTxt(Model& model, const std::string& filename) {
                 vi_out[i] = v_global;
                 if (vt_i >= 0) {
                     int vt_global = tex_offset + vt_i;
-                    tex_idx_out[i] = static_cast<std::uint8_t>(vt_i);
-                    if (vt_global >= 0 && static_cast<std::size_t>(vt_global) < model.texture_coords_.size()) {
-                        uv_out[i] = model.texture_coords_[vt_global];
-                    }
+                    vt_out[i] = static_cast<std::uint32_t>(vt_global);
                 }
                 if (vn_i >= 0) {
                     int vn_global = normal_offset + vn_i;
-                    if (vn_global >= 0 && static_cast<std::size_t>(vn_global) < model.vertex_normals_.size()) {
-                        vnorm_out[i] = model.vertex_normals_[vn_global];
-                    }
+                    vn_out[i] = vn_global;
                 }
             }
             if (!has_vn) {
@@ -320,23 +303,23 @@ void SceneLoader::LoadSceneTxt(Model& model, const std::string& filename) {
                     int vidx = vi_out[i];
                     if (vidx >= 0 && static_cast<std::size_t>(vidx) < model.vertex_normals_by_vertex_.size()) {
                         if (glm::length(model.vertex_normals_by_vertex_[vidx]) > 0.001f) {
-                            vnorm_out[i] = model.vertex_normals_by_vertex_[vidx];
+                            vn_out[i] = -1;
                         }
                     }
                 }
-                glm::vec3 fn = CalculateNormal(vpos[0], vpos[1], vpos[2]);
                 for (int i = 0; i < 3; ++i) {
-                    if (glm::length(vnorm_out[i]) < 0.001f) {
-                        vnorm_out[i] = fn;
+                    if (vn_out[i] < 0) {
+                        vn_out[i] = -1;
                     }
                 }
             }
             Face new_face{
                 { static_cast<std::uint32_t>(vi_out[0]), static_cast<std::uint32_t>(vi_out[1]), static_cast<std::uint32_t>(vi_out[2]) },
-                { tex_idx_out[0], tex_idx_out[1], tex_idx_out[2] },
-                { uv_out[0], uv_out[1], uv_out[2] },
+                { vt_out[0], vt_out[1], vt_out[2] },
+                { vn_out[0] >= 0 ? static_cast<std::uint32_t>(vn_out[0]) : std::numeric_limits<std::uint32_t>::max(),
+                  vn_out[1] >= 0 ? static_cast<std::uint32_t>(vn_out[1]) : std::numeric_limits<std::uint32_t>::max(),
+                  vn_out[2] >= 0 ? static_cast<std::uint32_t>(vn_out[2]) : std::numeric_limits<std::uint32_t>::max() },
                 current_obj->material,
-                { vnorm_out[0], vnorm_out[1], vnorm_out[2] },
                 glm::vec3(0.0f)
             };
             model.objects_.back().faces.emplace_back(std::move(new_face));
