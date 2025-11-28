@@ -44,10 +44,13 @@ private:
     // Photon storage: map from Face pointer to vector of photons hitting that face
     std::map<const Face*, std::vector<Photon>> photon_map_;
     
-    // Spatial hash grid: maps grid cell coordinates to photons in that cell
-    // Key is (x_cell, y_cell, z_cell) tuple
+    // Flattened spatial grid for fast indexing
     using GridCell = std::tuple<int, int, int>;
-    std::unordered_map<GridCell, std::vector<Photon>, GridCellHash> spatial_grid_;
+    std::vector<std::vector<Photon>> grid_;
+    int grid_width_ = 0;
+    int grid_height_ = 0;
+    int grid_depth_ = 0;
+    glm::vec3 grid_origin_ = glm::vec3(0.0f);
     
     // Threading
     std::jthread worker_thread_;
@@ -89,8 +92,8 @@ private:
     // Store a photon in the map
     void store_photon(const Photon& photon);
     
-    // Compute grid cell coordinates for a 3D position
-    static GridCell GetGridCell(const glm::vec3& position) noexcept;
+    // Compute grid cell coordinates for a 3D position (relative to grid_origin_)
+    GridCell GetGridCell(const glm::vec3& position) const noexcept;
     
     // Check if material is transparent (refractive)
     static bool IsTransparent(const Material& mat) noexcept {

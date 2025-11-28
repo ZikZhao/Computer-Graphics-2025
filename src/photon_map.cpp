@@ -20,10 +20,13 @@ std::vector<Photon> PhotonMap::query_photons(const Face* face, const glm::vec3& 
     for (int dx = -cell_range; dx <= cell_range; ++dx) {
         for (int dy = -cell_range; dy <= cell_range; ++dy) {
             for (int dz = -cell_range; dz <= cell_range; ++dz) {
-                GridCell neighbor_cell = std::make_tuple(cx + dx, cy + dy, cz + dz);
-                auto it = spatial_grid_.find(neighbor_cell);
-                if (it == spatial_grid_.end()) continue;
-                for (const auto& photon : it->second) {
+                int nx = cx + dx;
+                int ny = cy + dy;
+                int nz = cz + dz;
+                if (nx < 0 || ny < 0 || nz < 0 || nx >= grid_width_ || ny >= grid_height_ || nz >= grid_depth_) continue;
+                std::size_t idx = static_cast<std::size_t>(nx + ny * grid_width_ + nz * grid_width_ * grid_height_);
+                const auto& cell = grid_[idx];
+                for (const auto& photon : cell) {
                     if (photon.face != face) continue;
                     glm::vec3 diff = photon.position - point;
                     FloatType dist_sq = glm::dot(diff, diff);
@@ -96,6 +99,16 @@ void PhotonMap::trace_photons() {
     // Compute bounding sphere for transparent region
     glm::vec3 target_center = (aabb_min + aabb_max) * 0.5f;
     FloatType target_radius = glm::length(aabb_max - target_center);
+
+    // Build flattened spatial grid based on transparent region AABB
+    grid_origin_ = aabb_min;
+    glm::vec3 extent = aabb_max - aabb_min;
+    grid_width_  = std::max(1, static_cast<int>(std::ceil(extent.x / GridCellSize)));
+    grid_height_ = std::max(1, static_cast<int>(std::ceil(extent.y / GridCellSize)));
+    grid_depth_  = std::max(1, static_cast<int>(std::ceil(extent.z / GridCellSize)));
+    std::size_t grid_size = static_cast<std::size_t>(grid_width_) * static_cast<std::size_t>(grid_height_) * static_cast<std::size_t>(grid_depth_);
+    grid_.clear();
+    grid_.resize(grid_size);
     
     // Distribute photons across area lights based on area * luminance
     std::vector<FloatType> weights(area_lights.size());
@@ -345,9 +358,13 @@ void PhotonMap::store_photon(const Photon& photon) {
     // No mutex needed: only single worker thread writes during construction
     photon_map_[photon.face].push_back(photon);
     
-    // Also store in spatial grid for fast lookup
-    GridCell cell = GetGridCell(photon.position);
-    spatial_grid_[cell].push_back(photon);
+    // Also store in flattened spatial grid for fast lookup
+    auto [cx, cy, cz] = GetGridCell(photon.position);
+    if (cx < 0 || cy < 0 || cz < 0 || cx >= grid_width_ || cy >= grid_height_ || cz >= grid_depth_) {
+        return; // Out of bounds: skip
+    }
+    std::size_t idx = static_cast<std::size_t>(cx + cy * grid_width_ + cz * grid_width_ * grid_height_);
+    grid_[idx].push_back(photon);
 }
 
 std::optional<RayTriangleIntersection> PhotonMap::find_intersection(
@@ -432,10 +449,11 @@ std::optional<RayTriangleIntersection> PhotonMap::intersect_triangle(
 }
 
 
-PhotonMap::GridCell PhotonMap::GetGridCell(const glm::vec3& position) noexcept {
-    int x = static_cast<int>(std::floor(position.x / GridCellSize));
-    int y = static_cast<int>(std::floor(position.y / GridCellSize));
-    int z = static_cast<int>(std::floor(position.z / GridCellSize));
+PhotonMap::GridCell PhotonMap::GetGridCell(const glm::vec3& position) const noexcept {
+    glm::vec3 local = position - grid_origin_;
+    int x = static_cast<int>(std::floor(local.x / GridCellSize));
+    int y = static_cast<int>(std::floor(local.y / GridCellSize));
+    int z = static_cast<int>(std::floor(local.z / GridCellSize));
     return std::make_tuple(x, y, z);
 }
 
