@@ -7,7 +7,7 @@
  * @brief Utility for loading OBJ and text-based scene descriptions into `Model`.
  */
 class SceneLoader {
-public:
+public: // Static Methods & Constants
     /**
      * @brief Loads an OBJ file into the provided model.
      * @param model Destination model to populate.

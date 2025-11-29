@@ -15,13 +15,20 @@ struct Ray {
  * @brief Output of a material scatter event.
  */
 struct ScatterRecord {
+    // Group 3: Member Variables (structs are public by default, but I can use the grouping comment)
     glm::vec3 attenuation;
     glm::vec3 emission;
     bool is_specular;
     std::optional<Ray> scattered_ray;
     FloatType pdf;
+
+    // Group 4: Lifecycle
     ScatterRecord() noexcept
-        : attenuation(1.0f, 1.0f, 1.0f), emission(0.0f), is_specular(false), scattered_ray(std::nullopt), pdf(1.0f) {}
+        : attenuation(1.0f, 1.0f, 1.0f),
+          emission(0.0f),
+          is_specular(false),
+          scattered_ray(std::nullopt),
+          pdf(1.0f) {}
 };
 
 using HitRecord = RayTriangleIntersection;
@@ -35,7 +42,9 @@ namespace Shading {
  * @param scattered Output scatter record.
  * @return True if a valid scattered ray was produced.
  */
-bool ScatterLambertian(const Ray& r_in, const HitRecord& rec, const Material& mat, ScatterRecord& scattered) noexcept;
+bool ScatterLambertian(
+    const Ray& r_in, const HitRecord& rec, const Material& mat, ScatterRecord& scattered
+) noexcept;
 
 /**
  * @brief Perfect specular reflection for metallic surfaces.
@@ -45,7 +54,9 @@ bool ScatterLambertian(const Ray& r_in, const HitRecord& rec, const Material& ma
  * @param scattered Output scatter record.
  * @return True if reflection is valid (front-facing).
  */
-bool ScatterMetal(const Ray& r_in, const HitRecord& rec, const Material& mat, ScatterRecord& scattered) noexcept;
+bool ScatterMetal(
+    const Ray& r_in, const HitRecord& rec, const Material& mat, ScatterRecord& scattered
+) noexcept;
 
 /**
  * @brief Dielectric scatter using refraction/reflection with Fresnel mixing.
@@ -55,5 +66,7 @@ bool ScatterMetal(const Ray& r_in, const HitRecord& rec, const Material& mat, Sc
  * @param scattered Output scatter record.
  * @return True if either reflected or refracted ray was produced.
  */
-bool ScatterDielectric(const Ray& r_in, const HitRecord& rec, const Material& mat, ScatterRecord& scattered) noexcept;
+bool ScatterDielectric(
+    const Ray& r_in, const HitRecord& rec, const Material& mat, ScatterRecord& scattered
+) noexcept;
 }  // namespace Shading

@@ -1,16 +1,18 @@
 #include "photon_map.hpp"
 
 #include <algorithm>
-#include <cmath>
-#include <iostream>
-#include <format>
 #include <chrono>
+#include <cmath>
+#include <format>
+#include <iostream>
 
 PhotonMap::PhotonMap(const World& world) : world_(world) {
     worker_thread_ = std::jthread([this]() { trace_photons(); });
 }
 
-std::vector<Photon> PhotonMap::query_photons(const Face* face, const glm::vec3& point, FloatType radius) const {
+std::vector<Photon> PhotonMap::query_photons(
+    const Face* face, const glm::vec3& point, FloatType radius
+) const {
     std::vector<Photon> result;
     GridCell center_cell = GetGridCell(point);
     auto [cx, cy, cz] = center_cell;
@@ -22,9 +24,12 @@ std::vector<Photon> PhotonMap::query_photons(const Face* face, const glm::vec3& 
                 int nx = cx + dx;
                 int ny = cy + dy;
                 int nz = cz + dz;
-                if (nx < 0 || ny < 0 || nz < 0 || nx >= grid_width_ || ny >= grid_height_ || nz >= grid_depth_)
+                if (nx < 0 || ny < 0 || nz < 0 || nx >= grid_width_ || ny >= grid_height_ ||
+                    nz >= grid_depth_)
                     continue;
-                std::size_t idx = static_cast<std::size_t>(nx + ny * grid_width_ + nz * grid_width_ * grid_height_);
+                std::size_t idx = static_cast<std::size_t>(
+                    nx + ny * grid_width_ + nz * grid_width_ * grid_height_
+                );
                 const auto& cell = grid_[idx];
                 for (const auto& photon : cell) {
                     if (photon.face != face) continue;
@@ -39,7 +44,8 @@ std::vector<Photon> PhotonMap::query_photons(const Face* face, const glm::vec3& 
 }
 
 ColourHDR PhotonMap::estimate_caustic(
-    const Face* face, const glm::vec3& point, const glm::vec3& normal, FloatType search_radius) const noexcept {
+    const Face* face, const glm::vec3& point, const glm::vec3& normal, FloatType search_radius
+) const noexcept {
     if (!is_ready()) return ColourHDR{.red = 0.0f, .green = 0.0f, .blue = 0.0f};
     auto photons = query_photons(face, point, search_radius);
     if (photons.empty()) return ColourHDR{.red = 0.0f, .green = 0.0f, .blue = 0.0f};
@@ -89,10 +95,11 @@ void PhotonMap::trace_photons() {
     }
 
     std::cout << std::format(
-        "[PhotonMap] Start Tracing: {} Emissive Faces | {} Refractive Faces\n", 
+        "[PhotonMap] Start Tracing: {} Emissive Faces | {} Refractive Faces\n",
         area_lights.size(),
-        transparent_faces.size());
-                             
+        transparent_faces.size()
+    );
+
     auto start_time = std::chrono::steady_clock::now();
 
     glm::vec3 target_center = (aabb_min + aabb_max) * 0.5f;
@@ -109,7 +116,8 @@ void PhotonMap::trace_photons() {
     grid_width_ = std::max(1, static_cast<int>(std::ceil(extent.x / GridCellSize)));
     grid_height_ = std::max(1, static_cast<int>(std::ceil(extent.y / GridCellSize)));
     grid_depth_ = std::max(1, static_cast<int>(std::ceil(extent.z / GridCellSize)));
-    std::size_t grid_size = static_cast<std::size_t>(grid_width_) * static_cast<std::size_t>(grid_height_) *
+    std::size_t grid_size = static_cast<std::size_t>(grid_width_) *
+                            static_cast<std::size_t>(grid_height_) *
                             static_cast<std::size_t>(grid_depth_);
     grid_.clear();
     grid_.resize(grid_size);
@@ -119,8 +127,10 @@ void PhotonMap::trace_photons() {
     FloatType weight_sum = 0.0f;
     for (std::size_t i = 0; i < area_lights.size(); ++i) {
         const Face* lf = area_lights[i];
-        glm::vec3 e0 = world_.all_vertices()[lf->v_indices[1]] - world_.all_vertices()[lf->v_indices[0]];
-        glm::vec3 e1 = world_.all_vertices()[lf->v_indices[2]] - world_.all_vertices()[lf->v_indices[0]];
+        glm::vec3 e0 =
+            world_.all_vertices()[lf->v_indices[1]] - world_.all_vertices()[lf->v_indices[0]];
+        glm::vec3 e1 =
+            world_.all_vertices()[lf->v_indices[2]] - world_.all_vertices()[lf->v_indices[0]];
         FloatType area = 0.5f * glm::length(glm::cross(e0, e1));
         glm::vec3 Le = lf->material.emission;
         // Luminance (ITU-R BT.709) used for energy-aware photon allocation.
@@ -134,24 +144,36 @@ void PhotonMap::trace_photons() {
     for (std::size_t i = 0; i < area_lights.size(); ++i) {
         int photons_for_light = static_cast<int>(PhotonsPerLight * (weights[i] / weight_sum));
         if (photons_for_light <= 0) continue;
-        emit_photons_from_area_light(*area_lights[i], target_center, target_radius, photons_for_light);
+        emit_photons_from_area_light(
+            *area_lights[i], target_center, target_radius, photons_for_light
+        );
         photons_emitted += photons_for_light;
     }
 
     auto end_time = std::chrono::steady_clock::now();
     std::chrono::duration<double> elapsed = end_time - start_time;
-    double percentage = photons_emitted > 0 ? (static_cast<double>(total_photons()) / photons_emitted) * 100.0 : 0.0;
-    
-    std::cout << std::format("[PhotonMap] End Tracing: Stored {} / {} ({:.1f}%) | Time: {:#.3g}s\n", 
-                             total_photons(), photons_emitted, percentage, elapsed.count());
+    double percentage = photons_emitted > 0
+                            ? (static_cast<double>(total_photons()) / photons_emitted) * 100.0
+                            : 0.0;
+
+    std::cout << std::format(
+        "[PhotonMap] End Tracing: Stored {} / {} ({:.1f}%) | Time: {:#.3g}s\n",
+        total_photons(),
+        photons_emitted,
+        percentage,
+        elapsed.count()
+    );
 
     is_ready_.store(true, std::memory_order_release);
 }
 
 void PhotonMap::emit_photons_from_area_light(
-    const Face& light_face, const glm::vec3& target_center, FloatType target_radius, int num_photons) {
-    glm::vec3 e0 = world_.all_vertices()[light_face.v_indices[1]] - world_.all_vertices()[light_face.v_indices[0]];
-    glm::vec3 e1 = world_.all_vertices()[light_face.v_indices[2]] - world_.all_vertices()[light_face.v_indices[0]];
+    const Face& light_face, const glm::vec3& target_center, FloatType target_radius, int num_photons
+) {
+    glm::vec3 e0 = world_.all_vertices()[light_face.v_indices[1]] -
+                   world_.all_vertices()[light_face.v_indices[0]];
+    glm::vec3 e1 = world_.all_vertices()[light_face.v_indices[2]] -
+                   world_.all_vertices()[light_face.v_indices[0]];
     FloatType area = 0.5f * glm::length(glm::cross(e0, e1));
     glm::vec3 Le = light_face.material.emission;
     glm::vec3 n_light = glm::normalize(light_face.face_normal);
@@ -182,7 +204,8 @@ void PhotonMap::trace_single_photon(
     const glm::vec3& power,
     int depth,
     const glm::vec3& medium_entry_point,
-    bool interacted_with_transparent) {
+    bool interacted_with_transparent
+) {
     if (depth >= MaxPhotonBounces) return;
 
     auto hit_opt = find_intersection(origin, direction);
@@ -225,19 +248,22 @@ void PhotonMap::trace_single_photon(
                     effective_sigma_a = glm::vec3(
                         -std::log(std::max(mat.base_color.r, 0.001f)) / mat.td,
                         -std::log(std::max(mat.base_color.g, 0.001f)) / mat.td,
-                        -std::log(std::max(mat.base_color.b, 0.001f)) / mat.td);
+                        -std::log(std::max(mat.base_color.b, 0.001f)) / mat.td
+                    );
                 }
 
                 new_power = glm::vec3(
                     power.x * std::exp(-effective_sigma_a.x * travel_dist),
                     power.y * std::exp(-effective_sigma_a.y * travel_dist),
-                    power.z * std::exp(-effective_sigma_a.z * travel_dist));
+                    power.z * std::exp(-effective_sigma_a.z * travel_dist)
+                );
             }
         }
 
         if (depth >= 1) {
             FloatType power_magnitude = glm::length(new_power);
-            FloatType survival_prob = std::min(0.95f, std::max(0.1f, power_magnitude / MinPhotonPower));
+            FloatType survival_prob =
+                std::min(0.95f, std::max(0.1f, power_magnitude / MinPhotonPower));
             FloatType rr = RandomFloat();
             if (rr > survival_prob) {
                 return;
@@ -271,7 +297,8 @@ void PhotonMap::trace_single_photon(
             new_power,
             depth + 1,
             new_entry_point,
-            interacted_with_transparent);
+            interacted_with_transparent
+        );
     } else {
         glm::vec3 final_power = power;
 
@@ -292,12 +319,14 @@ void PhotonMap::trace_single_photon(
                 glm::vec3 effective_sigma_a = glm::vec3(
                     -std::log(std::max(mat.base_color.r, 0.001f)) / mat.td,
                     -std::log(std::max(mat.base_color.g, 0.001f)) / mat.td,
-                    -std::log(std::max(mat.base_color.b, 0.001f)) / mat.td);
+                    -std::log(std::max(mat.base_color.b, 0.001f)) / mat.td
+                );
 
                 final_power = glm::vec3(
                     power.x * std::exp(-effective_sigma_a.x * travel_dist),
                     power.y * std::exp(-effective_sigma_a.y * travel_dist),
-                    power.z * std::exp(-effective_sigma_a.z * travel_dist));
+                    power.z * std::exp(-effective_sigma_a.z * travel_dist)
+                );
             }
         }
 
@@ -314,15 +343,18 @@ void PhotonMap::store_photon(const Photon& photon) {
     // Store in flattened grid: contiguous vectors per cell minimize pointer
     // chasing and improve memory coherence during neighborhood queries.
     auto [cx, cy, cz] = GetGridCell(photon.position);
-    if (cx < 0 || cy < 0 || cz < 0 || cx >= grid_width_ || cy >= grid_height_ || cz >= grid_depth_) {
+    if (cx < 0 || cy < 0 || cz < 0 || cx >= grid_width_ || cy >= grid_height_ ||
+        cz >= grid_depth_) {
         return;  // Out of bounds: skip
     }
-    std::size_t idx = static_cast<std::size_t>(cx + cy * grid_width_ + cz * grid_width_ * grid_height_);
+    std::size_t idx =
+        static_cast<std::size_t>(cx + cy * grid_width_ + cz * grid_width_ * grid_height_);
     grid_[idx].push_back(photon);
 }
 
 std::optional<RayTriangleIntersection> PhotonMap::find_intersection(
-    const glm::vec3& ro, const glm::vec3& rd) const noexcept {
+    const glm::vec3& ro, const glm::vec3& rd
+) const noexcept {
     auto rec = world_.accelerator().intersect(ro, rd, world_.all_faces());
     if (rec.triangleIndex == static_cast<std::size_t>(-1)) {
         return std::nullopt;
@@ -331,7 +363,8 @@ std::optional<RayTriangleIntersection> PhotonMap::find_intersection(
 }
 
 std::optional<RayTriangleIntersection> PhotonMap::intersect_triangle(
-    const glm::vec3& ro, const glm::vec3& rd, const Face& face) const noexcept {
+    const glm::vec3& ro, const glm::vec3& rd, const Face& face
+) const noexcept {
     const glm::vec3& v0 = world_.all_vertices()[face.v_indices[0]];
     const glm::vec3& v1 = world_.all_vertices()[face.v_indices[1]];
     const glm::vec3& v2 = world_.all_vertices()[face.v_indices[2]];
@@ -379,7 +412,8 @@ std::optional<RayTriangleIntersection> PhotonMap::intersect_triangle(
     FloatType w = 1.0f - u - v;
     auto fetch_normal = [&](int idx) -> glm::vec3 {
         std::uint32_t ni = face.vn_indices[idx];
-        if (ni != std::numeric_limits<std::uint32_t>::max() && ni < world_.all_vertex_normals().size())
+        if (ni != std::numeric_limits<std::uint32_t>::max() &&
+            ni < world_.all_vertex_normals().size())
             return world_.all_vertex_normals()[ni];
         std::uint32_t vi = face.v_indices[idx];
         if (vi < world_.all_vertex_normals_by_vertex().size() &&

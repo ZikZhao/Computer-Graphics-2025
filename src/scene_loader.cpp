@@ -28,7 +28,9 @@ static IndexTriple parse_index_token(const std::string& t) {
         if (parts.size() >= 2 && !parts[1].empty()) idx.vt = std::stoi(parts[1]);
         if (parts.size() >= 3 && !parts[2].empty()) idx.vn = std::stoi(parts[2]);
     } else {
-        bool digits_only = !t.empty() && std::all_of(t.begin(), t.end(), [](char c) { return c >= '0' && c <= '9'; });
+        bool digits_only = !t.empty() && std::all_of(t.begin(), t.end(), [](char c) {
+            return c >= '0' && c <= '9';
+        });
         if (digits_only) idx.v = std::stoi(t);
     }
     return idx;
@@ -52,7 +54,8 @@ void SceneLoader::LoadObj(Model& model, const std::string& filename) {
             // Material library — preload materials referenced by objects
             std::string relative_path;
             iss >> relative_path;
-            std::string material_filename = (std::filesystem::path(filename).parent_path() / relative_path).string();
+            std::string material_filename =
+                (std::filesystem::path(filename).parent_path() / relative_path).string();
             model.load_materials(std::move(material_filename));
         } else if (type == "o") {
             // Object boundary — new mesh group with its own material/shading state
@@ -138,14 +141,18 @@ void SceneLoader::LoadObj(Model& model, const std::string& filename) {
                      static_cast<std::uint32_t>(vi_idx[2])},
                 .vt_indices = {vt_indices[0], vt_indices[1], vt_indices[2]},
                 .vn_indices =
-                    {(has_normals && normal_indices[0] >= 0) ? static_cast<std::uint32_t>(normal_indices[0])
-                                                             : std::numeric_limits<std::uint32_t>::max(),
-                     (has_normals && normal_indices[1] >= 0) ? static_cast<std::uint32_t>(normal_indices[1])
-                                                             : std::numeric_limits<std::uint32_t>::max(),
-                     (has_normals && normal_indices[2] >= 0) ? static_cast<std::uint32_t>(normal_indices[2])
-                                                             : std::numeric_limits<std::uint32_t>::max()},
+                    {(has_normals && normal_indices[0] >= 0)
+                         ? static_cast<std::uint32_t>(normal_indices[0])
+                         : std::numeric_limits<std::uint32_t>::max(),
+                     (has_normals && normal_indices[1] >= 0)
+                         ? static_cast<std::uint32_t>(normal_indices[1])
+                         : std::numeric_limits<std::uint32_t>::max(),
+                     (has_normals && normal_indices[2] >= 0)
+                         ? static_cast<std::uint32_t>(normal_indices[2])
+                         : std::numeric_limits<std::uint32_t>::max()},
                 .material = current_obj->material,
-                .face_normal = glm::vec3(0.0f)};
+                .face_normal = glm::vec3(0.0f)
+            };
             current_obj->faces.emplace_back(std::move(new_face));
         }
     }
@@ -179,7 +186,8 @@ void SceneLoader::LoadSceneTxt(Model& model, const std::string& filename) {
             std::string rel;
             iss >> rel;
             if (!rel.empty()) {
-                std::string inc_path = (std::filesystem::path(filename).parent_path() / rel).string();
+                std::string inc_path =
+                    (std::filesystem::path(filename).parent_path() / rel).string();
                 LoadSceneTxt(model, inc_path);
             }
         } else if (type == "Material") {
@@ -227,15 +235,18 @@ void SceneLoader::LoadSceneTxt(Model& model, const std::string& filename) {
             if (current_material != model.materials_.end()) {
                 FloatType r, g, b;
                 iss >> r >> g >> b;
-                current_material->second.emission = glm::vec3(std::max(0.0f, r), std::max(0.0f, g), std::max(0.0f, b));
+                current_material->second.emission =
+                    glm::vec3(std::max(0.0f, r), std::max(0.0f, g), std::max(0.0f, b));
             }
         } else if (type == "Texture") {
             // Bind a PPM texture to the material
             if (current_material != model.materials_.end()) {
                 std::string tex_name;
                 iss >> tex_name;
-                std::string texture_filename = (std::filesystem::path(filename).parent_path() / tex_name).string();
-                current_material->second.texture = std::make_shared<Texture>(model.load_texture(texture_filename));
+                std::string texture_filename =
+                    (std::filesystem::path(filename).parent_path() / tex_name).string();
+                current_material->second.texture =
+                    std::make_shared<Texture>(model.load_texture(texture_filename));
             }
         } else if (type == "Object") {
             // Begin an object block; record offsets for local indexing within this file
@@ -288,7 +299,8 @@ void SceneLoader::LoadSceneTxt(Model& model, const std::string& filename) {
                     if (c == '/') {
                         FloatType xn, yn, zn;
                         iss >> xn >> yn >> zn;
-                        model.vertex_normals_by_vertex_.back() = glm::normalize(glm::vec3(xn, yn, zn));
+                        model.vertex_normals_by_vertex_.back() =
+                            glm::normalize(glm::vec3(xn, yn, zn));
                     } else {
                         iss.putback(c);
                     }
@@ -313,7 +325,8 @@ void SceneLoader::LoadSceneTxt(Model& model, const std::string& filename) {
             std::uint32_t vt_out[3] = {
                 std::numeric_limits<std::uint32_t>::max(),
                 std::numeric_limits<std::uint32_t>::max(),
-                std::numeric_limits<std::uint32_t>::max()};
+                std::numeric_limits<std::uint32_t>::max()
+            };
             int vi_out[3] = {0, 0, 0};
             int vn_out[3] = {-1, -1, -1};
             bool has_vn = false;
@@ -336,11 +349,13 @@ void SceneLoader::LoadSceneTxt(Model& model, const std::string& filename) {
                     vn_out[i] = vn_global;
                 }
             }
-            // If normals are absent, defer to per-vertex cached normals when available; mark missing as -1
+            // If normals are absent, defer to per-vertex cached normals when available; mark
+            // missing as -1
             if (!has_vn) {
                 for (int i = 0; i < 3; ++i) {
                     int vidx = vi_out[i];
-                    if (vidx >= 0 && static_cast<std::size_t>(vidx) < model.vertex_normals_by_vertex_.size()) {
+                    if (vidx >= 0 &&
+                        static_cast<std::size_t>(vidx) < model.vertex_normals_by_vertex_.size()) {
                         if (glm::length(model.vertex_normals_by_vertex_[vidx]) > 0.001f) {
                             vn_out[i] = -1;
                         }
@@ -359,12 +374,15 @@ void SceneLoader::LoadSceneTxt(Model& model, const std::string& filename) {
                      static_cast<std::uint32_t>(vi_out[2])},
                 .vt_indices = {vt_out[0], vt_out[1], vt_out[2]},
                 .vn_indices =
-                    {vn_out[0] >= 0 ? static_cast<std::uint32_t>(vn_out[0]) : std::numeric_limits<std::uint32_t>::max(),
-                     vn_out[1] >= 0 ? static_cast<std::uint32_t>(vn_out[1]) : std::numeric_limits<std::uint32_t>::max(),
+                    {vn_out[0] >= 0 ? static_cast<std::uint32_t>(vn_out[0])
+                                    : std::numeric_limits<std::uint32_t>::max(),
+                     vn_out[1] >= 0 ? static_cast<std::uint32_t>(vn_out[1])
+                                    : std::numeric_limits<std::uint32_t>::max(),
                      vn_out[2] >= 0 ? static_cast<std::uint32_t>(vn_out[2])
                                     : std::numeric_limits<std::uint32_t>::max()},
                 .material = current_obj->material,
-                .face_normal = glm::vec3(0.0f)};
+                .face_normal = glm::vec3(0.0f)
+            };
             model.objects_.back().faces.emplace_back(std::move(new_face));
         }
     }

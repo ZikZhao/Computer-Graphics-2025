@@ -23,7 +23,9 @@ static glm::vec3 random_in_hemisphere(const glm::vec3& normal) noexcept {
 
 namespace Shading {
 
-bool ScatterLambertian(const Ray& r_in, const HitRecord& rec, const Material& mat, ScatterRecord& scattered) noexcept {
+bool ScatterLambertian(
+    const Ray& r_in, const HitRecord& rec, const Material& mat, ScatterRecord& scattered
+) noexcept {
     glm::vec3 scatter_dir = random_in_hemisphere(rec.normal);
     scattered.attenuation = rec.color;
     scattered.emission = glm::vec3(0.0f);
@@ -37,7 +39,9 @@ bool ScatterLambertian(const Ray& r_in, const HitRecord& rec, const Material& ma
     return true;
 }
 
-bool ScatterMetal(const Ray& r_in, const HitRecord& rec, const Material& mat, ScatterRecord& scattered) noexcept {
+bool ScatterMetal(
+    const Ray& r_in, const HitRecord& rec, const Material& mat, ScatterRecord& scattered
+) noexcept {
     glm::vec3 reflected = glm::reflect(r_in.direction, rec.normal);
     scattered.attenuation = rec.color;
     scattered.emission = glm::vec3(0.0f);
@@ -58,7 +62,9 @@ static FloatType fresnel_schlick(FloatType cos_theta, FloatType ior_ratio) noexc
     return r0 + (1.0f - r0) * cos5;
 }
 
-bool ScatterDielectric(const Ray& r_in, const HitRecord& rec, const Material& mat, ScatterRecord& scattered) noexcept {
+bool ScatterDielectric(
+    const Ray& r_in, const HitRecord& rec, const Material& mat, ScatterRecord& scattered
+) noexcept {
     constexpr FloatType epsilon = 0.001f;
 
     glm::vec3 normal = rec.normal;

@@ -36,7 +36,8 @@ Colour Renderer::TonemapAndGammaCorrect(const ColourHDR& hdr, FloatType gamma) n
     return Colour{
         .red = static_cast<std::uint8_t>(std::clamp(r_out * 255.0f, 0.0f, 255.0f)),
         .green = static_cast<std::uint8_t>(std::clamp(g_out * 255.0f, 0.0f, 255.0f)),
-        .blue = static_cast<std::uint8_t>(std::clamp(b_out * 255.0f, 0.0f, 255.0f))};
+        .blue = static_cast<std::uint8_t>(std::clamp(b_out * 255.0f, 0.0f, 255.0f))
+    };
 }
 
 // Renderer orchestrates rasterizer/raytracer and multi-threaded tiling
@@ -98,8 +99,9 @@ void Renderer::render() noexcept {
     if (elapsed >= std::chrono::seconds(1)) {
         std::cout << std::format(
             "[Renderer] FPS: {:#.3g} | Avg Frame Time: {:#.4g} ms\n",
-            static_cast<double>(fps) / elapsed.count(), 
-            elapsed.count() / static_cast<double>(fps) * 1000.0);
+            static_cast<double>(fps) / elapsed.count(),
+            elapsed.count() / static_cast<double>(fps) * 1000.0
+        );
         fps = 0;
         last_print = now;
     }
@@ -116,21 +118,29 @@ void Renderer::clear() noexcept {
 }
 
 void Renderer::wireframe_render() noexcept {
-    rasterizer_->draw_model_wireframe(world_.camera_, world_.all_faces(), world_.all_vertices(), aspect_ratio_);
+    rasterizer_->draw_model_wireframe(
+        world_.camera(), world_.all_faces(), world_.all_vertices(), aspect_ratio_
+    );
 }
 
 void Renderer::rasterized_render() noexcept {
     rasterizer_->draw_model_rasterized(
-        world_.camera_, world_.all_faces(), world_.all_vertices(), world_.all_texcoords(), aspect_ratio_);
+        world_.camera(),
+        world_.all_faces(),
+        world_.all_vertices(),
+        world_.all_texcoords(),
+        aspect_ratio_
+    );
 }
 
 void Renderer::raytraced_render() noexcept {
-    current_camera_ = &world_.camera_;
+    current_camera_ = &world_.camera();
     tile_counter_.store(0, std::memory_order_relaxed);
-    glm::vec3 cur_pos = current_camera_->position_;
-    FloatType cur_yaw = current_camera_->yaw_;
-    FloatType cur_pitch = current_camera_->pitch_;
-    bool cam_changed = (glm::length(cur_pos - last_cam_pos_) > 1e-6f) || (std::abs(cur_yaw - last_cam_yaw_) > 1e-6f) ||
+    glm::vec3 cur_pos = current_camera_->position();
+    FloatType cur_yaw = current_camera_->yaw();
+    FloatType cur_pitch = current_camera_->pitch();
+    bool cam_changed = (glm::length(cur_pos - last_cam_pos_) > 1e-6f) ||
+                       (std::abs(cur_yaw - last_cam_yaw_) > 1e-6f) ||
                        (std::abs(cur_pitch - last_cam_pitch_) > 1e-6f);
     if (cam_changed) {
         // Camera moved — reset progressive accumulation to avoid ghosting
@@ -148,7 +158,7 @@ void Renderer::raytraced_render() noexcept {
 }
 
 void Renderer::depth_of_field_render() noexcept {
-    current_camera_ = &world_.camera_;
+    current_camera_ = &world_.camera();
     tile_counter_.store(0, std::memory_order_relaxed);
     rendering_frame_count_ = frame_count_ + 1;
 
@@ -174,30 +184,48 @@ void Renderer::process_rows(int y0, int y1) noexcept {
                 if (is_dof) {
                     // Depth-of-field rendering — thin lens (aperture/focal plane)
                     ColourHDR hdr = raytracer_->render_pixel_dof(
-                        camera, x, y, w, h, focal_distance_, aperture_size_, dof_samples_, true, caustics_enabled_);
+                        camera,
+                        x,
+                        y,
+                        w,
+                        h,
+                        focal_distance_,
+                        aperture_size_,
+                        dof_samples_,
+                        true,
+                        caustics_enabled_
+                    );
                     pixel_accum = ColourHDR{
                         .red = pixel_accum.red + hdr.red,
                         .green = pixel_accum.green + hdr.green,
-                        .blue = pixel_accum.blue + hdr.blue};
+                        .blue = pixel_accum.blue + hdr.blue
+                    };
                 } else {
                     // Path tracing — jittered sampling per frame for progressive refinement
                     int sample_index = rendering_frame_count_ * (w * h) + pixel_index + s;
-                    uint32_t base_seed = static_cast<uint32_t>(pixel_index + rendering_frame_count_ * 123457u) | 1u;
-                    uint32_t sub_seed = base_seed ^ (static_cast<uint32_t>(s) * 0x9e3779b9u);
-                    ColourHDR hdr =
-                        raytracer_->render_pixel(camera, x, y, w, h, true, caustics_enabled_, sample_index, sub_seed);
+                    std::uint32_t base_seed =
+                        static_cast<std::uint32_t>(pixel_index + rendering_frame_count_ * 123457u) |
+                        1u;
+                    std::uint32_t sub_seed =
+                        base_seed ^ (static_cast<std::uint32_t>(s) * 0x9e3779b9u);
+                    ColourHDR hdr = raytracer_->render_pixel(
+                        camera, x, y, w, h, true, caustics_enabled_, sample_index, sub_seed
+                    );
                     pixel_accum = ColourHDR{
                         .red = pixel_accum.red + hdr.red,
                         .green = pixel_accum.green + hdr.green,
-                        .blue = pixel_accum.blue + hdr.blue};
+                        .blue = pixel_accum.blue + hdr.blue
+                    };
                 }
             }
             // Average samples for current pixel
             ColourHDR final_hdr_avg{
                 pixel_accum.red / static_cast<FloatType>(samples_to_run),
                 pixel_accum.green / static_cast<FloatType>(samples_to_run),
-                pixel_accum.blue / static_cast<FloatType>(samples_to_run)};
-            std::size_t idx = static_cast<std::size_t>(y) * get_width() + static_cast<std::size_t>(x);
+                pixel_accum.blue / static_cast<FloatType>(samples_to_run)
+            };
+            std::size_t idx =
+                static_cast<std::size_t>(y) * get_width() + static_cast<std::size_t>(x);
             // Update accumulation buffer (video mode vs progressive mode)
             if (video_export_mode_) {
                 accumulation_buffer_[idx] = final_hdr_avg;
@@ -205,16 +233,20 @@ void Renderer::process_rows(int y0, int y1) noexcept {
                 accumulation_buffer_[idx] = ColourHDR{
                     .red = accumulation_buffer_[idx].red + final_hdr_avg.red,
                     .green = accumulation_buffer_[idx].green + final_hdr_avg.green,
-                    .blue = accumulation_buffer_[idx].blue + final_hdr_avg.blue};
+                    .blue = accumulation_buffer_[idx].blue + final_hdr_avg.blue
+                };
             }
             // Compute display HDR (per-frame or progressive average)
-            ColourHDR avg_hdr =
-                video_export_mode_
-                    ? accumulation_buffer_[idx]
-                    : ColourHDR{
-                          .red = accumulation_buffer_[idx].red / static_cast<FloatType>(rendering_frame_count_),
-                          .green = accumulation_buffer_[idx].green / static_cast<FloatType>(rendering_frame_count_),
-                          .blue = accumulation_buffer_[idx].blue / static_cast<FloatType>(rendering_frame_count_)};
+            ColourHDR avg_hdr = video_export_mode_
+                                    ? accumulation_buffer_[idx]
+                                    : ColourHDR{
+                                          .red = accumulation_buffer_[idx].red /
+                                                 static_cast<FloatType>(rendering_frame_count_),
+                                          .green = accumulation_buffer_[idx].green /
+                                                   static_cast<FloatType>(rendering_frame_count_),
+                                          .blue = accumulation_buffer_[idx].blue /
+                                                  static_cast<FloatType>(rendering_frame_count_)
+                                      };
             // Tone map + gamma correct, then write to window backbuffer
             Colour final_colour = TonemapAndGammaCorrect(avg_hdr, gamma_);
             window_[{x, y}] = final_colour;

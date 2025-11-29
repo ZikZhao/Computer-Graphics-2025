@@ -30,18 +30,26 @@ int main(int argc, char* argv[]) {
 
     // Centralized input callbacks: movement and UI toggles
     window.register_key(
-        {SDL_SCANCODE_W, SDL_SCANCODE_S, SDL_SCANCODE_A, SDL_SCANCODE_D, SDL_SCANCODE_SPACE, SDL_SCANCODE_C},
+        {SDL_SCANCODE_W,
+         SDL_SCANCODE_S,
+         SDL_SCANCODE_A,
+         SDL_SCANCODE_D,
+         SDL_SCANCODE_SPACE,
+         SDL_SCANCODE_C},
         Window::Trigger::ANY_PRESSED_NO_MODIFIER,
         [&](const Window::KeyState& ks, float dt) {
             constexpr FloatType move_step = 3.0f;
             FloatType fwd = (ks[SDL_SCANCODE_W] ? 1.0f : 0.0f) - (ks[SDL_SCANCODE_S] ? 1.0f : 0.0f);
-            FloatType right = (ks[SDL_SCANCODE_D] ? 1.0f : 0.0f) - (ks[SDL_SCANCODE_A] ? 1.0f : 0.0f);
-            FloatType up = (ks[SDL_SCANCODE_SPACE] ? 1.0f : 0.0f) - (ks[SDL_SCANCODE_C] ? 1.0f : 0.0f);
+            FloatType right =
+                (ks[SDL_SCANCODE_D] ? 1.0f : 0.0f) - (ks[SDL_SCANCODE_A] ? 1.0f : 0.0f);
+            FloatType up =
+                (ks[SDL_SCANCODE_SPACE] ? 1.0f : 0.0f) - (ks[SDL_SCANCODE_C] ? 1.0f : 0.0f);
             if (fwd != 0.0f || right != 0.0f || up != 0.0f) {
-                world.camera_.move(fwd * move_step, right * move_step, up * move_step, dt);
+                world.camera().move(fwd * move_step, right * move_step, up * move_step, dt);
                 renderer.reset_accumulation();
             }
-        });
+        }
+    );
 
     window.register_key(
         {SDL_SCANCODE_Q, SDL_SCANCODE_E},
@@ -50,19 +58,24 @@ int main(int argc, char* argv[]) {
             constexpr FloatType roll_speed = 2.0f;
             FloatType r = (ks[SDL_SCANCODE_E] ? 1.0f : 0.0f) - (ks[SDL_SCANCODE_Q] ? 1.0f : 0.0f);
             if (r != 0.0f) {
-                world.camera_.roll(r * roll_speed * dt);
+                world.camera().roll(r * roll_speed * dt);
                 renderer.reset_accumulation();
             }
-        });
-
-    window.register_key({SDL_SCANCODE_O}, Window::Trigger::ANY_JUST_PRESSED, [&](const Window::KeyState&, float) {
-        if (!world.camera_.is_orbiting_) {
-            world.camera_.start_orbiting(world.camera_.orbit_target_);
-        } else {
-            world.camera_.stop_orbiting();
         }
-        renderer.reset_accumulation();
-    });
+    );
+
+    window.register_key(
+        {SDL_SCANCODE_O},
+        Window::Trigger::ANY_JUST_PRESSED,
+        [&](const Window::KeyState&, float) {
+            if (!world.camera().is_orbiting()) {
+                world.camera().start_orbiting(world.camera().orbit_target());
+            } else {
+                world.camera().stop_orbiting();
+            }
+            renderer.reset_accumulation();
+        }
+    );
 
     window.register_key(
         {SDL_SCANCODE_1, SDL_SCANCODE_2, SDL_SCANCODE_3, SDL_SCANCODE_4},
@@ -72,35 +85,44 @@ int main(int argc, char* argv[]) {
             if (ks[SDL_SCANCODE_1]) {
                 renderer.set_mode(Renderer::Mode::WIREFRAME);
                 mode_name = "WIREFRAME";
-            }
-            else if (ks[SDL_SCANCODE_2]) {
+            } else if (ks[SDL_SCANCODE_2]) {
                 renderer.set_mode(Renderer::Mode::RASTERIZED);
                 mode_name = "RASTERIZED";
-            }
-            else if (ks[SDL_SCANCODE_3]) {
+            } else if (ks[SDL_SCANCODE_3]) {
                 renderer.set_mode(Renderer::Mode::RAYTRACED);
                 mode_name = "RAYTRACED";
-            }
-            else if (ks[SDL_SCANCODE_4]) {
+            } else if (ks[SDL_SCANCODE_4]) {
                 renderer.set_mode(Renderer::Mode::DEPTH_OF_FIELD);
                 mode_name = "DEPTH_OF_FIELD";
             }
             renderer.reset_accumulation();
             std::cout << std::format("[Renderer] Mode set to {}\n", mode_name);
-        });
-
-    window.register_key({SDL_SCANCODE_G}, Window::Trigger::ANY_JUST_PRESSED, [&](const Window::KeyState&, float) {
-        renderer.set_gamma((renderer.gamma() == 2.2f) ? 1.0f : 2.2f);
-    });
-    window.register_key({SDL_SCANCODE_P}, Window::Trigger::ANY_JUST_PRESSED, [&](const Window::KeyState&, float) {
-        if (renderer.is_photon_map_ready()) {
-            renderer.set_caustics_enabled(!renderer.caustics_enabled());
-            std::cout << std::format("[PhotonMap] Caustics {}\n", (renderer.caustics_enabled() ? "ENABLED" : "DISABLED"));
-            renderer.reset_accumulation();
-        } else {
-            std::cout << "[PhotonMap] Caustics photon map is not ready yet" << std::endl;
         }
-    });
+    );
+
+    window.register_key(
+        {SDL_SCANCODE_G},
+        Window::Trigger::ANY_JUST_PRESSED,
+        [&](const Window::KeyState&, float) {
+            renderer.set_gamma((renderer.gamma() == 2.2f) ? 1.0f : 2.2f);
+        }
+    );
+    window.register_key(
+        {SDL_SCANCODE_P},
+        Window::Trigger::ANY_JUST_PRESSED,
+        [&](const Window::KeyState&, float) {
+            if (renderer.is_photon_map_ready()) {
+                renderer.set_caustics_enabled(!renderer.caustics_enabled());
+                std::cout << std::format(
+                    "[PhotonMap] Caustics {}\n",
+                    (renderer.caustics_enabled() ? "ENABLED" : "DISABLED")
+                );
+                renderer.reset_accumulation();
+            } else {
+                std::cout << "[PhotonMap] Caustics photon map is not ready yet" << std::endl;
+            }
+        }
+    );
 
     // Aperture control (+/-)
     window.register_key(
@@ -127,7 +149,8 @@ int main(int argc, char* argv[]) {
                 std::cout << std::format("[DepthOfField] Aperture Size: {:.2f}\n", new_aperture);
                 renderer.reset_accumulation();
             }
-        });
+        }
+    );
 
     // Screenshot save (Ctrl+S)
     window.register_key(
@@ -137,7 +160,8 @@ int main(int argc, char* argv[]) {
             window.save_ppm("screenshot.ppm");
             window.save_bmp("screenshot.bmp");
             std::cout << "[Screenshot] Saved as screenshot.ppm and screenshot.bmp\n";
-        });
+        }
+    );
 
     // Video recording toggle (Ctrl+R)
     window.register_key(
@@ -145,23 +169,28 @@ int main(int argc, char* argv[]) {
         Window::Trigger::ALL_JUST_PRESSED,
         [&](const Window::KeyState&, float) {
             video_recorder.toggle_recording();
-            renderer.video_export_mode_ = video_recorder.is_recording();
-        });
+            renderer.set_video_export_mode(video_recorder.is_recording());
+        }
+    );
 
     // Mouse look (left button drag)
-    window.register_mouse(SDL_BUTTON_LEFT, Window::Trigger::ANY_PRESSED, [&](int xrel, int yrel, float dt) {
-        if (xrel == 0 && yrel == 0) return;
-        constexpr FloatType MOUSE_SENSITIVITY = 0.002f;
-        FloatType dx0 = -static_cast<FloatType>(xrel) * MOUSE_SENSITIVITY;
-        FloatType dy0 = static_cast<FloatType>(yrel) * MOUSE_SENSITIVITY;
-        FloatType roll = world.camera_.roll_;
-        FloatType c = std::cos(roll);
-        FloatType s = std::sin(roll);
-        FloatType d_yaw = dx0 * c + dy0 * s;
-        FloatType d_pitch = -dx0 * s + dy0 * c;
-        world.camera_.rotate(d_yaw, d_pitch);
-        renderer.reset_accumulation();
-    });
+    window.register_mouse(
+        SDL_BUTTON_LEFT,
+        Window::Trigger::ANY_PRESSED,
+        [&](int xrel, int yrel, float dt) {
+            if (xrel == 0 && yrel == 0) return;
+            constexpr FloatType MOUSE_SENSITIVITY = 0.002f;
+            FloatType dx0 = -static_cast<FloatType>(xrel) * MOUSE_SENSITIVITY;
+            FloatType dy0 = static_cast<FloatType>(yrel) * MOUSE_SENSITIVITY;
+            FloatType roll = world.camera().roll();
+            FloatType c = std::cos(roll);
+            FloatType s = std::sin(roll);
+            FloatType d_yaw = dx0 * c + dy0 * s;
+            FloatType d_pitch = -dx0 * s + dy0 * c;
+            world.camera().rotate(d_yaw, d_pitch);
+            renderer.reset_accumulation();
+        }
+    );
 
     // Focal distance control via scroll
     window.register_scroll([&](int y_offset) {
@@ -187,8 +216,8 @@ int main(int argc, char* argv[]) {
 
     while (true) {
         // Advance any orbit animation and render the frame
-        world.camera_.orbiting();
-        renderer.video_export_mode_ = video_recorder.is_recording();
+        world.camera().orbiting();
+        renderer.set_video_export_mode(video_recorder.is_recording());
         renderer.render();
 
         // Process input; exit on window close or ESC

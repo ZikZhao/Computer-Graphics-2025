@@ -40,47 +40,60 @@ struct GridCellHash {
  * neighborhood queries to reconstruct radiance at hit points.
  */
 class PhotonMap {
-public:
-    // Configuration
-    static constexpr int PhotonsPerLight = 200000;          // Number of photons to emit from light source
-    static constexpr int MaxPhotonBounces = 5;              // Maximum number of bounces per photon
-    static constexpr FloatType MinPhotonPower = 0.01f;      // Minimum power threshold for Russian roulette
-    static constexpr FloatType CausticSearchRadius = 0.4f;  // Search radius for caustic photon gathering
-    static constexpr FloatType GridCellSize =
-        CausticSearchRadius;  // Grid cell size = search radius for exact 27-cell coverage
-
-private:
-    const World& world_;
-
-    // Photon storage: map from Face pointer to vector of photons hitting that face
-    std::map<const Face*, std::vector<Photon>> photon_map_;
-
-    // Flattened spatial grid for fast indexing
+public: // Types
     using GridCell = std::tuple<int, int, int>;
+
+public: // Static Methods & Constants
+    static constexpr int PhotonsPerLight = 200000;
+    static constexpr int MaxPhotonBounces = 5;
+    static constexpr FloatType MinPhotonPower = 0.01f;
+    static constexpr FloatType CausticSearchRadius = 0.4f;
+    static constexpr FloatType GridCellSize = CausticSearchRadius;
+
+    // Check if material is transparent (refractive)
+    static bool IsTransparent(const Material& mat) noexcept {
+        return mat.tw > 0.0f && mat.ior != 1.0f;
+    }
+
+    /**
+     * @brief Random float helper for stochastic decisions.
+     * @param min Inclusive lower bound.
+     * @param max Exclusive upper bound.
+     * @return Random value in [min, max).
+     */
+    static FloatType RandomFloat(FloatType min = 0.0f, FloatType max = 1.0f) noexcept;
+
+private: // Data
+    const World& world_;
+    std::map<const Face*, std::vector<Photon>> photon_map_;
     std::vector<std::vector<Photon>> grid_;
     int grid_width_ = 0;
     int grid_height_ = 0;
     int grid_depth_ = 0;
     glm::vec3 grid_origin_ = glm::vec3(0.0f);
-
-    // Threading
     std::jthread worker_thread_;
     std::atomic<bool> is_ready_{false};
 
-public:
-    /**
-     * @brief Constructs and launches the photon tracing worker.
-     * @param world World reference used for geometry and materials.
-     */
+public: // Lifecycle
     explicit PhotonMap(const World& world);
     ~PhotonMap() = default;
 
+public: // Accessors & Data Binding
     /**
      * @brief Indicates whether the photon map has finished building.
      * @return True when neighborhood queries are available.
      */
-    [[nodiscard]] bool is_ready() const noexcept { return is_ready_.load(std::memory_order_acquire); }
+    [[nodiscard]] bool is_ready() const noexcept {
+        return is_ready_.load(std::memory_order_acquire);
+    }
 
+    /**
+     * @brief Returns total number of stored photons.
+     * @return Photon count across all faces and grid cells.
+     */
+    [[nodiscard]] std::size_t total_photons() const noexcept;
+
+public: // Core Operations
     /**
      * @brief Retrieves photons within a radius of a point on a given face.
      * @param face Target surface (used to filter hits).
@@ -88,7 +101,9 @@ public:
      * @param radius Search radius.
      * @return List of nearby photons satisfying the radial and face filter.
      */
-    [[nodiscard]] std::vector<Photon> query_photons(const Face* face, const glm::vec3& point, FloatType radius) const;
+    [[nodiscard]] std::vector<Photon> query_photons(
+        const Face* face, const glm::vec3& point, FloatType radius
+    ) const;
 
     /**
      * @brief Estimates caustic radiance at a surface point.
@@ -99,52 +114,37 @@ public:
      * @return Estimated radiance in HDR space.
      */
     [[nodiscard]] ColourHDR estimate_caustic(
-        const Face* face, const glm::vec3& point, const glm::vec3& normal, FloatType search_radius) const noexcept;
+        const Face* face, const glm::vec3& point, const glm::vec3& normal, FloatType search_radius
+    ) const noexcept;
 
-    /**
-     * @brief Returns total number of stored photons.
-     * @return Photon count across all faces and grid cells.
-     */
-    [[nodiscard]] std::size_t total_photons() const noexcept;
-
-private:
-    // Main photon tracing worker (runs in jthread)
+private: // Core Operations (Internal)
     void trace_photons();
 
-    // Emit photons from an area light toward transparent targets
     void emit_photons_from_area_light(
-        const Face& light_face, const glm::vec3& target_center, FloatType target_radius, int num_photons);
+        const Face& light_face,
+        const glm::vec3& target_center,
+        FloatType target_radius,
+        int num_photons
+    );
 
-    // Trace a single photon through the scene
     void trace_single_photon(
         const glm::vec3& origin,
         const glm::vec3& direction,
         const glm::vec3& power,
         int depth,
         const glm::vec3& medium_entry_point = glm::vec3(0.0f),
-        bool interacted_with_transparent = false);
+        bool interacted_with_transparent = false
+    );
 
-    // Store a photon in the map
     void store_photon(const Photon& photon);
 
-    // Compute grid cell coordinates for a 3D position (relative to grid_origin_)
     GridCell GetGridCell(const glm::vec3& position) const noexcept;
 
-    // Check if material is transparent (refractive)
-    static bool IsTransparent(const Material& mat) noexcept { return mat.tw > 0.0f && mat.ior != 1.0f; }
-
-    // Ray-triangle intersection (simplified from RayTracer)
     std::optional<RayTriangleIntersection> intersect_triangle(
-        const glm::vec3& ro, const glm::vec3& rd, const Face& face) const noexcept;
+        const glm::vec3& ro, const glm::vec3& rd, const Face& face
+    ) const noexcept;
 
-    // Find closest intersection in scene
-    std::optional<RayTriangleIntersection> find_intersection(const glm::vec3& ro, const glm::vec3& rd) const noexcept;
-
-    /**
-     * @brief Random float helper for stochastic decisions.
-     * @param min Inclusive lower bound.
-     * @param max Exclusive upper bound.
-     * @return Random value in \[min, max).
-     */
-    static FloatType RandomFloat(FloatType min = 0.0f, FloatType max = 1.0f) noexcept;
+    std::optional<RayTriangleIntersection> find_intersection(
+        const glm::vec3& ro, const glm::vec3& rd
+    ) const noexcept;
 };

@@ -1,12 +1,18 @@
 #include "video_recorder.hpp"
 
-#include <cstdlib>
 #include <cassert>
-#include <iostream>
+#include <cstdlib>
 #include <format>
+#include <iostream>
 
-VideoRecorder::VideoRecorder(const std::vector<uint32_t>& pixel_buffer, size_t width, size_t height)
-    : pixel_buffer_(pixel_buffer), recording_(false), frame_count_(0), width_(width), height_(height) {}
+VideoRecorder::VideoRecorder(
+    const std::vector<std::uint32_t>& pixel_buffer, std::size_t width, std::size_t height
+)
+    : pixel_buffer_(pixel_buffer),
+      recording_(false),
+      frame_count_(0),
+      width_(width),
+      height_(height) {}
 
 VideoRecorder::~VideoRecorder() = default;
 
@@ -29,7 +35,9 @@ void VideoRecorder::stop_recording() {
     if (!recording_) return;
     recording_ = false;
     file_stream_.close();
-    std::cout << std::format("[Recording] Stopped recording, converting to MP4 | Captured {} Frames\n", frame_count_);
+    std::cout << std::format(
+        "[Recording] Stopped recording, converting to MP4 | Captured {} Frames\n", frame_count_
+    );
     conversion_thread_ = std::jthread([this]() { convert_to_mp4(); });
 }
 
@@ -56,26 +64,26 @@ void VideoRecorder::write_header() {
 void VideoRecorder::write_frame() {
     // Convert ARGB backbuffer to 4:2:0 planar YUV and write a frame chunk
     file_stream_ << "FRAME\n";
-    std::vector<uint8_t> y_plane(width_ * height_);
-    std::vector<uint8_t> u_plane((width_ / 2) * (height_ / 2));
-    std::vector<uint8_t> v_plane((width_ / 2) * (height_ / 2));
-    for (size_t i = 0; i < height_; i++) {
-        for (size_t j = 0; j < width_; j++) {
-            uint32_t pixel = pixel_buffer_[i * width_ + j];
-            uint8_t r = (pixel >> 16) & 0xFF;
-            uint8_t g = (pixel >> 8) & 0xFF;
-            uint8_t b = (pixel >> 0) & 0xFF;
+    std::vector<std::uint8_t> y_plane(width_ * height_);
+    std::vector<std::uint8_t> u_plane((width_ / 2) * (height_ / 2));
+    std::vector<std::uint8_t> v_plane((width_ / 2) * (height_ / 2));
+    for (std::size_t i = 0; i < height_; i++) {
+        for (std::size_t j = 0; j < width_; j++) {
+            std::uint32_t pixel = pixel_buffer_[i * width_ + j];
+            std::uint8_t r = (pixel >> 16) & 0xFF;
+            std::uint8_t g = (pixel >> 8) & 0xFF;
+            std::uint8_t b = (pixel >> 0) & 0xFF;
             int y = ((66 * r + 129 * g + 25 * b + 128) >> 8) + 16;
             int u = ((-38 * r - 74 * g + 112 * b + 128) >> 8) + 128;
             int v = ((112 * r - 94 * g - 18 * b + 128) >> 8) + 128;
             y = std::max(0, std::min(255, y));
             u = std::max(0, std::min(255, u));
             v = std::max(0, std::min(255, v));
-            y_plane[i * width_ + j] = static_cast<uint8_t>(y);
+            y_plane[i * width_ + j] = static_cast<std::uint8_t>(y);
             if (i % 2 == 0 && j % 2 == 0) {
-                size_t uv_index = (i / 2) * (width_ / 2) + (j / 2);
-                u_plane[uv_index] = static_cast<uint8_t>(u);
-                v_plane[uv_index] = static_cast<uint8_t>(v);
+                std::size_t uv_index = (i / 2) * (width_ / 2) + (j / 2);
+                u_plane[uv_index] = static_cast<std::uint8_t>(u);
+                v_plane[uv_index] = static_cast<std::uint8_t>(v);
             }
         }
     }
@@ -87,11 +95,12 @@ void VideoRecorder::write_frame() {
 void VideoRecorder::convert_to_mp4() {
 // Invoke ffmpeg to transcode Y4M to MP4; silence console output
 #ifdef _WIN32
-    std::string null_device = "nul";
+    constexpr std::string_view null_device = "nul";
 #else
-    std::string null_device = "/dev/null";
+    constexpr std::string_view null_device = "/dev/null";
 #endif
-    std::string command = std::format("ffmpeg -y -i {} {} > {} 2>&1", Y4MFilename, MP4Filename, null_device);
+    std::string command =
+        std::format("ffmpeg -y -i {} {} > {} 2>&1", Y4MFilename, MP4Filename, null_device);
     int result = std::system(command.c_str());
     if (result == 0) {
         std::ignore = std::system((std::string("rm ") + Y4MFilename).c_str());

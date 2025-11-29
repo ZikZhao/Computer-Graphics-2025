@@ -2,7 +2,8 @@
 
 #include <algorithm>
 
-Window::Window(int w, int h, bool fullscreen) noexcept : width_(w), height_(h), pixel_buffer_(w * h) {
+Window::Window(int w, int h, bool fullscreen) noexcept
+    : width_(w), height_(h), pixel_buffer_(w * h) {
     // Initialize SDL video subsystem
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
         std::cerr << std::format("[SDL] Could not initialise SDL: {}\n", SDL_GetError());
@@ -10,7 +11,7 @@ Window::Window(int w, int h, bool fullscreen) noexcept : width_(w), height_(h), 
     }
 
     // Create window surface (optional fullscreen)
-    uint32_t flags = SDL_WINDOW_OPENGL;
+    std::uint32_t flags = SDL_WINDOW_OPENGL;
     if (fullscreen) flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
 
     int anywhere = SDL_WINDOWPOS_UNDEFINED;
@@ -33,7 +34,8 @@ Window::Window(int w, int h, bool fullscreen) noexcept : width_(w), height_(h), 
 
     // Backbuffer texture receiving ARGB pixels
     int pixel_format = SDL_PIXELFORMAT_ARGB8888;
-    texture_ = SDL_CreateTexture(renderer_, pixel_format, SDL_TEXTUREACCESS_STATIC, width_, height_);
+    texture_ =
+        SDL_CreateTexture(renderer_, pixel_format, SDL_TEXTUREACCESS_STATIC, width_, height_);
     if (!texture_) {
         std::cerr << std::format("[SDL] Could not allocate texture: {}\n", SDL_GetError());
         std::terminate();
@@ -47,7 +49,9 @@ Window::~Window() {
     SDL_Quit();
 }
 
-void Window::register_key(const std::unordered_set<SDL_Scancode>& keys, Trigger trigger, KeyHandler handler) noexcept {
+void Window::register_key(
+    const std::unordered_set<SDL_Scancode>& keys, Trigger trigger, KeyHandler handler
+) noexcept {
     auto now = std::chrono::steady_clock::now();
     key_bindings_.push_back(KeyBinding{
         .keys = keys,
@@ -55,7 +59,8 @@ void Window::register_key(const std::unordered_set<SDL_Scancode>& keys, Trigger 
         .handler = handler,
         .id = next_event_id_++,
         .last_time = now,
-        .time_initialized = false});
+        .time_initialized = false
+    });
 }
 
 void Window::register_mouse(Uint8 button, Trigger trigger, MouseHandler handler) noexcept {
@@ -66,7 +71,8 @@ void Window::register_mouse(Uint8 button, Trigger trigger, MouseHandler handler)
         .handler = handler,
         .first_motion = true,
         .last_time = now,
-        .time_initialized = false});
+        .time_initialized = false
+    });
 }
 
 void Window::register_scroll(ScrollHandler handler) noexcept {
@@ -84,7 +90,8 @@ bool Window::process_events() noexcept {
     mouse_yrel_ = 0;
     mouse_scroll_ = 0;
     while (SDL_PollEvent(&event)) {
-        if (event.type == SDL_QUIT || (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE) ||
+        if (event.type == SDL_QUIT ||
+            (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE) ||
             (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE)) {
             return false;
         }
@@ -136,7 +143,7 @@ bool Window::process_events() noexcept {
     // Dispatch registered input handlers
     process_key_bindings();
     process_mouse_bindings();
-    
+
     if (mouse_scroll_ != 0) {
         for (auto& handler : scroll_handlers_) {
             handler(mouse_scroll_);
@@ -165,7 +172,8 @@ void Window::process_key_bindings() noexcept {
                         break;
                     }
                 }
-            } else if (binding.trigger == Trigger::ALL_DOWN || binding.trigger == Trigger::ALL_PRESSED) {
+            } else if (binding.trigger == Trigger::ALL_DOWN ||
+                       binding.trigger == Trigger::ALL_PRESSED) {
                 any_down = true;
                 for (auto k : binding.keys) {
                     if (!keys_this_frame_[k]) {
@@ -174,7 +182,8 @@ void Window::process_key_bindings() noexcept {
                     }
                 }
             }
-            if (binding.trigger == Trigger::ANY_PRESSED_NO_MODIFIER && has_modifier_keys()) any_down = false;
+            if (binding.trigger == Trigger::ANY_PRESSED_NO_MODIFIER && has_modifier_keys())
+                any_down = false;
 
             bool just_pressed = false;
             for (auto k : binding.keys) {
@@ -199,10 +208,12 @@ void Window::process_key_bindings() noexcept {
             }
         } else {
             if (check_key_trigger(binding)) {
-                // When handling JUST_PRESSED (or any non-continuous trigger), ensure the handler sees 
-                // keys that were pressed this frame even if they are currently released (e.g. pressed and released quickly).
-                // This is critical for long render frames where input polling is sparse.
-                if (binding.trigger == Trigger::ANY_JUST_PRESSED || binding.trigger == Trigger::ALL_JUST_PRESSED) {
+                // When handling JUST_PRESSED (or any non-continuous trigger), ensure the handler
+                // sees keys that were pressed this frame even if they are currently released (e.g.
+                // pressed and released quickly). This is critical for long render frames where
+                // input polling is sparse.
+                if (binding.trigger == Trigger::ANY_JUST_PRESSED ||
+                    binding.trigger == Trigger::ALL_JUST_PRESSED) {
                     KeyState effective_keys = keys_this_frame_;
                     for (auto k : keys_pressed_this_frame_) {
                         if (k >= 0 && k < SDL_NUM_SCANCODES) {
@@ -338,7 +349,7 @@ void Window::process_mouse_bindings() noexcept {
 
 void Window::update() noexcept {
     // Upload ARGB backbuffer to texture and present; then clear for next frame
-    SDL_UpdateTexture(texture_, nullptr, pixel_buffer_.data(), width_ * sizeof(uint32_t));
+    SDL_UpdateTexture(texture_, nullptr, pixel_buffer_.data(), width_ * sizeof(std::uint32_t));
     SDL_RenderClear(renderer_);
     SDL_RenderCopy(renderer_, texture_, nullptr, nullptr);
     SDL_RenderPresent(renderer_);
@@ -359,19 +370,18 @@ std::uint32_t Window::operator[](const std::pair<int, int>& xy) const noexcept {
 
 void Window::clear_pixels() noexcept { std::fill(pixel_buffer_.begin(), pixel_buffer_.end(), 0); }
 
-
-
 void Window::save_ppm(const std::string& filename) const {
     std::ofstream output_stream(filename, std::ofstream::out);
     output_stream << "P6\n";
     output_stream << width_ << " " << height_ << "\n";
     output_stream << "255\n";
 
-    for (size_t i = 0; i < width_ * height_; i++) {
+    for (std::size_t i = 0; i < width_ * height_; i++) {
         std::array<char, 3> rgb{
             {static_cast<char>((pixel_buffer_[i] >> 16) & 0xFF),
              static_cast<char>((pixel_buffer_[i] >> 8) & 0xFF),
-             static_cast<char>((pixel_buffer_[i] >> 0) & 0xFF)}};
+             static_cast<char>((pixel_buffer_[i] >> 0) & 0xFF)}
+        };
         output_stream.write(rgb.data(), 3);
     }
     output_stream.close();
@@ -383,18 +393,21 @@ void Window::save_bmp(const std::string& filename) const {
         width_,
         height_,
         32,
-        width_ * sizeof(uint32_t),
+        width_ * sizeof(std::uint32_t),
         0xFF << 16,
         0xFF << 8,
         0xFF << 0,
-        0xFF << 24);
+        0xFF << 24
+    );
     SDL_SaveBMP(surface, filename.c_str());
     SDL_FreeSurface(surface);
 }
 
 bool Window::is_key_pressed(SDL_Scancode key) const noexcept { return keys_this_frame_[key] != 0; }
 
-bool Window::is_key_just_pressed(SDL_Scancode key) const noexcept { return keys_pressed_this_frame_.count(key); }
+bool Window::is_key_just_pressed(SDL_Scancode key) const noexcept {
+    return keys_pressed_this_frame_.count(key);
+}
 
 bool Window::is_key_just_released(SDL_Scancode key) const noexcept {
     return keys_updated_this_frame_.count(key) && !keys_this_frame_[key];

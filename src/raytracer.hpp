@@ -19,7 +19,7 @@
  * - Volumetric Absorption (Beer's Law)
  */
 class RayTracer {
-public:
+public: // Types
     /**
      * @brief Tracks the current medium the ray is traversing.
      * Used for calculating volumetric absorption (Beer's Law).
@@ -30,23 +30,33 @@ public:
         FloatType entry_distance = 0.0f;          ///< Distance from camera/origin to entry point.
     };
 
-public:
+public: // Static Methods & Constants
     /**
      * @brief Clamps the radiance values to avoid fireflies/NaNs.
      * @param c Input color.
      * @param max_luma Maximum allowed component value.
      * @return Clamped color.
      */
-    [[nodiscard]] static constexpr ColourHDR ClampRadiance(const ColourHDR& c, FloatType max_luma) noexcept;
+    [[nodiscard]] static constexpr ColourHDR ClampRadiance(
+        const ColourHDR& c, FloatType max_luma
+    ) noexcept;
 
-private:
+private: // Data
     const World& world_;
-    // Photon map for caustics
     std::unique_ptr<PhotonMap> photon_map_;
 
-public:
+public: // Lifecycle
     explicit RayTracer(const World& world);
 
+public: // Accessors & Data Binding
+    /**
+     * @brief Checks if the photon map has finished building.
+     */
+    [[nodiscard]] bool is_photon_map_ready() const noexcept {
+        return photon_map_ && photon_map_->is_ready();
+    }
+
+public: // Core Operations
     /**
      * @brief Renders a single pixel using standard pinhole camera model.
      *
@@ -70,7 +80,8 @@ public:
         bool soft_shadows,
         bool use_caustics = false,
         int sample_index = 0,
-        uint32_t initial_seed = 1u) const noexcept;
+        std::uint32_t initial_seed = 1u
+    ) const noexcept;
 
     /**
      * @brief Renders a single pixel with Depth of Field (DoF).
@@ -97,14 +108,10 @@ public:
         FloatType aperture_size,
         int samples,
         bool soft_shadows,
-        bool use_caustics = false) const noexcept;
+        bool use_caustics = false
+    ) const noexcept;
 
-    /**
-     * @brief Checks if the photon map has finished building.
-     */
-    [[nodiscard]] bool is_photon_map_ready() const noexcept { return photon_map_ && photon_map_->is_ready(); }
-
-private:
+private: // Core Operations (Internal)
     /**
      * @brief Recursive ray tracing function.
      *
@@ -128,7 +135,8 @@ private:
         bool use_caustics,
         int sample_index,
         const glm::vec3& throughput,
-        uint32_t& rng) const noexcept;
+        std::uint32_t& rng
+    ) const noexcept;
 
     /**
      * @brief Intersects the ray with the scene geometry.
@@ -137,8 +145,9 @@ private:
 
     /**
      * @brief Computes visibility between two points (shadow ray).
-     * @return Transmission color (e.g., white if visible, black if blocked, or filtered color if through transparent
-     * object).
+     * @return Transmission color (e.g., white if visible, black if blocked, or filtered color if
+     * through transparent object).
      */
-    glm::vec3 compute_transmittance_bvh(const glm::vec3& point, const glm::vec3& light_pos) const noexcept;
+    glm::vec3 compute_transmittance_bvh(const glm::vec3& point, const glm::vec3& light_pos)
+        const noexcept;
 };
