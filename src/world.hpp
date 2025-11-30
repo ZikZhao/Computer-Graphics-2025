@@ -299,6 +299,15 @@ public:
     };
 
 public:
+    /// Builds a BVH from the given model data.
+    [[nodiscard]] static BVHAccelerator Build(
+        const std::vector<Face>& faces,
+        const std::vector<glm::vec3>& vertices,
+        const std::vector<glm::vec3>& normals,
+        const std::vector<glm::vec3>& vertex_normals,
+        const std::vector<glm::vec2>& texcoords
+    );
+
     /** @brief Ray–AABB test used by traversal. */
     [[nodiscard]] static bool IntersectAABB(
         const glm::vec3& ro, const glm::vec3& rd, const AABB& box, FloatType tmax
@@ -313,24 +322,37 @@ private:
     const std::vector<glm::vec3>* normals_ = nullptr;
     const std::vector<glm::vec3>* normals_by_vertex_ = nullptr;
 
+private:
+    BVHAccelerator(
+        const std::vector<glm::vec3>& vertices,
+        const std::vector<glm::vec3>& normals,
+        const std::vector<glm::vec3>& vertex_normals,
+        const std::vector<glm::vec2>& texcoords
+    );
+
 public:
+    BVHAccelerator() = default;
+
     [[nodiscard]] bool empty() const noexcept { return nodes_.empty(); }
 
-    void set_vertices(const std::vector<glm::vec3>& verts) noexcept { vertices_ = &verts; }
-    void set_texcoords(const std::vector<glm::vec2>& uvs) noexcept { texcoords_ = &uvs; }
-    void set_normals(const std::vector<glm::vec3>& norms) noexcept { normals_ = &norms; }
-    void set_normals_by_vertex(const std::vector<glm::vec3>& norms) noexcept { normals_by_vertex_ = &norms; }
-
-public:
-    /** @brief Builds BVH nodes over provided faces. */
-    void build(const std::vector<Face>& faces) noexcept;
-
-    /** @brief Intersects ray with triangles; returns closest hit or miss. */
+    /**
+     * @brief Intersects ray with triangles; returns closest hit or miss.
+     * @param ro Ray origin.
+     * @param rd Ray direction.
+     * @param faces Triangle array.
+     * @return Closest intersection or miss.
+     */
     [[nodiscard]] RayTriangleIntersection intersect(
         const glm::vec3& ro, const glm::vec3& rd, const std::vector<Face>& faces
     ) const noexcept;
 
-    /** @brief Computes shadow transmittance along a segment to the light. */
+    /**
+     * @brief Computes shadow transmittance along a segment to the light.
+     * @param point Starting point.
+     * @param light_pos Light position.
+     * @param faces Triangle array.
+     * @return RGB transmittance (1.0 = unoccluded, 0.0 = fully occluded).
+     */
     [[nodiscard]] glm::vec3 transmittance(
         const glm::vec3& point, const glm::vec3& light_pos, const std::vector<Face>& faces
     ) const noexcept;
@@ -340,13 +362,13 @@ public:
  * @brief Scene container; merges models, builds BVH, and exposes accessors.
  */
 class World {
-private:
+public:
     std::vector<Model> models_;
     std::vector<Face> all_faces_;  // Flattened faces from all models
     std::vector<glm::vec3> all_vertices_;
     std::vector<glm::vec2> all_texcoords_;
     std::vector<glm::vec3> all_vertex_normals_;
-    std::vector<glm::vec3> all_vertex_normals_by_vertex_;
+    std::vector<glm::vec3> all_vertex_normals_by_vertex_;  // Vertex normals defined by "Vertex x y z / xn yn zn" lines
     EnvironmentMap env_map_;
     std::vector<const Face*> emissive_faces_;
     BVHAccelerator accelerator_;
@@ -354,30 +376,6 @@ private:
 
 public:
     World(const std::vector<std::string>& filenames);
-
-    Camera& camera() noexcept { return camera_; }
-    const Camera& camera() const noexcept { return camera_; }
-
-    // Accessors for Renderer
-    [[nodiscard]] const std::vector<Model>& models() const noexcept { return models_; }
-    [[nodiscard]] const std::vector<Face>& all_faces() const noexcept { return all_faces_; }
-    [[nodiscard]] const std::vector<glm::vec3>& all_vertices() const noexcept {
-        return all_vertices_;
-    }
-    [[nodiscard]] const std::vector<glm::vec2>& all_texcoords() const noexcept {
-        return all_texcoords_;
-    }
-    [[nodiscard]] const std::vector<glm::vec3>& all_vertex_normals() const noexcept {
-        return all_vertex_normals_;
-    }
-    [[nodiscard]] const std::vector<glm::vec3>& all_vertex_normals_by_vertex() const noexcept {
-        return all_vertex_normals_by_vertex_;
-    }
-    [[nodiscard]] const EnvironmentMap& env_map() const noexcept { return env_map_; }
-    [[nodiscard]] const std::vector<const Face*>& area_lights() const noexcept {
-        return emissive_faces_;
-    }
-    [[nodiscard]] const BVHAccelerator& accelerator() const noexcept { return accelerator_; }
 
 private:
     void parse_obj(Model& model, const std::string& filename);

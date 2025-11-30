@@ -13,8 +13,8 @@
 #include "window.hpp"
 #include "world.hpp"
 
-constexpr std::size_t WIDTH = 960;
-constexpr std::size_t HEIGHT = 540;
+constexpr std::size_t WindowWidth = 960;
+constexpr std::size_t WindowHeight = 540;
 
 int main(int argc, char* argv[]) {
     assert(argc >= 2 && "Please provide a .obj file as a command line argument.");
@@ -23,9 +23,9 @@ int main(int argc, char* argv[]) {
     World world = {std::vector<std::string>(argv + 1, argv + argc)};
 
     // Initialize output window and rendering engines
-    Window window(WIDTH, HEIGHT, false);
+    Window window(WindowWidth, WindowHeight, false);
     Renderer renderer(world, window);
-    VideoRecorder video_recorder(window.get_pixel_buffer(), WIDTH, HEIGHT);
+    VideoRecorder video_recorder(window.get_pixel_buffer(), WindowWidth, WindowHeight);
 
     // Centralized input callbacks: movement and UI toggles
     window.register_key(
@@ -44,7 +44,7 @@ int main(int argc, char* argv[]) {
             FloatType up =
                 (ks[SDL_SCANCODE_SPACE] ? 1.0f : 0.0f) - (ks[SDL_SCANCODE_C] ? 1.0f : 0.0f);
             if (fwd != 0.0f || right != 0.0f || up != 0.0f) {
-                world.camera().move(fwd * move_step, right * move_step, up * move_step, dt);
+                world.camera_.move(fwd * move_step, right * move_step, up * move_step, dt);
                 renderer.reset_accumulation();
             }
         }
@@ -57,7 +57,7 @@ int main(int argc, char* argv[]) {
             constexpr FloatType roll_speed = 2.0f;
             FloatType r = (ks[SDL_SCANCODE_E] ? 1.0f : 0.0f) - (ks[SDL_SCANCODE_Q] ? 1.0f : 0.0f);
             if (r != 0.0f) {
-                world.camera().roll(r * roll_speed * dt);
+                world.camera_.roll(r * roll_speed * dt);
                 renderer.reset_accumulation();
             }
         }
@@ -67,10 +67,10 @@ int main(int argc, char* argv[]) {
         {SDL_SCANCODE_O},
         Window::Trigger::ANY_JUST_PRESSED,
         [&](const Window::KeyState&, float) {
-            if (!world.camera().is_orbiting()) {
-                world.camera().start_orbiting(world.camera().orbit_target());
+            if (!world.camera_.is_orbiting()) {
+                world.camera_.start_orbiting(world.camera_.orbit_target());
             } else {
-                world.camera().stop_orbiting();
+                world.camera_.stop_orbiting();
             }
             renderer.reset_accumulation();
         }
@@ -181,12 +181,12 @@ int main(int argc, char* argv[]) {
             constexpr FloatType MOUSE_SENSITIVITY = 0.002f;
             FloatType dx0 = -static_cast<FloatType>(xrel) * MOUSE_SENSITIVITY;
             FloatType dy0 = static_cast<FloatType>(yrel) * MOUSE_SENSITIVITY;
-            FloatType roll = world.camera().roll();
+            FloatType roll = world.camera_.roll();
             FloatType c = std::cos(roll);
             FloatType s = std::sin(roll);
             FloatType d_yaw = dx0 * c + dy0 * s;
             FloatType d_pitch = -dx0 * s + dy0 * c;
-            world.camera().rotate(d_yaw, d_pitch);
+            world.camera_.rotate(d_yaw, d_pitch);
             renderer.reset_accumulation();
         }
     );
@@ -215,7 +215,7 @@ int main(int argc, char* argv[]) {
 
     while (true) {
         // Advance any orbit animation and render the frame
-        world.camera().orbiting();
+        world.camera_.orbiting();
         renderer.set_video_export_mode(video_recorder.is_recording());
         renderer.render();
 

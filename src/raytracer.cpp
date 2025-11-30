@@ -126,10 +126,10 @@ ColourHDR RayTracer::trace_ray(
     std::uint32_t& rng
 ) const noexcept {
     // Recursion limit: sample environment on termination
-    constexpr int ABS_MAX_DEPTH = 20;
+    constexpr int ABS_MAX_DEPTH = 8;
     if (depth >= ABS_MAX_DEPTH) {
-        if (world_.env_map().is_loaded()) {
-            return world_.env_map().sample(ray_dir);
+        if (world_.env_map_.is_loaded()) {
+            return world_.env_map_.sample(ray_dir);
         }
         return ColourHDR{.red = 0.0f, .green = 0.0f, .blue = 0.0f};
     }
@@ -166,8 +166,8 @@ ColourHDR RayTracer::trace_ray(
     // Environment mapping (miss)
     if (intersection.triangleIndex == static_cast<std::size_t>(-1)) {
         ColourHDR env_color;
-        if (world_.env_map().is_loaded()) {
-            env_color = world_.env_map().sample(ray_dir);
+        if (world_.env_map_.is_loaded()) {
+            env_color = world_.env_map_.sample(ray_dir);
         } else {
             env_color = ColourHDR{.red = 0.0f, .green = 0.0f, .blue = 0.0f};
         }
@@ -176,7 +176,7 @@ ColourHDR RayTracer::trace_ray(
         return out;
     }
 
-    const std::vector<Face>& all_faces = world_.all_faces();
+    const std::vector<Face>& all_faces = world_.all_faces_;
     const Face& face = all_faces[intersection.triangleIndex];
 
     // Emissive contribution from area lights
@@ -186,7 +186,7 @@ ColourHDR RayTracer::trace_ray(
         if (depth > 0) out = ClampRadiance(out, 10.0f);
         return out;
     }
-    const auto& area_lights = world_.area_lights();
+    const auto& area_lights = world_.emissive_faces_;
 
     // Dielectric surface: refraction/reflection with Fresnel (Schlick)
     if (face.material.tw > 0.0f) {
@@ -329,12 +329,12 @@ ColourHDR RayTracer::trace_ray(
                 auto fetch_normal = [&](int idx) -> glm::vec3 {
                     std::uint32_t ni = face.vn_indices[idx];
                     if (ni != std::numeric_limits<std::uint32_t>::max() &&
-                        ni < world_.all_vertex_normals().size())
-                        return world_.all_vertex_normals()[ni];
+                        ni < world_.all_vertex_normals_.size())
+                        return world_.all_vertex_normals_[ni];
                     std::uint32_t vi = face.v_indices[idx];
-                    if (vi < world_.all_vertex_normals_by_vertex().size() &&
-                        glm::length(world_.all_vertex_normals_by_vertex()[vi]) > 0.001f)
-                        return world_.all_vertex_normals_by_vertex()[vi];
+                    if (vi < world_.all_vertex_normals_by_vertex_.size() &&
+                        glm::length(world_.all_vertex_normals_by_vertex_[vi]) > 0.001f)
+                        return world_.all_vertex_normals_by_vertex_[vi];
                     return face.face_normal;
                 };
                 glm::vec3 n0 = fetch_normal(0);
@@ -349,10 +349,10 @@ ColourHDR RayTracer::trace_ray(
             // Monte Carlo area-light sampling
             for (const Face* lf : area_lights) {
                 // Sample a point on the emitter
-                glm::vec3 e0 = world_.all_vertices()[lf->v_indices[1]] -
-                               world_.all_vertices()[lf->v_indices[0]];
-                glm::vec3 e1 = world_.all_vertices()[lf->v_indices[2]] -
-                               world_.all_vertices()[lf->v_indices[0]];
+                glm::vec3 e0 = world_.all_vertices_[lf->v_indices[1]] -
+                               world_.all_vertices_[lf->v_indices[0]];
+                glm::vec3 e1 = world_.all_vertices_[lf->v_indices[2]] -
+                               world_.all_vertices_[lf->v_indices[0]];
                 FloatType area = 0.5f * glm::length(glm::cross(e0, e1));
                 if (area < 1e-6f) continue;
 
@@ -362,7 +362,7 @@ ColourHDR RayTracer::trace_ray(
                 FloatType b0 = 1.0f - su;
                 FloatType b1 = su * (1.0f - u2);
                 FloatType b2 = su * u2;
-                glm::vec3 light_p = world_.all_vertices()[lf->v_indices[0]] + b1 * e0 + b2 * e1;
+                glm::vec3 light_p = world_.all_vertices_[lf->v_indices[0]] + b1 * e0 + b2 * e1;
 
                 // Shadow ray toward sampled point
                 glm::vec3 shadow_origin = intersection.intersectionPoint + n_shade * 1e-4f;
@@ -500,10 +500,10 @@ ColourHDR RayTracer::trace_ray(
 }
 
 RayTriangleIntersection RayTracer::hit(const glm::vec3& ro, const glm::vec3& rd) const noexcept {
-    return world_.accelerator().intersect(ro, rd, world_.all_faces());
+    return world_.accelerator_.intersect(ro, rd, world_.all_faces_);
 }
 
 glm::vec3 RayTracer::compute_transmittance_bvh(const glm::vec3& point, const glm::vec3& light_pos)
     const noexcept {
-    return world_.accelerator().transmittance(point, light_pos, world_.all_faces());
+    return world_.accelerator_.transmittance(point, light_pos, world_.all_faces_);
 }

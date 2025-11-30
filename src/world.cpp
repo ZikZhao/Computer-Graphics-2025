@@ -244,10 +244,18 @@ bool BVHAccelerator::IntersectAABB(
     return t_enter <= t_exit && t_exit >= 0.0f && t_enter <= tmax;
 }
 
-void BVHAccelerator::build(const std::vector<Face>& faces) noexcept {
-    if (!vertices_) return;
-    tri_indices_.resize(faces.size());
-    std::iota(tri_indices_.begin(), tri_indices_.end(), 0);
+BVHAccelerator BVHAccelerator::Build(
+    const std::vector<Face>& faces,
+    const std::vector<glm::vec3>& vertices,
+    const std::vector<glm::vec3>& normals,
+    const std::vector<glm::vec3>& vertex_normals,
+    const std::vector<glm::vec2>& texcoords
+) {
+    BVHAccelerator bvh(vertices, normals, vertex_normals, texcoords);
+    if (faces.empty()) return bvh;
+
+    bvh.tri_indices_.resize(faces.size());
+    std::iota(bvh.tri_indices_.begin(), bvh.tri_indices_.end(), 0);
     struct Cent {
         glm::vec3 c;
         AABB b;
@@ -255,16 +263,16 @@ void BVHAccelerator::build(const std::vector<Face>& faces) noexcept {
     std::vector<Cent> data(faces.size());
     for (std::size_t i = 0; i < faces.size(); ++i) {
         const Face& f = faces[i];
-        const glm::vec3& v0 = (*vertices_)[f.v_indices[0]];
-        const glm::vec3& v1 = (*vertices_)[f.v_indices[1]];
-        const glm::vec3& v2 = (*vertices_)[f.v_indices[2]];
+        const glm::vec3& v0 = vertices[f.v_indices[0]];
+        const glm::vec3& v1 = vertices[f.v_indices[1]];
+        const glm::vec3& v2 = vertices[f.v_indices[2]];
         glm::vec3 mn = glm::min(glm::min(v0, v1), v2);
         glm::vec3 mx = glm::max(glm::max(v0, v1), v2);
         AABB b{mn, mx};
         glm::vec3 c = (v0 + v1 + v2) / 3.0f;
         data[i] = Cent{.c = c, .b = b};
     }
-    nodes_.clear();
+    bvh.nodes_.clear();
     auto surface_area = [](const AABB& box) -> FloatType {
         glm::vec3 extent = box.max - box.min;
         return 2.0f * (extent.x * extent.y + extent.y * extent.z + extent.z * extent.x);
@@ -280,14 +288,14 @@ void BVHAccelerator::build(const std::vector<Face>& faces) noexcept {
         };
         AABB cbox{box.min, box.max};
         for (int i = start; i < end; ++i) {
-            box.min = glm::min(box.min, data[tri_indices_[i]].b.min);
-            box.max = glm::max(box.max, data[tri_indices_[i]].b.max);
-            cbox.min = glm::min(cbox.min, data[tri_indices_[i]].c);
-            cbox.max = glm::max(cbox.max, data[tri_indices_[i]].c);
+            box.min = glm::min(box.min, data[bvh.tri_indices_[i]].b.min);
+            box.max = glm::max(box.max, data[bvh.tri_indices_[i]].b.max);
+            cbox.min = glm::min(cbox.min, data[bvh.tri_indices_[i]].c);
+            cbox.max = glm::max(cbox.max, data[bvh.tri_indices_[i]].c);
         }
         int count = end - start;
-        int node_index = (int)nodes_.size();
-        nodes_.push_back(
+        int node_index = (int)bvh.nodes_.size();
+        bvh.nodes_.push_back(
             BVHNode{.box = box, .left = -1, .right = -1, .start = start, .count = count}
         );
         if (count <= leaf_threshold) {
@@ -309,15 +317,15 @@ void BVHAccelerator::build(const std::vector<Face>& faces) noexcept {
             };
             std::array<Bucket, sah_buckets> buckets;
             for (int i = start; i < end; ++i) {
-                FloatType centroid = data[tri_indices_[i]].c[axis];
+                FloatType centroid = data[bvh.tri_indices_[i]].c[axis];
                 int bucket_idx =
                     static_cast<int>(sah_buckets * ((centroid - cbox.min[axis]) / extent[axis]));
                 bucket_idx = std::clamp(bucket_idx, 0, sah_buckets - 1);
                 buckets[bucket_idx].count++;
                 buckets[bucket_idx].bounds.min =
-                    glm::min(buckets[bucket_idx].bounds.min, data[tri_indices_[i]].b.min);
+                    glm::min(buckets[bucket_idx].bounds.min, data[bvh.tri_indices_[i]].b.min);
                 buckets[bucket_idx].bounds.max =
-                    glm::max(buckets[bucket_idx].bounds.max, data[tri_indices_[i]].b.max);
+                    glm::max(buckets[bucket_idx].bounds.max, data[bvh.tri_indices_[i]].b.max);
             }
             for (int split = 0; split < sah_buckets - 1; ++split) {
                 AABB left_box{
@@ -360,7 +368,7 @@ void BVHAccelerator::build(const std::vector<Face>& faces) noexcept {
             return node_index;
         }
         auto mid_iter =
-            std::partition(tri_indices_.begin() + start, tri_indices_.begin() + end, [&](int idx) {
+            std::partition(bvh.tri_indices_.begin() + start, bvh.tri_indices_.begin() + end, [&](int idx) {
                 FloatType centroid = data[idx].c[best_axis];
                 int bucket_idx = static_cast<int>(
                     sah_buckets * ((centroid - cbox.min[best_axis]) / extent[best_axis])
@@ -368,19 +376,31 @@ void BVHAccelerator::build(const std::vector<Face>& faces) noexcept {
                 bucket_idx = std::clamp(bucket_idx, 0, sah_buckets - 1);
                 return bucket_idx <= best_split;
             });
-        int mid = static_cast<int>(mid_iter - tri_indices_.begin());
+        int mid = static_cast<int>(mid_iter - bvh.tri_indices_.begin());
         if (mid == start || mid == end) {
             mid = (start + end) / 2;
         }
         int left = build_rec(start, mid);
         int right = build_rec(mid, end);
-        nodes_[node_index].left = left;
-        nodes_[node_index].right = right;
-        nodes_[node_index].count = 0;
+        bvh.nodes_[node_index].left = left;
+        bvh.nodes_[node_index].right = right;
+        bvh.nodes_[node_index].count = 0;
         return node_index;
     };
     build_rec(0, (int)faces.size());
+    return bvh;
 }
+
+BVHAccelerator::BVHAccelerator(
+    const std::vector<glm::vec3>& vertices,
+    const std::vector<glm::vec3>& normals,
+    const std::vector<glm::vec3>& vertex_normals,
+    const std::vector<glm::vec2>& texcoords
+)
+    : vertices_(&vertices),
+      texcoords_(&texcoords),
+      normals_(&normals),
+      normals_by_vertex_(&vertex_normals) {}
 
 RayTriangleIntersection BVHAccelerator::intersect(
     const glm::vec3& ro, const glm::vec3& rd, const std::vector<Face>& faces
@@ -873,10 +893,7 @@ void World::parse_txt(Model& model, const std::string& filename) {
             bool has_vn = false;
             for (int i = 0; i < 3; ++i) {
                 const std::string& t = tok[i];
-                IndexTriple tri = ParseIndexToken(t);
-                int v_i = tri.v;
-                int vt_i = tri.vt;
-                int vn_i = tri.vn;
+                const auto& [v_i, vt_i, vn_i] = ParseIndexToken(t);
                 if (vn_i >= 0) has_vn = true;
                 int v_global = vertex_offset + (v_i >= 0 ? v_i : 0);
                 vpos[i] = model.vertices[v_global];
@@ -927,7 +944,7 @@ void World::parse_txt(Model& model, const std::string& filename) {
             model.objects.back().faces.emplace_back(std::move(new_face));
         }
     }
-    // Finalize — compute face normals and cache flattened face list
+    
     compute_model_normals(model);
     flatten_model_faces(model);
 }
@@ -1112,11 +1129,10 @@ void World::merge_models() noexcept {
         all_vertices_.size(), all_faces_.size(), emissive_faces_.size()
     );
 
-    accelerator_.set_vertices(all_vertices_);
-    accelerator_.set_texcoords(all_texcoords_);
-    accelerator_.set_normals(all_vertex_normals_);
-    accelerator_.set_normals_by_vertex(all_vertex_normals_by_vertex_);
-    accelerator_.build(all_faces_);
+    accelerator_ = BVHAccelerator::Build(
+        all_faces_, all_vertices_, all_vertex_normals_,
+        all_vertex_normals_by_vertex_, all_texcoords_
+    );
 
     models_.clear();
 }

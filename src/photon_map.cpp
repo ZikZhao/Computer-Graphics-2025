@@ -78,23 +78,23 @@ ColourHDR PhotonMap::estimate_caustic(
 }
 
 void PhotonMap::trace_photons() {
-    const auto& area_lights = world_.area_lights();
+    const auto& emissive_faces = world_.emissive_faces_;
 
     // Find all transparent (refractive) objects in the scene and compute global AABB
     std::vector<const Face*> transparent_faces;
     glm::vec3 aabb_min(std::numeric_limits<FloatType>::infinity());
     glm::vec3 aabb_max(-std::numeric_limits<FloatType>::infinity());
-    for (const auto& face : world_.all_faces()) {
+    for (const auto& face : world_.all_faces_) {
         if (IsTransparent(face.material)) {
             transparent_faces.push_back(&face);
             for (int k = 0; k < 3; ++k) {
-                aabb_min = glm::min(aabb_min, world_.all_vertices()[face.v_indices[k]]);
-                aabb_max = glm::max(aabb_max, world_.all_vertices()[face.v_indices[k]]);
+                aabb_min = glm::min(aabb_min, world_.all_vertices_[face.v_indices[k]]);
+                aabb_max = glm::max(aabb_max, world_.all_vertices_[face.v_indices[k]]);
             }
         }
     }
 
-    if (area_lights.empty() || transparent_faces.empty()) {
+    if (emissive_faces.empty() || transparent_faces.empty()) {
         std::cout << "[PhotonMap] No Emissive or Refractive Faces\n";
         is_ready_.store(true, std::memory_order_release);
         return;
@@ -102,7 +102,7 @@ void PhotonMap::trace_photons() {
 
     std::cout << std::format(
         "[PhotonMap] Start Tracing: {} Emissive Faces | {} Refractive Faces\n",
-        area_lights.size(),
+        emissive_faces.size(),
         transparent_faces.size()
     );
 
@@ -129,14 +129,14 @@ void PhotonMap::trace_photons() {
     grid_.resize(grid_size);
 
     // Distribute photons across area lights based on area * luminance
-    std::vector<FloatType> weights(area_lights.size());
+    std::vector<FloatType> weights(emissive_faces.size());
     FloatType weight_sum = 0.0f;
-    for (std::size_t i = 0; i < area_lights.size(); ++i) {
-        const Face* lf = area_lights[i];
+    for (std::size_t i = 0; i < emissive_faces.size(); ++i) {
+        const Face* lf = emissive_faces[i];
         glm::vec3 e0 =
-            world_.all_vertices()[lf->v_indices[1]] - world_.all_vertices()[lf->v_indices[0]];
+            world_.all_vertices_[lf->v_indices[1]] - world_.all_vertices_[lf->v_indices[0]];
         glm::vec3 e1 =
-            world_.all_vertices()[lf->v_indices[2]] - world_.all_vertices()[lf->v_indices[0]];
+            world_.all_vertices_[lf->v_indices[2]] - world_.all_vertices_[lf->v_indices[0]];
         FloatType area = 0.5f * glm::length(glm::cross(e0, e1));
         glm::vec3 Le = lf->material.emission;
         // Luminance (ITU-R BT.709) used for energy-aware photon allocation.
@@ -147,11 +147,11 @@ void PhotonMap::trace_photons() {
     }
 
     int photons_emitted = 0;
-    for (std::size_t i = 0; i < area_lights.size(); ++i) {
+    for (std::size_t i = 0; i < emissive_faces.size(); ++i) {
         int photons_for_light = static_cast<int>(PhotonsPerLight * (weights[i] / weight_sum));
         if (photons_for_light <= 0) continue;
         emit_photons_from_area_light(
-            *area_lights[i], target_center, target_radius, photons_for_light
+            *emissive_faces[i], target_center, target_radius, photons_for_light
         );
         photons_emitted += photons_for_light;
     }
@@ -176,10 +176,10 @@ void PhotonMap::trace_photons() {
 void PhotonMap::emit_photons_from_area_light(
     const Face& light_face, const glm::vec3& target_center, FloatType target_radius, int num_photons
 ) {
-    glm::vec3 e0 = world_.all_vertices()[light_face.v_indices[1]] -
-                   world_.all_vertices()[light_face.v_indices[0]];
-    glm::vec3 e1 = world_.all_vertices()[light_face.v_indices[2]] -
-                   world_.all_vertices()[light_face.v_indices[0]];
+    glm::vec3 e0 = world_.all_vertices_[light_face.v_indices[1]] -
+                   world_.all_vertices_[light_face.v_indices[0]];
+    glm::vec3 e1 = world_.all_vertices_[light_face.v_indices[2]] -
+                   world_.all_vertices_[light_face.v_indices[0]];
     FloatType area = 0.5f * glm::length(glm::cross(e0, e1));
     glm::vec3 Le = light_face.material.emission;
     glm::vec3 n_light = glm::normalize(light_face.face_normal);
@@ -194,7 +194,7 @@ void PhotonMap::emit_photons_from_area_light(
         FloatType b0 = 1.0f - su;
         FloatType b1 = su * (1.0f - u2);
         FloatType b2 = su * u2;
-        glm::vec3 light_p = world_.all_vertices()[light_face.v_indices[0]] + b1 * e0 + b2 * e1;
+        glm::vec3 light_p = world_.all_vertices_[light_face.v_indices[0]] + b1 * e0 + b2 * e1;
         glm::vec3 origin = light_p + n_light * 1e-4f;
         glm::vec3 to_center = glm::normalize(target_center - origin);
         FloatType dist = glm::length(target_center - origin);
@@ -218,7 +218,7 @@ void PhotonMap::trace_single_photon(
     if (!hit_opt.has_value()) return;
 
     const auto& hit = hit_opt.value();
-    const Face* hit_face = &world_.all_faces()[hit.triangleIndex];
+    const Face* hit_face = &world_.all_faces_[hit.triangleIndex];
     const Material& mat = hit_face->material;
 
     bool is_transparent_surface = IsTransparent(mat);
@@ -313,7 +313,7 @@ void PhotonMap::trace_single_photon(
             FloatType travel_dist = glm::length(hit.intersectionPoint - medium_entry_point);
 
             const Face* last_transparent_face = nullptr;
-            for (const auto& face : world_.all_faces()) {
+            for (const auto& face : world_.all_faces_) {
                 if (IsTransparent(face.material)) {
                     last_transparent_face = &face;
                     break;
@@ -369,9 +369,9 @@ PhotonMap::GridCell PhotonMap::get_grid_cell(const glm::vec3& position) const no
 std::optional<RayTriangleIntersection> PhotonMap::intersect_triangle(
     const glm::vec3& ro, const glm::vec3& rd, const Face& face
 ) const noexcept {
-    const glm::vec3& v0 = world_.all_vertices()[face.v_indices[0]];
-    const glm::vec3& v1 = world_.all_vertices()[face.v_indices[1]];
-    const glm::vec3& v2 = world_.all_vertices()[face.v_indices[2]];
+    const glm::vec3& v0 = world_.all_vertices_[face.v_indices[0]];
+    const glm::vec3& v1 = world_.all_vertices_[face.v_indices[1]];
+    const glm::vec3& v2 = world_.all_vertices_[face.v_indices[2]];
 
     // Möller-Trumbore intersection algorithm
     constexpr FloatType EPSILON = 1e-6f;
@@ -417,12 +417,12 @@ std::optional<RayTriangleIntersection> PhotonMap::intersect_triangle(
     auto fetch_normal = [&](int idx) -> glm::vec3 {
         std::uint32_t ni = face.vn_indices[idx];
         if (ni != std::numeric_limits<std::uint32_t>::max() &&
-            ni < world_.all_vertex_normals().size())
-            return world_.all_vertex_normals()[ni];
+            ni < world_.all_vertex_normals_.size())
+            return world_.all_vertex_normals_[ni];
         std::uint32_t vi = face.v_indices[idx];
-        if (vi < world_.all_vertex_normals_by_vertex().size() &&
-            glm::length(world_.all_vertex_normals_by_vertex()[vi]) > 0.001f)
-            return world_.all_vertex_normals_by_vertex()[vi];
+        if (vi < world_.all_vertex_normals_by_vertex_.size() &&
+            glm::length(world_.all_vertex_normals_by_vertex_[vi]) > 0.001f)
+            return world_.all_vertex_normals_by_vertex_[vi];
         return face.face_normal;
     };
     glm::vec3 n0 = fetch_normal(0);
@@ -445,7 +445,7 @@ std::optional<RayTriangleIntersection> PhotonMap::intersect_triangle(
 std::optional<RayTriangleIntersection> PhotonMap::find_intersection(
     const glm::vec3& ro, const glm::vec3& rd
 ) const noexcept {
-    auto rec = world_.accelerator().intersect(ro, rd, world_.all_faces());
+    auto rec = world_.accelerator_.intersect(ro, rd, world_.all_faces_);
     if (rec.triangleIndex == static_cast<std::size_t>(-1)) {
         return std::nullopt;
     }
