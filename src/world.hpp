@@ -380,14 +380,18 @@ public:
     [[nodiscard]] const BVHAccelerator& accelerator() const noexcept { return accelerator_; }
 
 private:
-    void load_files(const std::vector<std::string>& filenames);
-    void load_hdr_env_map(const std::string& filename);
-    void merge_models() noexcept;
-
     void parse_obj(Model& model, const std::string& filename);
-    void parse_txt(Model& model, const std::string& filename);
     void parse_mtl(Model& model, const std::string& filename);
+    void parse_txt(Model& model, const std::string& filename);
+
+    void load_hdr_env_map(const std::string& filename);
     Texture load_texture(const std::string& filename);
+
     void compute_model_normals(Model& model);
     void flatten_model_faces(Model& model);
+    
+    void merge_models() noexcept;
+    void reserve_global_buffers() noexcept;
+    void append_model_data(const Model& model) noexcept;
+    void collect_emissive_faces() noexcept;
 };
