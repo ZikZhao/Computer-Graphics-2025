@@ -270,42 +270,14 @@ struct Object {
 /**
  * @brief Aggregates objects, geometry arrays, and materials for a scene asset.
  */
-class Model {
-    friend class World;
-
-private:
-    std::vector<Object> objects_;
-    std::vector<Face> all_faces_;  // Flattened faces for efficient iteration (cached)
-    std::map<std::string, Material> materials_;
-    std::vector<glm::vec3> vertices_;
-    std::vector<glm::vec2> texture_coords_;  // vt coordinates from OBJ
-    std::vector<glm::vec3> vertex_normals_;  // vn normals from OBJ
-    std::vector<glm::vec3> vertex_normals_by_vertex_;
-
-public:
-    [[nodiscard]] std::size_t object_count() const noexcept { return objects_.size(); }
-    [[nodiscard]] std::size_t material_count() const noexcept { return materials_.size(); }
-    [[nodiscard]] const std::vector<Face>& all_faces() const noexcept { return all_faces_; }
-    [[nodiscard]] const std::vector<glm::vec3>& vertices() const noexcept { return vertices_; }
-    [[nodiscard]] const std::vector<glm::vec2>& texture_coords() const noexcept {
-        return texture_coords_;
-    }
-    [[nodiscard]] const std::vector<glm::vec3>& vertex_normals() const noexcept {
-        return vertex_normals_;
-    }
-    [[nodiscard]] const std::vector<glm::vec3>& vertex_normals_by_vertex() const noexcept {
-        return vertex_normals_by_vertex_;
-    }
-
-public:
-    void load_file(std::string filename);
-    void load_scene_txt(std::string filename);
-
-private:
-    void load_materials(std::string filename);
-    Texture load_texture(std::string filename);
-    void flatten_faces() noexcept;
-    void compute_face_normals() noexcept;
+struct Model {
+    std::vector<Object> objects;
+    std::vector<Face> all_faces;
+    std::map<std::string, Material> materials;
+    std::vector<glm::vec3> vertices;
+    std::vector<glm::vec2> texture_coords;
+    std::vector<glm::vec3> vertex_normals;
+    std::vector<glm::vec3> vertex_normals_by_vertex;
 };
 
 /**
@@ -409,8 +381,13 @@ public:
 
 private:
     void load_files(const std::vector<std::string>& filenames);
-    void load_obj(const std::string& filename);
-    void load_scene_txt(const std::string& filename);
     void load_hdr_env_map(const std::string& filename);
     void merge_models() noexcept;
+
+    void parse_obj(Model& model, const std::string& filename);
+    void parse_txt(Model& model, const std::string& filename);
+    void parse_mtl(Model& model, const std::string& filename);
+    Texture load_texture(const std::string& filename);
+    void compute_model_normals(Model& model);
+    void flatten_model_faces(Model& model);
 };
