@@ -20,8 +20,7 @@ int main(int argc, char* argv[]) {
     assert(argc >= 2 && "Please provide a .obj file as a command line argument.");
 
     // Load world assets from CLI arguments
-    World world;
-    world.load_files(std::vector<std::string>(argv + 1, argv + argc));
+    World world = {std::vector<std::string>(argv + 1, argv + argc)};
 
     // Initialize output window and rendering engines
     Window window(WIDTH, HEIGHT, false);

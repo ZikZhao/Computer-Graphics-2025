@@ -46,32 +46,6 @@ ColourHDR RayTracer::render_pixel(
     );
 }
 
-/**
- * @brief Maps a point from the unit square [0,1]x[0,1] to a unit disk.
- * Uses Concentric Mapping to preserve area and adjacency, avoiding the
- * distortion at the center that simple polar mapping causes.
- */
-static glm::vec2 SampleDiskConcentric(FloatType u1, FloatType u2) noexcept {
-    // Map [0,1] to [-1,1]
-    FloatType a = 2.0f * u1 - 1.0f;
-    FloatType b = 2.0f * u2 - 1.0f;
-
-    if (a == 0.0f && b == 0.0f) {
-        return glm::vec2(0.0f, 0.0f);
-    }
-
-    FloatType r, theta;
-    if (a * a > b * b) {
-        r = a;
-        theta = (std::numbers::pi / 4.0f) * (b / a);
-    } else {
-        r = b;
-        theta = (std::numbers::pi / 2.0f) - (std::numbers::pi / 4.0f) * (a / b);
-    }
-
-    return glm::vec2(r * std::cos(theta), r * std::sin(theta));
-}
-
 ColourHDR RayTracer::render_pixel_dof(
     const Camera& cam,
     int x,
@@ -161,7 +135,7 @@ ColourHDR RayTracer::trace_ray(
     }
 
     // Scene intersection
-    HitRecord intersection = hit(ray_origin, ray_dir);
+    RayTriangleIntersection intersection = hit(ray_origin, ray_dir);
 
     // Medium absorption (Beer's Law): attenuate radiance by traveled distance
     ColourHDR medium_absorption{1.0f, 1.0f, 1.0f};
@@ -525,18 +499,11 @@ ColourHDR RayTracer::trace_ray(
     return out;
 }
 
-HitRecord RayTracer::hit(const glm::vec3& ro, const glm::vec3& rd) const noexcept {
+RayTriangleIntersection RayTracer::hit(const glm::vec3& ro, const glm::vec3& rd) const noexcept {
     return world_.accelerator().intersect(ro, rd, world_.all_faces());
 }
 
 glm::vec3 RayTracer::compute_transmittance_bvh(const glm::vec3& point, const glm::vec3& light_pos)
     const noexcept {
     return world_.accelerator().transmittance(point, light_pos, world_.all_faces());
-}
-
-constexpr ColourHDR RayTracer::ClampRadiance(const ColourHDR& c, FloatType max_component) noexcept {
-    FloatType r = std::min(c.red, max_component);
-    FloatType g = std::min(c.green, max_component);
-    FloatType b = std::min(c.blue, max_component);
-    return ColourHDR{.red = r, .green = g, .blue = b};
 }

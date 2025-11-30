@@ -8,16 +8,20 @@
 #include <numeric>
 #include <sstream>
 
+// Cannot be merged to a single header file
+// because there must be only one definition of the stb_image implementation.
 #define STB_IMAGE_IMPLEMENTATION
-#include "../libs/stb_image.h"
+#include <stb_image.h>
 
-namespace {
+#include "world.hpp"
+
 struct IndexTriple {
     int v;
     int vt;
     int vn;
 };
-static IndexTriple parse_index_token(const std::string& t) {
+
+IndexTriple ParseIndexToken(const std::string& t) {
     IndexTriple idx{-1, -1, -1};
     if (t.find('/') != std::string::npos) {
         std::vector<std::string> parts;
@@ -35,7 +39,6 @@ static IndexTriple parse_index_token(const std::string& t) {
     }
     return idx;
 }
-}  // namespace
 
 void SceneLoader::LoadObj(Model& model, const std::string& filename) {
     // OBJ loader: parse geometry, materials and per-object settings
@@ -158,7 +161,7 @@ void SceneLoader::LoadObj(Model& model, const std::string& filename) {
     }
     // Finalize — compute geometric face normals and cache faces per model
     model.compute_face_normals();
-    model.cache_faces();
+    model.flatten_faces();
 }
 
 void SceneLoader::LoadSceneTxt(Model& model, const std::string& filename) {
@@ -332,7 +335,7 @@ void SceneLoader::LoadSceneTxt(Model& model, const std::string& filename) {
             bool has_vn = false;
             for (int i = 0; i < 3; ++i) {
                 const std::string& t = tok[i];
-                IndexTriple tri = parse_index_token(t);
+                IndexTriple tri = ParseIndexToken(t);
                 int v_i = tri.v;
                 int vt_i = tri.vt;
                 int vn_i = tri.vn;
@@ -388,5 +391,5 @@ void SceneLoader::LoadSceneTxt(Model& model, const std::string& filename) {
     }
     // Finalize — compute face normals and cache flattened face list
     model.compute_face_normals();
-    model.cache_faces();
+    model.flatten_faces();
 }

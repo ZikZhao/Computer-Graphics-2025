@@ -14,8 +14,6 @@ VideoRecorder::VideoRecorder(
       width_(width),
       height_(height) {}
 
-VideoRecorder::~VideoRecorder() = default;
-
 void VideoRecorder::start_recording() {
     // Open Y4M stream and initialize recording state
     assert(!recording_ && "Recording is already in progress");
@@ -42,7 +40,6 @@ void VideoRecorder::stop_recording() {
 }
 
 void VideoRecorder::toggle_recording() {
-    // Convenience toggle for UI bindings
     if (recording_)
         stop_recording();
     else
@@ -50,18 +47,16 @@ void VideoRecorder::toggle_recording() {
 }
 
 void VideoRecorder::capture_frame() {
-    // Append current backbuffer as a frame to the Y4M file
     if (!recording_) return;
-    write_frame();
+    append_frame();
     frame_count_++;
 }
 
 void VideoRecorder::write_header() {
-    // Minimal Y4M header describing resolution and format
     file_stream_ << "YUV4MPEG2 W" << width_ << " H" << height_ << " F30:1 Ip A1:1 C420jpeg\n";
 }
 
-void VideoRecorder::write_frame() {
+void VideoRecorder::append_frame() {
     // Convert ARGB backbuffer to 4:2:0 planar YUV and write a frame chunk
     file_stream_ << "FRAME\n";
     std::vector<std::uint8_t> y_plane(width_ * height_);

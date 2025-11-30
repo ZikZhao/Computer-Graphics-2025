@@ -3,19 +3,6 @@
 #include <algorithm>
 #include <iostream>
 
-// Filmic tone mapping (ACES approximation): compress HDR to displayable range
-constexpr FloatType Renderer::AcesToneMapping(FloatType hdr_value) noexcept {
-    const FloatType a = 2.51f;
-    const FloatType b = 0.03f;
-    const FloatType c = 2.43f;
-    const FloatType d = 0.59f;
-    const FloatType e = 0.14f;
-    FloatType numerator = hdr_value * (a * hdr_value + b);
-    FloatType denominator = hdr_value * (c * hdr_value + d) + e;
-    return std::clamp(numerator / denominator, 0.0f, 1.0f);
-}
-
-// Tonemap then gamma-correct HDR to 8-bit sRGB for the window backbuffer
 Colour Renderer::TonemapAndGammaCorrect(const ColourHDR& hdr, FloatType gamma) noexcept {
     FloatType r_ldr = AcesToneMapping(hdr.red * 0.6f);
     FloatType g_ldr = AcesToneMapping(hdr.green * 0.6f);
@@ -40,7 +27,6 @@ Colour Renderer::TonemapAndGammaCorrect(const ColourHDR& hdr, FloatType gamma) n
     };
 }
 
-// Renderer orchestrates rasterizer/raytracer and multi-threaded tiling
 Renderer::Renderer(const World& world, Window& window)
     : world_(world),
       window_(window),
@@ -75,17 +61,17 @@ void Renderer::render() noexcept {
     switch (mode_) {
     case Mode::WIREFRAME:
         clear();
-        wireframe_render();
+        render_wireframe();
         break;
     case Mode::RASTERIZED:
         clear();
-        rasterized_render();
+        render_rasterized();
         break;
     case Mode::RAYTRACED:
-        raytraced_render();
+        render_raytraced();
         break;
     case Mode::DEPTH_OF_FIELD:
-        depth_of_field_render();
+        render_dof();
         break;
     }
 
@@ -117,14 +103,14 @@ void Renderer::clear() noexcept {
     hdr_buffer_.assign(get_width() * get_height(), ColourHDR{});
 }
 
-void Renderer::wireframe_render() noexcept {
-    rasterizer_->draw_model_wireframe(
+void Renderer::render_wireframe() noexcept {
+    rasterizer_->wireframe(
         world_.camera(), world_.all_faces(), world_.all_vertices(), aspect_ratio_
     );
 }
 
-void Renderer::rasterized_render() noexcept {
-    rasterizer_->draw_model_rasterized(
+void Renderer::render_rasterized() noexcept {
+    rasterizer_->rasterized(
         world_.camera(),
         world_.all_faces(),
         world_.all_vertices(),
@@ -133,7 +119,7 @@ void Renderer::rasterized_render() noexcept {
     );
 }
 
-void Renderer::raytraced_render() noexcept {
+void Renderer::render_raytraced() noexcept {
     current_camera_ = &world_.camera();
     tile_counter_.store(0, std::memory_order_relaxed);
     glm::vec3 cur_pos = current_camera_->position();
@@ -157,7 +143,7 @@ void Renderer::raytraced_render() noexcept {
     last_cam_pitch_ = cur_pitch;
 }
 
-void Renderer::depth_of_field_render() noexcept {
+void Renderer::render_dof() noexcept {
     current_camera_ = &world_.camera();
     tile_counter_.store(0, std::memory_order_relaxed);
     rendering_frame_count_ = frame_count_ + 1;
@@ -170,7 +156,7 @@ void Renderer::depth_of_field_render() noexcept {
 
 void Renderer::process_rows(int y0, int y1) noexcept {
     const Camera& camera = *current_camera_;
-    const bool is_dof = (mode_ == Mode::DEPTH_OF_FIELD);
+    const bool is_dof = mode_ == Mode::DEPTH_OF_FIELD;
 
     // Row-batched loop over pixels; sampling and accumulation
     for (int y = y0; y < y1; ++y) {

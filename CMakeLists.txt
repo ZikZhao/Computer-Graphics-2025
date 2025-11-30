@@ -28,14 +28,13 @@ set(GLM_INCLUDE_DIRS libs/glm-0.9.7.2)
 find_package(SDL2 REQUIRED)
 find_package(Threads REQUIRED)
 
-include_directories(${SDL2_INCLUDE_DIRS} ${GLM_INCLUDE_DIRS})
+include_directories(${SDL2_INCLUDE_DIRS} ${GLM_INCLUDE_DIRS} libs)
 # include_directories(libs/sdw)
 
 add_executable(CG-CW
         src/main.cpp
         src/window.cpp
         src/world.cpp
-        src/shader.cpp
         src/raytracer.cpp
         src/rasterizer.cpp
         src/renderer.cpp

@@ -2,33 +2,26 @@
 
 #include <algorithm>
 
-Window::Window(int w, int h, bool fullscreen) noexcept
-    : width_(w), height_(h), pixel_buffer_(w * h) {
+Window::Window(int width, int height, bool fullscreen)
+    : width_(width), height_(height), pixel_buffer_(width * height) {
     // Initialize SDL video subsystem
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
-        std::cerr << std::format("[SDL] Could not initialise SDL: {}\n", SDL_GetError());
-        std::terminate();
-    }
-
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0)
+        throw std::runtime_error(std::format("[SDL] Could not initialise SDL: {}\n", SDL_GetError()));
+    
     // Create window surface (optional fullscreen)
     std::uint32_t flags = SDL_WINDOW_OPENGL;
     if (fullscreen) flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
 
     int anywhere = SDL_WINDOWPOS_UNDEFINED;
     window_ = SDL_CreateWindow("COMS30020", anywhere, anywhere, width_, height_, flags);
-    if (!window_) {
-        std::cerr << std::format("[SDL] Could not set video mode: {}\n", SDL_GetError());
-        std::terminate();
-    }
+    if (!window_)
+        throw std::runtime_error(std::format("[SDL] Could not set video mode: {}\n", SDL_GetError()));
 
     // Renderer bound to window (software for portability)
     flags = SDL_RENDERER_SOFTWARE;
     renderer_ = SDL_CreateRenderer(window_, -1, flags);
-    if (!renderer_) {
-        std::cerr << std::format("[SDL] Could not create renderer: {}\n", SDL_GetError());
-        std::terminate();
-    }
-
+    if (!renderer_)
+        throw std::runtime_error(std::format("[SDL] Could not create renderer: {}\n", SDL_GetError()));
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
     SDL_RenderSetLogicalSize(renderer_, width_, height_);
 
@@ -36,10 +29,8 @@ Window::Window(int w, int h, bool fullscreen) noexcept
     int pixel_format = SDL_PIXELFORMAT_ARGB8888;
     texture_ =
         SDL_CreateTexture(renderer_, pixel_format, SDL_TEXTUREACCESS_STATIC, width_, height_);
-    if (!texture_) {
-        std::cerr << std::format("[SDL] Could not allocate texture: {}\n", SDL_GetError());
-        std::terminate();
-    }
+    if (!texture_)
+        throw std::runtime_error(std::format("[SDL] Could not allocate texture: {}\n", SDL_GetError()));
 }
 
 Window::~Window() {
@@ -353,7 +344,7 @@ void Window::update() noexcept {
     SDL_RenderClear(renderer_);
     SDL_RenderCopy(renderer_, texture_, nullptr, nullptr);
     SDL_RenderPresent(renderer_);
-    clear_pixels();
+    clear();
 }
 
 std::uint32_t& Window::operator[](const std::pair<int, int>& xy) noexcept {
@@ -368,7 +359,7 @@ std::uint32_t Window::operator[](const std::pair<int, int>& xy) const noexcept {
     return pixel_buffer_[y * width_ + x];
 }
 
-void Window::clear_pixels() noexcept { std::fill(pixel_buffer_.begin(), pixel_buffer_.end(), 0); }
+void Window::clear() noexcept { std::fill(pixel_buffer_.begin(), pixel_buffer_.end(), 0); }
 
 void Window::save_ppm(const std::string& filename) const {
     std::ofstream output_stream(filename, std::ofstream::out);

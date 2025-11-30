@@ -50,36 +50,28 @@ constexpr FloatType ComputeInvZndc(
  */
 template <typename T, std::size_t N>
 class InplaceVector {
-private: // Data
+private:
     alignas(T) std::byte data_[N * sizeof(T)];
     std::size_t size_ = 0;
 
-public: // Lifecycle
+public:
     constexpr InplaceVector() noexcept = default;
-
     constexpr InplaceVector(auto&&... args) noexcept : InplaceVector() {
         assert((sizeof...(args)) <= N);
         (emplace_back(std::forward<decltype(args)>(args)), ...);
     }
-
-public: // Accessors & Data Binding
     constexpr std::size_t size() const noexcept { return size_; }
-
     constexpr T& operator[](std::size_t index) noexcept {
         return *reinterpret_cast<T*>(&data_[index * sizeof(T)]);
     }
-
     constexpr const T& operator[](std::size_t index) const noexcept {
         return *reinterpret_cast<const T*>(&data_[index * sizeof(T)]);
     }
-
-public: // Core Operations
     constexpr void push_back(const T& value) noexcept {
         assert(size_ < N);
         new (&data_[size_ * sizeof(T)]) T(value);
         size_++;
     }
-
     constexpr void emplace_back(T&& value) noexcept {
         assert(size_ < N);
         new (&data_[size_ * sizeof(T)]) T(std::move(value));
@@ -265,4 +257,30 @@ inline glm::vec3 SampleConeHalton(
     // Transform: apply the frame so the sample respects the requested cone
     // angle around 'direction' while preserving low-discrepancy properties.
     return glm::normalize(sample_dir.x * right + sample_dir.y * forward + sample_dir.z * direction);
+}
+
+/**
+ * @brief Maps a point from the unit square [0,1]x[0,1] to a unit disk.
+ * Uses Concentric Mapping to preserve area and adjacency, avoiding the
+ * distortion at the center that simple polar mapping causes.
+ */
+inline glm::vec2 SampleDiskConcentric(FloatType u1, FloatType u2) noexcept {
+    // Map [0,1] to [-1,1]
+    FloatType a = 2.0f * u1 - 1.0f;
+    FloatType b = 2.0f * u2 - 1.0f;
+
+    if (a == 0.0f && b == 0.0f) {
+        return glm::vec2(0.0f, 0.0f);
+    }
+
+    FloatType r, theta;
+    if (a * a > b * b) {
+        r = a;
+        theta = (std::numbers::pi / 4.0f) * (b / a);
+    } else {
+        r = b;
+        theta = (std::numbers::pi / 2.0f) - (std::numbers::pi / 4.0f) * (a / b);
+    }
+
+    return glm::vec2(r * std::cos(theta), r * std::sin(theta));
 }

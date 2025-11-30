@@ -4,8 +4,89 @@
 
 #include "utils.hpp"
 
-// Rasterization backend: triangle clipping, projection and scanline fill
-// CPU rasterization for wireframe and textured triangles.
+ClipVertex Rasterizer::IntersectPlane(
+    const ClipVertex& v0, const ClipVertex& v1, ClipPlane plane
+) noexcept {
+    FloatType t = ComputeIntersectionT(v0.position_clip, v1.position_clip, plane);
+    return ClipVertex{
+        .position_clip = v0.position_clip * (1.0f - t) + v1.position_clip * t,
+        .colour =
+            Colour{
+                .red = static_cast<std::uint8_t>(v0.colour.red * (1.0f - t) + v1.colour.red * t),
+                .green =
+                    static_cast<std::uint8_t>(v0.colour.green * (1.0f - t) + v1.colour.green * t),
+                .blue = static_cast<std::uint8_t>(v0.colour.blue * (1.0f - t) + v1.colour.blue * t)
+            },
+        .uv = v0.uv * (1.0f - t) + v1.uv * t
+    };
+}
+
+InplaceVector<ClipVertex, 9> Rasterizer::ClipAgainstPlane(
+    const InplaceVector<ClipVertex, 9>& input, ClipPlane plane
+) noexcept {
+    InplaceVector<ClipVertex, 9> output;
+
+    if (input.size() == 0) return output;
+
+    for (std::size_t i = 0; i < input.size(); i++) {
+        const ClipVertex& current = input[i];
+        const ClipVertex& next = input[(i + 1) % input.size()];
+
+        bool current_inside = InsidePlane(current.position_clip, plane);
+        bool next_inside = InsidePlane(next.position_clip, plane);
+
+        if (current_inside && next_inside) {
+            output.push_back(next);
+        } else if (current_inside && !next_inside) {
+            output.push_back(IntersectPlane(current, next, plane));
+        } else if (!current_inside && next_inside) {
+            output.push_back(IntersectPlane(current, next, plane));
+            output.push_back(next);
+        }
+    }
+
+    return output;
+}
+
+Colour Rasterizer::SampleTexture(
+    const Face& face,
+    const glm::vec3& bary,
+    const ScreenNdcCoord& v0,
+    const ScreenNdcCoord& v1,
+    const ScreenNdcCoord& v2
+) noexcept {
+    glm::vec3 base_color;
+
+    // If textured, reconstruct UV with 1/w weighting to avoid affine distortion
+    if (face.material.texture) {
+        FloatType inv_w = bary.x * v0.inv_w + bary.y * v1.inv_w + bary.z * v2.inv_w;
+        FloatType u = (bary.x * v0.uv.x * v0.inv_w + bary.y * v1.uv.x * v1.inv_w +
+                       bary.z * v2.uv.x * v2.inv_w) /
+                      inv_w;
+        FloatType v = (bary.x * v0.uv.y * v0.inv_w + bary.y * v1.uv.y * v1.inv_w +
+                       bary.z * v2.uv.y * v2.inv_w) /
+                      inv_w;
+
+        // Sample texture and modulate by material albedo
+        Colour tex_sample = face.material.texture->sample(u, v);
+        base_color = glm::vec3(
+            (tex_sample.red / 255.0f) * face.material.base_color.r,
+            (tex_sample.green / 255.0f) * face.material.base_color.g,
+            (tex_sample.blue / 255.0f) * face.material.base_color.b
+        );
+    } else {
+        // No texture: use flat material base color
+        base_color = face.material.base_color;
+    }
+
+    // Convert to 8-bit colour for the backbuffer
+    return Colour{
+        .red = static_cast<std::uint8_t>(std::clamp(base_color.r * 255.0f, 0.0f, 255.0f)),
+        .green = static_cast<std::uint8_t>(std::clamp(base_color.g * 255.0f, 0.0f, 255.0f)),
+        .blue = static_cast<std::uint8_t>(std::clamp(base_color.b * 255.0f, 0.0f, 255.0f))
+    };
+}
+
 Rasterizer::Rasterizer(Window& window)
     : window_(window), z_buffer_(window.get_width() * window.get_height(), 0.0f) {}
 
@@ -26,32 +107,30 @@ FloatType Rasterizer::get_depth(int x, int y) const noexcept {
         [static_cast<std::size_t>(y) * window_.get_width() + static_cast<std::size_t>(x)];
 }
 
-void Rasterizer::draw_model_wireframe(
+void Rasterizer::wireframe(
     const Camera& camera,
     const std::vector<Face>& faces,
     const std::vector<glm::vec3>& vertices,
     double aspect_ratio
 ) noexcept {
-    // Clip each face to the frustum, then draw edges in screen space
     for (const auto& face : faces) {
-        wireframe_render(camera, face, vertices, std::vector<glm::vec2>{}, aspect_ratio);
+        face_wireframe(camera, face, vertices, std::vector<glm::vec2>{}, aspect_ratio);
     }
 }
 
-void Rasterizer::draw_model_rasterized(
+void Rasterizer::rasterized(
     const Camera& camera,
     const std::vector<Face>& faces,
     const std::vector<glm::vec3>& vertices,
     const std::vector<glm::vec2>& texcoords,
     double aspect_ratio
 ) noexcept {
-    // Clip to frustum, project to screen, then scanline fill with depth testing
     for (const auto& face : faces) {
-        rasterized_render(camera, face, vertices, texcoords, aspect_ratio);
+        face_rasterized(camera, face, vertices, texcoords, aspect_ratio);
     }
 }
 
-void Rasterizer::wireframe_render(
+void Rasterizer::face_wireframe(
     const Camera& camera,
     const Face& face,
     const std::vector<glm::vec3>& vertices,
@@ -132,7 +211,7 @@ void Rasterizer::wireframe_render(
     }
 }
 
-void Rasterizer::rasterized_render(
+void Rasterizer::face_rasterized(
     const Camera& camera,
     const Face& face,
     const std::vector<glm::vec3>& vertices,
@@ -193,7 +272,7 @@ void Rasterizer::rasterized_render(
                 glm::vec3 bary =
                     Barycentric({v0.x, v0.y}, {v1.x, v1.y}, {v2.x, v2.y}, {x_center, y_center});
                 if (bary.x >= 0.0f && bary.y >= 0.0f && bary.z >= 0.0f) {
-                    Colour colour = sample_texture(face, bary, v0, v1, v2);
+                    Colour colour = SampleTexture(face, bary, v0, v1, v2);
                     FloatType inv_z = ComputeInvZndc(
                         std::array<FloatType, 3>{bary.x, bary.y, bary.z},
                         std::array<FloatType, 3>{v0.z_ndc, v1.z_ndc, v2.z_ndc}
@@ -224,7 +303,7 @@ void Rasterizer::rasterized_render(
                 glm::vec3 bary =
                     Barycentric({v0.x, v0.y}, {v1.x, v1.y}, {v2.x, v2.y}, {x_center, y_center});
                 if (bary.x >= 0.0f && bary.y >= 0.0f && bary.z >= 0.0f) {
-                    Colour colour = sample_texture(face, bary, v0, v1, v2);
+                    Colour colour = SampleTexture(face, bary, v0, v1, v2);
                     FloatType inv_z = ComputeInvZndc(
                         std::array<FloatType, 3>{bary.x, bary.y, bary.z},
                         std::array<FloatType, 3>{v0.z_ndc, v1.z_ndc, v2.z_ndc}
@@ -240,112 +319,6 @@ void Rasterizer::rasterized_render(
     }
 }
 
-// Clip-space half-space test: inside test for a homogeneous vertex versus a frustum plane
-constexpr bool Rasterizer::InsidePlane(const glm::vec4& v, ClipPlane plane) noexcept {
-    switch (plane) {
-    case ClipPlane::LEFT:
-        return v.x >= -v.w;
-    case ClipPlane::RIGHT:
-        return v.x <= v.w;
-    case ClipPlane::BOTTOM:
-        return v.y >= -v.w;
-    case ClipPlane::TOP:
-        return v.y <= v.w;
-    case ClipPlane::NEAR:
-        return v.z >= 0.0f;
-    case ClipPlane::FAR:
-        return v.z <= v.w;
-    }
-    return false;
-}
-
-// Edge-plane intersection parameter t in clip space (homogeneous distances)
-constexpr FloatType Rasterizer::ComputeIntersectionT(
-    const glm::vec4& v0, const glm::vec4& v1, ClipPlane plane
-) noexcept {
-    FloatType d0, d1;
-    switch (plane) {
-    case ClipPlane::LEFT:
-        d0 = v0.x + v0.w;
-        d1 = v1.x + v1.w;
-        break;
-    case ClipPlane::RIGHT:
-        d0 = v0.w - v0.x;
-        d1 = v1.w - v1.x;
-        break;
-    case ClipPlane::BOTTOM:
-        d0 = v0.y + v0.w;
-        d1 = v1.y + v1.w;
-        break;
-    case ClipPlane::TOP:
-        d0 = v0.w - v0.y;
-        d1 = v1.w - v1.y;
-        break;
-    case ClipPlane::NEAR:
-        d0 = v0.z;
-        d1 = v1.z;
-        break;
-    case ClipPlane::FAR:
-        d0 = v0.w - v0.z;
-        d1 = v1.w - v1.z;
-        break;
-    default:
-        return 0.0f;
-    }
-    if (std::abs(d1 - d0) < 1e-6f) {
-        return 0.0f;
-    }
-    return d0 / (d0 - d1);
-}
-
-// Attribute interpolation at plane intersection (colour, UV linear in clip space)
-ClipVertex Rasterizer::IntersectPlane(
-    const ClipVertex& v0, const ClipVertex& v1, ClipPlane plane
-) noexcept {
-    FloatType t = ComputeIntersectionT(v0.position_clip, v1.position_clip, plane);
-    return ClipVertex{
-        .position_clip = v0.position_clip * (1.0f - t) + v1.position_clip * t,
-        .colour =
-            Colour{
-                .red = static_cast<std::uint8_t>(v0.colour.red * (1.0f - t) + v1.colour.red * t),
-                .green =
-                    static_cast<std::uint8_t>(v0.colour.green * (1.0f - t) + v1.colour.green * t),
-                .blue = static_cast<std::uint8_t>(v0.colour.blue * (1.0f - t) + v1.colour.blue * t)
-            },
-        .uv = v0.uv * (1.0f - t) + v1.uv * t
-    };
-}
-
-// Sutherland–Hodgman polygon clipping against a single frustum plane (clip space)
-InplaceVector<ClipVertex, 9> Rasterizer::ClipAgainstPlane(
-    const InplaceVector<ClipVertex, 9>& input, ClipPlane plane
-) noexcept {
-    InplaceVector<ClipVertex, 9> output;
-
-    if (input.size() == 0) return output;
-
-    for (std::size_t i = 0; i < input.size(); i++) {
-        const ClipVertex& current = input[i];
-        const ClipVertex& next = input[(i + 1) % input.size()];
-
-        bool current_inside = InsidePlane(current.position_clip, plane);
-        bool next_inside = InsidePlane(next.position_clip, plane);
-
-        if (current_inside && next_inside) {
-            output.push_back(next);
-        } else if (current_inside && !next_inside) {
-            output.push_back(IntersectPlane(current, next, plane));
-        } else if (!current_inside && next_inside) {
-            output.push_back(IntersectPlane(current, next, plane));
-            output.push_back(next);
-        }
-    }
-
-    return output;
-}
-
-// Clip a triangle to the full frustum: transform to clip space, then apply
-// LEFT/RIGHT/BOTTOM/TOP/NEAR/FAR planes
 InplaceVector<ClipVertex, 9> Rasterizer::clip_triangle(
     const Camera& camera,
     const Face& face,
@@ -416,47 +389,6 @@ InplaceVector<ClipVertex, 9> Rasterizer::clip_triangle(
     return polygon;
 }
 
-// Fragment shading: perspective-correct UV interpolation and base color modulation
-Colour Rasterizer::sample_texture(
-    const Face& face,
-    const glm::vec3& bary,
-    const ScreenNdcCoord& v0,
-    const ScreenNdcCoord& v1,
-    const ScreenNdcCoord& v2
-) noexcept {
-    glm::vec3 base_color;
-
-    // If textured, reconstruct UV with 1/w weighting to avoid affine distortion
-    if (face.material.texture) {
-        FloatType inv_w = bary.x * v0.inv_w + bary.y * v1.inv_w + bary.z * v2.inv_w;
-        FloatType u = (bary.x * v0.uv.x * v0.inv_w + bary.y * v1.uv.x * v1.inv_w +
-                       bary.z * v2.uv.x * v2.inv_w) /
-                      inv_w;
-        FloatType v = (bary.x * v0.uv.y * v0.inv_w + bary.y * v1.uv.y * v1.inv_w +
-                       bary.z * v2.uv.y * v2.inv_w) /
-                      inv_w;
-
-        // Sample texture and modulate by material albedo
-        Colour tex_sample = face.material.texture->sample(u, v);
-        base_color = glm::vec3(
-            (tex_sample.red / 255.0f) * face.material.base_color.r,
-            (tex_sample.green / 255.0f) * face.material.base_color.g,
-            (tex_sample.blue / 255.0f) * face.material.base_color.b
-        );
-    } else {
-        // No texture: use flat material base color
-        base_color = face.material.base_color;
-    }
-
-    // Convert to 8-bit colour for the backbuffer
-    return Colour{
-        .red = static_cast<std::uint8_t>(std::clamp(base_color.r * 255.0f, 0.0f, 255.0f)),
-        .green = static_cast<std::uint8_t>(std::clamp(base_color.g * 255.0f, 0.0f, 255.0f)),
-        .blue = static_cast<std::uint8_t>(std::clamp(base_color.b * 255.0f, 0.0f, 255.0f))
-    };
-}
-
-// NDC [-1,1] to pixel coordinates; store 1/w for downstream perspective correction
 ScreenNdcCoord Rasterizer::ndc_to_screen(const glm::vec3& ndc, const glm::vec2& uv, FloatType w)
     const noexcept {
     return ScreenNdcCoord{

@@ -15,7 +15,7 @@
  * @brief Orchestrates rasterization and ray tracing; manages frame tiling.
  */
 class Renderer {
-public: // Types
+public:
     enum class Mode {
         WIREFRAME,
         RASTERIZED,
@@ -23,9 +23,25 @@ public: // Types
         DEPTH_OF_FIELD,
     };
 
-public: // Static Methods & Constants
+public:
     static constexpr int TileHeight = 16;
     static constexpr int VideoSamples = 64;
+
+    /**
+     * @brief ACES filmic tone mapping curve (approximation).
+     * @param hdr_value Input HDR component.
+     * @return Mapped component in [0,1].
+     */
+    [[nodiscard]] static constexpr FloatType AcesToneMapping(FloatType hdr_value) noexcept {
+        const FloatType a = 2.51f;
+        const FloatType b = 0.03f;
+        const FloatType c = 2.43f;
+        const FloatType d = 0.59f;
+        const FloatType e = 0.14f;
+        FloatType numerator = hdr_value * (a * hdr_value + b);
+        FloatType denominator = hdr_value * (c * hdr_value + d) + e;
+        return std::clamp(numerator / denominator, 0.0f, 1.0f);
+    }
 
     /**
      * @brief Converts HDR to displayable sRGB using ACES and gamma.
@@ -37,16 +53,10 @@ public: // Static Methods & Constants
         const ColourHDR& hdr, FloatType gamma
     ) noexcept;
 
-    /**
-     * @brief ACES filmic tone mapping curve (approximation).
-     * @param hdr_value Input HDR component.
-     * @return Mapped component in [0,1].
-     */
-    [[nodiscard]] static constexpr FloatType AcesToneMapping(FloatType hdr_value) noexcept;
-
-private: // Data
+private:
     const World& world_;
     Window& window_;
+
     Mode mode_ = Mode::RASTERIZED;
     FloatType gamma_ = 2.2f;
     bool caustics_enabled_ = false;
@@ -54,13 +64,15 @@ private: // Data
     FloatType aperture_size_ = 0.1f;
     int dof_samples_ = 16;
     bool video_export_mode_ = false;
+    int frame_count_ = 0;
+    int rendering_frame_count_ = 0;
+    double aspect_ratio_ = 1.0;
+
     std::unique_ptr<RayTracer> raytracer_;
     std::unique_ptr<Rasterizer> rasterizer_;
     std::vector<ColourHDR> hdr_buffer_;
     std::vector<ColourHDR> accumulation_buffer_;
-    int frame_count_ = 0;
-    int rendering_frame_count_ = 0;
-    double aspect_ratio_ = 1.0;
+
     std::barrier<> frame_barrier_;
     std::vector<std::jthread> workers_;
     std::atomic<int> tile_counter_ = 0;
@@ -69,16 +81,19 @@ private: // Data
     FloatType last_cam_yaw_ = 0.0f;
     FloatType last_cam_pitch_ = 0.0f;
 
-public: // Lifecycle
+public:
     /**
      * @brief Constructs the renderer with shared window/world.
      * @param world Scene data and camera.
      * @param window Reference to the output window.
+     * 
+     * Renderer orchestrates rasterizer/raytracer and multi-threaded tiling.
      */
-    explicit Renderer(const World& world, Window& window);
+    Renderer(const World& world, Window& window);
+    
     ~Renderer();
 
-public: // Accessors & Data Binding
+public:
     void set_mode(Mode m) noexcept { mode_ = m; }
 
     [[nodiscard]] FloatType gamma() const noexcept { return gamma_; }
@@ -103,16 +118,31 @@ public: // Accessors & Data Binding
     [[nodiscard]] bool video_export_mode() const noexcept { return video_export_mode_; }
     void set_video_export_mode(bool mode) noexcept { video_export_mode_ = mode; }
 
-public: // Core Operations
+public:
     void render() noexcept;
     void reset_accumulation() noexcept;
 
-private: // Core Operations (Internal)
+private:
+    /**
+     * @brief Clears z-buffer and colour buffer for new frame.
+     */
     void clear() noexcept;
-    void wireframe_render() noexcept;
-    void rasterized_render() noexcept;
-    void raytraced_render() noexcept;
-    void depth_of_field_render() noexcept;
+
+    void render_wireframe() noexcept;
+    void render_rasterized() noexcept;
+    void render_raytraced() noexcept;
+    void render_dof() noexcept;
+
+    /**
+     * @brief Worker thread function for processing tiles.
+     * @param st Stop token to allow cooperative cancellation.
+     */
     void worker_thread(std::stop_token st) noexcept;
+
+    /**
+     * @brief Processes a range of scanlines (tiles) for the current frame.
+     * @param y0 Starting scanline (inclusive).
+     * @param y1 Ending scanline (exclusive).
+     */
     void process_rows(int y0, int y1) noexcept;
 };

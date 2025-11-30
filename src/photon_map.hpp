@@ -7,7 +7,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include "shader.hpp"
 #include "utils.hpp"
 #include "world.hpp"
 
@@ -40,18 +39,18 @@ struct GridCellHash {
  * neighborhood queries to reconstruct radiance at hit points.
  */
 class PhotonMap {
-public: // Types
+public:
     using GridCell = std::tuple<int, int, int>;
 
-public: // Static Methods & Constants
+public:
     static constexpr int PhotonsPerLight = 200000;
     static constexpr int MaxPhotonBounces = 5;
     static constexpr FloatType MinPhotonPower = 0.01f;
     static constexpr FloatType CausticSearchRadius = 0.4f;
     static constexpr FloatType GridCellSize = CausticSearchRadius;
 
-    // Check if material is transparent (refractive)
-    static bool IsTransparent(const Material& mat) noexcept {
+    /// Check if material is transparent (refractive)
+    static constexpr bool IsTransparent(const Material& mat) noexcept {
         return mat.tw > 0.0f && mat.ior != 1.0f;
     }
 
@@ -63,7 +62,7 @@ public: // Static Methods & Constants
      */
     static FloatType RandomFloat(FloatType min = 0.0f, FloatType max = 1.0f) noexcept;
 
-private: // Data
+private:
     const World& world_;
     std::map<const Face*, std::vector<Photon>> photon_map_;
     std::vector<std::vector<Photon>> grid_;
@@ -71,18 +70,14 @@ private: // Data
     int grid_height_ = 0;
     int grid_depth_ = 0;
     glm::vec3 grid_origin_ = glm::vec3(0.0f);
+
     std::jthread worker_thread_;
     std::atomic<bool> is_ready_{false};
 
-public: // Lifecycle
+public:
     explicit PhotonMap(const World& world);
-    ~PhotonMap() = default;
 
-public: // Accessors & Data Binding
-    /**
-     * @brief Indicates whether the photon map has finished building.
-     * @return True when neighborhood queries are available.
-     */
+public:
     [[nodiscard]] bool is_ready() const noexcept {
         return is_ready_.load(std::memory_order_acquire);
     }
@@ -93,7 +88,6 @@ public: // Accessors & Data Binding
      */
     [[nodiscard]] std::size_t total_photons() const noexcept;
 
-public: // Core Operations
     /**
      * @brief Retrieves photons within a radius of a point on a given face.
      * @param face Target surface (used to filter hits).
@@ -117,7 +111,7 @@ public: // Core Operations
         const Face* face, const glm::vec3& point, const glm::vec3& normal, FloatType search_radius
     ) const noexcept;
 
-private: // Core Operations (Internal)
+private:
     void trace_photons();
 
     void emit_photons_from_area_light(
@@ -138,7 +132,7 @@ private: // Core Operations (Internal)
 
     void store_photon(const Photon& photon);
 
-    GridCell GetGridCell(const glm::vec3& position) const noexcept;
+    GridCell get_grid_cell(const glm::vec3& position) const noexcept;
 
     std::optional<RayTriangleIntersection> intersect_triangle(
         const glm::vec3& ro, const glm::vec3& rd, const Face& face

@@ -1,24 +1,20 @@
 #pragma once
 #include <string>
 
-#include "world.hpp"
+class Model;
+
+namespace SceneLoader {
+/**
+ * @brief Loads an OBJ file into the provided model.
+ * @param model Destination model to populate.
+ * @param filename Path to the OBJ file.
+ */
+void LoadObj(Model& model, const std::string& filename);
 
 /**
- * @brief Utility for loading OBJ and text-based scene descriptions into `Model`.
+ * @brief Loads a text scene file into the provided model.
+ * @param model Destination model to populate.
+ * @param filename Path to the scene text file.
  */
-class SceneLoader {
-public: // Static Methods & Constants
-    /**
-     * @brief Loads an OBJ file into the provided model.
-     * @param model Destination model to populate.
-     * @param filename Path to the OBJ file.
-     */
-    static void LoadObj(Model& model, const std::string& filename);
-
-    /**
-     * @brief Loads a text scene file into the provided model.
-     * @param model Destination model to populate.
-     * @param filename Path to the scene text file.
-     */
-    static void LoadSceneTxt(Model& model, const std::string& filename);
-};
+void LoadSceneTxt(Model& model, const std::string& filename);
+};  // namespace SceneLoader

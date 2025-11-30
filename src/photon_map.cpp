@@ -6,15 +6,27 @@
 #include <format>
 #include <iostream>
 
+FloatType PhotonMap::RandomFloat(FloatType min, FloatType max) noexcept {
+    thread_local std::mt19937 rng(std::random_device{}());
+    std::uniform_real_distribution<FloatType> dist(min, max);
+    return dist(rng);
+}
+
 PhotonMap::PhotonMap(const World& world) : world_(world) {
     worker_thread_ = std::jthread([this]() { trace_photons(); });
+}
+
+std::size_t PhotonMap::total_photons() const noexcept {
+    std::size_t count = 0;
+    for (const auto& [face, photons] : photon_map_) count += photons.size();
+    return count;
 }
 
 std::vector<Photon> PhotonMap::query_photons(
     const Face* face, const glm::vec3& point, FloatType radius
 ) const {
     std::vector<Photon> result;
-    GridCell center_cell = GetGridCell(point);
+    GridCell center_cell = get_grid_cell(point);
     auto [cx, cy, cz] = center_cell;
     int cell_range = static_cast<int>(std::ceil(radius / GridCellSize)) + 1;
     FloatType radius_sq = radius * radius;
@@ -63,12 +75,6 @@ ColourHDR PhotonMap::estimate_caustic(
     FloatType search_area = std::numbers::pi * search_radius * search_radius;
     glm::vec3 radiance = accumulated_flux / search_area;
     return ColourHDR{.red = radiance.x, .green = radiance.y, .blue = radiance.z};
-}
-
-std::size_t PhotonMap::total_photons() const noexcept {
-    std::size_t count = 0;
-    for (const auto& [face, photons] : photon_map_) count += photons.size();
-    return count;
 }
 
 void PhotonMap::trace_photons() {
@@ -342,7 +348,7 @@ void PhotonMap::store_photon(const Photon& photon) {
 
     // Store in flattened grid: contiguous vectors per cell minimize pointer
     // chasing and improve memory coherence during neighborhood queries.
-    auto [cx, cy, cz] = GetGridCell(photon.position);
+    auto [cx, cy, cz] = get_grid_cell(photon.position);
     if (cx < 0 || cy < 0 || cz < 0 || cx >= grid_width_ || cy >= grid_height_ ||
         cz >= grid_depth_) {
         return;  // Out of bounds: skip
@@ -352,14 +358,12 @@ void PhotonMap::store_photon(const Photon& photon) {
     grid_[idx].push_back(photon);
 }
 
-std::optional<RayTriangleIntersection> PhotonMap::find_intersection(
-    const glm::vec3& ro, const glm::vec3& rd
-) const noexcept {
-    auto rec = world_.accelerator().intersect(ro, rd, world_.all_faces());
-    if (rec.triangleIndex == static_cast<std::size_t>(-1)) {
-        return std::nullopt;
-    }
-    return rec;
+PhotonMap::GridCell PhotonMap::get_grid_cell(const glm::vec3& position) const noexcept {
+    glm::vec3 local = position - grid_origin_;
+    int x = static_cast<int>(std::floor(local.x / GridCellSize));
+    int y = static_cast<int>(std::floor(local.y / GridCellSize));
+    int z = static_cast<int>(std::floor(local.z / GridCellSize));
+    return std::make_tuple(x, y, z);
 }
 
 std::optional<RayTriangleIntersection> PhotonMap::intersect_triangle(
@@ -438,16 +442,12 @@ std::optional<RayTriangleIntersection> PhotonMap::intersect_triangle(
     return hit;
 }
 
-PhotonMap::GridCell PhotonMap::GetGridCell(const glm::vec3& position) const noexcept {
-    glm::vec3 local = position - grid_origin_;
-    int x = static_cast<int>(std::floor(local.x / GridCellSize));
-    int y = static_cast<int>(std::floor(local.y / GridCellSize));
-    int z = static_cast<int>(std::floor(local.z / GridCellSize));
-    return std::make_tuple(x, y, z);
-}
-
-FloatType PhotonMap::RandomFloat(FloatType min, FloatType max) noexcept {
-    thread_local std::mt19937 rng(std::random_device{}());
-    std::uniform_real_distribution<FloatType> dist(min, max);
-    return dist(rng);
+std::optional<RayTriangleIntersection> PhotonMap::find_intersection(
+    const glm::vec3& ro, const glm::vec3& rd
+) const noexcept {
+    auto rec = world_.accelerator().intersect(ro, rd, world_.all_faces());
+    if (rec.triangleIndex == static_cast<std::size_t>(-1)) {
+        return std::nullopt;
+    }
+    return rec;
 }

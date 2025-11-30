@@ -3,7 +3,6 @@
 #include <vector>
 
 #include "photon_map.hpp"
-#include "shader.hpp"
 #include "world.hpp"
 
 /**
@@ -19,18 +18,18 @@
  * - Volumetric Absorption (Beer's Law)
  */
 class RayTracer {
-public: // Types
+public:
     /**
      * @brief Tracks the current medium the ray is traversing.
      * Used for calculating volumetric absorption (Beer's Law).
      */
     struct MediumState {
-        const Material* material = nullptr;       ///< Pointer to the material of the medium.
-        glm::vec3 entry_point = glm::vec3(0.0f);  ///< Point where the ray entered the medium.
-        FloatType entry_distance = 0.0f;          ///< Distance from camera/origin to entry point.
+        const Material* material = nullptr;       /// Pointer to the material of the medium.
+        glm::vec3 entry_point = glm::vec3(0.0f);  /// Point where the ray entered the medium.
+        FloatType entry_distance = 0.0f;          /// Distance from camera/origin to entry point.
     };
 
-public: // Static Methods & Constants
+public:
     /**
      * @brief Clamps the radiance values to avoid fireflies/NaNs.
      * @param c Input color.
@@ -38,17 +37,22 @@ public: // Static Methods & Constants
      * @return Clamped color.
      */
     [[nodiscard]] static constexpr ColourHDR ClampRadiance(
-        const ColourHDR& c, FloatType max_luma
-    ) noexcept;
+        const ColourHDR& c, FloatType max_component
+    ) noexcept {
+        FloatType r = std::min(c.red, max_component);
+        FloatType g = std::min(c.green, max_component);
+        FloatType b = std::min(c.blue, max_component);
+        return ColourHDR{.red = r, .green = g, .blue = b};
+    }
 
-private: // Data
+private:
     const World& world_;
     std::unique_ptr<PhotonMap> photon_map_;
 
-public: // Lifecycle
-    explicit RayTracer(const World& world);
+public:
+    RayTracer(const World& world);
 
-public: // Accessors & Data Binding
+public:
     /**
      * @brief Checks if the photon map has finished building.
      */
@@ -56,7 +60,7 @@ public: // Accessors & Data Binding
         return photon_map_ && photon_map_->is_ready();
     }
 
-public: // Core Operations
+public:
     /**
      * @brief Renders a single pixel using standard pinhole camera model.
      *
@@ -111,7 +115,7 @@ public: // Core Operations
         bool use_caustics = false
     ) const noexcept;
 
-private: // Core Operations (Internal)
+private:
     /**
      * @brief Recursive ray tracing function.
      *
@@ -141,7 +145,7 @@ private: // Core Operations (Internal)
     /**
      * @brief Intersects the ray with the scene geometry.
      */
-    HitRecord hit(const glm::vec3& ro, const glm::vec3& rd) const noexcept;
+    RayTriangleIntersection hit(const glm::vec3& ro, const glm::vec3& rd) const noexcept;
 
     /**
      * @brief Computes visibility between two points (shadow ray).

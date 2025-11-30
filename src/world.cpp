@@ -9,11 +9,8 @@
 #include <numeric>
 #include <random>
 
-#include "../libs/stb_image.h"
-#include "scene_loader.hpp"
+#include <stb_image.h>
 #include "window.hpp"
-
-// Parsing helpers moved to scene_loader.cpp
 
 ColourHDR ColourHDR::from_srgb(const Colour& srgb, FloatType gamma) noexcept {
     auto to_linear = [gamma](std::uint8_t component) -> FloatType {
@@ -26,12 +23,10 @@ ColourHDR ColourHDR::from_srgb(const Colour& srgb, FloatType gamma) noexcept {
     };
 }
 
-EnvironmentMap::EnvironmentMap() noexcept : width_(0), height_(0), intensity_(1.0f) {}
-
 EnvironmentMap::EnvironmentMap(
-    std::size_t w, std::size_t h, std::vector<ColourHDR> data, FloatType intensity
+    std::size_t width, std::size_t height, std::vector<ColourHDR> data, FloatType intensity
 ) noexcept
-    : width_(w), height_(h), data_(std::move(data)), intensity_(intensity) {}
+    : width_(width), height_(height), data_(std::move(data)), intensity_(intensity) {}
 
 ColourHDR EnvironmentMap::sample(const glm::vec3& direction) const noexcept {
     if (!is_loaded()) return ColourHDR{.red = 0.0f, .green = 0.0f, .blue = 0.0f};
@@ -46,30 +41,6 @@ ColourHDR EnvironmentMap::sample(const glm::vec3& direction) const noexcept {
         std::clamp(v * static_cast<FloatType>(height_), 0.0f, static_cast<FloatType>(height_ - 1))
     );
     return data_[y * width_ + x] * intensity_;
-}
-
-// Camera implementation
-glm::vec4 Camera::world_to_clip(const glm::vec3& vertex, double aspect_ratio) const noexcept {
-    // Transform world-space vertex to camera view, then project to homogeneous clip
-    glm::vec3 view_vector = vertex - position_;
-    glm::mat3 view_rotation = glm::transpose(orientation());
-    glm::vec3 view_space = view_rotation * view_vector;
-    FloatType w = view_space.z;
-    double fov_rad = glm::radians(FOV);
-    double tan_half_fov = std::tan(fov_rad / 2.0);
-    FloatType x_ndc = view_space.x / (view_space.z * tan_half_fov * aspect_ratio);
-    FloatType y_ndc = view_space.y / (view_space.z * tan_half_fov);
-    FloatType z_ndc =
-        (FarPlane * (view_space.z - NearPlane)) / ((view_space.z) * (FarPlane - NearPlane));
-    return glm::vec4(x_ndc * w, y_ndc * w, z_ndc * w, w);
-}
-
-glm::vec3 Camera::clip_to_ndc(const glm::vec4& clip) const noexcept {
-    if (std::abs(clip.w) < 1e-6f) {
-        return glm::vec3(0.0f, 0.0f, -1.0f);
-    }
-    // Divide by w to get NDC; guard above avoids division by near-zero
-    return glm::vec3(clip) / clip.w;
 }
 
 glm::mat3 Camera::orientation() const noexcept {
@@ -114,6 +85,29 @@ glm::vec3 Camera::up() const noexcept {
     return glm::normalize(o[1]);
 }
 
+glm::vec4 Camera::world_to_clip(const glm::vec3& vertex, double aspect_ratio) const noexcept {
+    // Transform world-space vertex to camera view, then project to homogeneous clip
+    glm::vec3 view_vector = vertex - position_;
+    glm::mat3 view_rotation = glm::transpose(orientation());
+    glm::vec3 view_space = view_rotation * view_vector;
+    FloatType w = view_space.z;
+    double fov_rad = glm::radians(FOV);
+    double tan_half_fov = std::tan(fov_rad / 2.0);
+    FloatType x_ndc = view_space.x / (view_space.z * tan_half_fov * aspect_ratio);
+    FloatType y_ndc = view_space.y / (view_space.z * tan_half_fov);
+    FloatType z_ndc =
+        (FarPlane * (view_space.z - NearPlane)) / ((view_space.z) * (FarPlane - NearPlane));
+    return glm::vec4(x_ndc * w, y_ndc * w, z_ndc * w, w);
+}
+
+glm::vec3 Camera::clip_to_ndc(const glm::vec4& clip) const noexcept {
+    if (std::abs(clip.w) < 1e-6f) {
+        return glm::vec3(0.0f, 0.0f, -1.0f);
+    }
+    // Divide by w to get NDC; guard above avoids division by near-zero
+    return glm::vec3(clip) / clip.w;
+}
+
 void Camera::start_orbiting(glm::vec3 target) noexcept {
     orbit_target_ = target;
     orbit_radius_ = glm::length(position_ - orbit_target_);
@@ -148,10 +142,6 @@ void Camera::move(
     position_ += up() * (up_delta * dt);
 }
 
-// Input handling removed from Camera; movement is driven by external input callbacks
-
-// Input callbacks are registered centrally in main; World no longer registers to Window
-
 std::pair<glm::vec3, glm::vec3> Camera::generate_ray(
     int pixel_x, int pixel_y, int screen_width, int screen_height, double aspect_ratio
 ) const noexcept {
@@ -177,45 +167,9 @@ std::pair<glm::vec3, glm::vec3> Camera::generate_ray_uv(
     return {position_, glm::normalize(ray_dir_world)};
 }
 
-void Camera::set_position(const glm::vec3& pos) noexcept { position_ = pos; }
-void Camera::set_yaw(FloatType y) noexcept { yaw_ = y; }
-void Camera::set_pitch(FloatType p) noexcept { pitch_ = p; }
-void Camera::set_roll(FloatType r) noexcept { roll_ = r; }
-
-// Model implementation
 void Model::load_file(std::string filename) { SceneLoader::LoadObj(*this, filename); }
 
 void Model::load_scene_txt(std::string filename) { SceneLoader::LoadSceneTxt(*this, filename); }
-
-void Model::compute_face_normals() noexcept {
-    // Compute geometric normals per face from vertex positions; used for flat shading and backface
-    // tests
-    for (auto& obj : objects_) {
-        for (auto& f : obj.faces) {
-            const glm::vec3& v0 = vertices_[f.v_indices[0]];
-            const glm::vec3& v1 = vertices_[f.v_indices[1]];
-            const glm::vec3& v2 = vertices_[f.v_indices[2]];
-            f.face_normal = CalculateNormal(v0, v1, v2);
-        }
-    }
-}
-
-// Removed smooth_missing_vertex_normals as part of code cleanup
-
-void Model::cache_faces() noexcept {
-    // Flatten per-object faces into a contiguous array for fast traversal and BVH build
-    all_faces_.clear();
-    all_faces_.reserve(std::accumulate(
-        objects_.begin(),
-        objects_.end(),
-        std::size_t(0),
-        [](std::size_t sum, const Object& obj) { return sum + obj.faces.size(); }
-    ));
-
-    for (const auto& object : objects_) {
-        all_faces_.insert(all_faces_.end(), object.faces.begin(), object.faces.end());
-    }
-}
 
 void Model::load_materials(std::string filename) {
     // MTL loader: populate material table (albedo, shininess, metallic, IOR, transmission,
@@ -334,7 +288,34 @@ Texture Model::load_texture(std::string filename) {
     return Texture(width, height, std::move(texture_data));
 }
 
-// EnvironmentMap implementation
+void Model::flatten_faces() noexcept {
+    // Flatten per-object faces into a contiguous array for fast traversal and BVH build
+    all_faces_.clear();
+    all_faces_.reserve(std::accumulate(
+        objects_.begin(),
+        objects_.end(),
+        std::size_t(0),
+        [](std::size_t sum, const Object& obj) { return sum + obj.faces.size(); }
+    ));
+
+    for (const auto& object : objects_) {
+        all_faces_.insert(all_faces_.end(), object.faces.begin(), object.faces.end());
+    }
+}
+
+void Model::compute_face_normals() noexcept {
+    // Compute geometric normals per face from vertex positions; used for flat shading and backface
+    // tests
+    for (auto& obj : objects_) {
+        for (auto& f : obj.faces) {
+            const glm::vec3& v0 = vertices_[f.v_indices[0]];
+            const glm::vec3& v1 = vertices_[f.v_indices[1]];
+            const glm::vec3& v2 = vertices_[f.v_indices[2]];
+            f.face_normal = CalculateNormal(v0, v1, v2);
+        }
+    }
+}
+
 FloatType EnvironmentMap::ComputeAutoExposure(const std::vector<ColourHDR>& hdr_data) noexcept {
     // Robust exposure using log-average luminance blended with the 90th percentile
     if (hdr_data.empty()) return 1.0f;
@@ -373,17 +354,17 @@ FloatType EnvironmentMap::ComputeAutoExposure(const std::vector<ColourHDR>& hdr_
     return auto_exposure * 0.5f;
 }
 
-void BVHAccelerator::set_vertices(const std::vector<glm::vec3>& verts) noexcept {
-    vertices_ = &verts;
-}
-void BVHAccelerator::set_texcoords(const std::vector<glm::vec2>& uvs) noexcept {
-    texcoords_ = &uvs;
-}
-void BVHAccelerator::set_normals(const std::vector<glm::vec3>& norms) noexcept {
-    normals_ = &norms;
-}
-void BVHAccelerator::set_normals_by_vertex(const std::vector<glm::vec3>& norms) noexcept {
-    normals_by_vertex_ = &norms;
+bool BVHAccelerator::IntersectAABB(
+    const glm::vec3& ro, const glm::vec3& rd, const AABB& box, FloatType tmax
+) noexcept {
+    glm::vec3 inv = glm::vec3(1.0f) / rd;
+    glm::vec3 t0 = (box.min - ro) * inv;
+    glm::vec3 t1 = (box.max - ro) * inv;
+    glm::vec3 tmin = glm::min(t0, t1);
+    glm::vec3 tmaxv = glm::max(t0, t1);
+    FloatType t_enter = std::max(std::max(tmin.x, tmin.y), tmin.z);
+    FloatType t_exit = std::min(std::min(tmaxv.x, tmaxv.y), tmaxv.z);
+    return t_enter <= t_exit && t_exit >= 0.0f && t_enter <= tmax;
 }
 
 void BVHAccelerator::build(const std::vector<Face>& faces) noexcept {
@@ -522,19 +503,6 @@ void BVHAccelerator::build(const std::vector<Face>& faces) noexcept {
         return node_index;
     };
     build_rec(0, (int)faces.size());
-}
-
-bool BVHAccelerator::IntersectAABB(
-    const glm::vec3& ro, const glm::vec3& rd, const AABB& box, FloatType tmax
-) noexcept {
-    glm::vec3 inv = glm::vec3(1.0f) / rd;
-    glm::vec3 t0 = (box.min - ro) * inv;
-    glm::vec3 t1 = (box.max - ro) * inv;
-    glm::vec3 tmin = glm::min(t0, t1);
-    glm::vec3 tmaxv = glm::max(t0, t1);
-    FloatType t_enter = std::max(std::max(tmin.x, tmin.y), tmin.z);
-    FloatType t_exit = std::min(std::min(tmaxv.x, tmaxv.y), tmaxv.z);
-    return t_enter <= t_exit && t_exit >= 0.0f && t_enter <= tmax;
 }
 
 RayTriangleIntersection BVHAccelerator::intersect(
@@ -704,6 +672,10 @@ glm::vec3 BVHAccelerator::transmittance(
         }
     }
     return trans;
+}
+
+World::World(const std::vector<std::string>& filenames) {
+    load_files(filenames);
 }
 
 void World::load_files(const std::vector<std::string>& filenames) {
@@ -890,4 +862,18 @@ void World::load_files(const std::vector<std::string>& filenames) {
     accelerator_.set_normals_by_vertex(all_vertex_normals_by_vertex_);
     // Build acceleration structure (BVH) over all faces
     accelerator_.build(all_faces_);
+}
+
+void World::load_obj(std::string filename) {
+    Model group;
+    group.load_file(filename);
+    models_.emplace_back(std::move(group));
+    load_files({});
+}
+
+void World::load_scene_txt(std::string filename) {
+    Model group;
+    group.load_scene_txt(filename);
+    models_.emplace_back(std::move(group));
+    load_files({});
 }

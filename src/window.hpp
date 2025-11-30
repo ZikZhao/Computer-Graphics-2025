@@ -16,7 +16,7 @@
  * @brief SDL-backed window, input, and pixel backbuffer manager.
  */
 class Window {
-public: // Types
+public:
     // Event trigger types
     enum class Trigger {
         ANY_PRESSED,
@@ -29,12 +29,13 @@ public: // Types
         ALL_JUST_PRESSED,
         ANY_PRESSED_NO_MODIFIER
     };
+
     using KeyState = std::array<bool, SDL_NUM_SCANCODES>;
     using KeyHandler = std::function<void(const KeyState&, float)>;
     using MouseHandler = std::function<void(int, int, float)>;
     using ScrollHandler = std::function<void(int)>;
 
-private: // Types (Internal)
+private:
     struct KeyBinding {
         std::unordered_set<SDL_Scancode> keys;
         Trigger trigger;
@@ -53,13 +54,13 @@ private: // Types (Internal)
         bool time_initialized = false;
     };
 
-private: // Static Methods & Constants
+private:
     static constexpr bool IsPressedMode(Trigger t) noexcept {
         return t == Trigger::ANY_PRESSED || t == Trigger::ALL_PRESSED || t == Trigger::ANY_DOWN ||
                t == Trigger::ALL_DOWN || t == Trigger::ANY_PRESSED_NO_MODIFIER;
     }
 
-private: // Data
+private:
     // SDL components
     SDL_Window* window_;
     SDL_Renderer* renderer_;
@@ -87,41 +88,25 @@ private: // Data
     std::vector<ScrollHandler> scroll_handlers_;
     std::size_t next_event_id_ = 0;
 
-public: // Lifecycle
-    Window() noexcept = delete;
-    /**
-     * @brief Creates a window with an ARGB backbuffer.
-     * @param w Width in pixels.
-     * @param h Height in pixels.
-     * @param fullscreen Enable fullscreen desktop mode.
-     */
-    explicit Window(int w, int h, bool fullscreen = false) noexcept;
-    /** @brief Releases SDL resources. */
+public:
+    Window(int width, int height, bool fullscreen = false);
     ~Window();
 
-public: // Accessors & Data Binding
-    /** @brief Mutable pixel access by (x,y). */
+public:
     [[nodiscard]] std::uint32_t& operator[](const std::pair<int, int>& xy) noexcept;
-    /** @brief Const pixel read by (x,y). */
     [[nodiscard]] std::uint32_t operator[](const std::pair<int, int>& xy) const noexcept;
-    /** @brief Returns the underlying pixel buffer. */
     [[nodiscard]] const std::vector<std::uint32_t>& get_pixel_buffer() const noexcept {
         return pixel_buffer_;
     }
 
-    /** @brief Backbuffer width. */
     [[nodiscard]] std::size_t get_width() const noexcept { return width_; }
-    /** @brief Backbuffer height. */
     [[nodiscard]] std::size_t get_height() const noexcept { return height_; }
 
-    /** @brief Returns current pressed state for a key. */
     [[nodiscard]] bool is_key_pressed(SDL_Scancode key) const noexcept;
-    /** @brief Returns true if key transitioned to pressed in this frame. */
     [[nodiscard]] bool is_key_just_pressed(SDL_Scancode key) const noexcept;
-    /** @brief Returns true if key transitioned to released in this frame. */
     [[nodiscard]] bool is_key_just_released(SDL_Scancode key) const noexcept;
 
-public: // Core Operations
+public:
     /**
      * @brief Registers a key binding with a trigger policy.
      * @param keys Set of scancodes to monitor.
@@ -148,20 +133,15 @@ public: // Core Operations
 
     /** @brief Polls SDL events and dispatches registered handlers. */
     bool process_events() noexcept;
-    /** @brief Uploads backbuffer to SDL texture and presents. */
+    /** @brief Uploads backbuffer to SDL texture, presents and clears buffer. */
     void update() noexcept;
-
     /** @brief Clears the ARGB backbuffer to black. */
-    void clear_pixels() noexcept;
+    void clear() noexcept;
 
-    /** @brief Saves the backbuffer as raw PPM (P6) file.
-     *  @param filename Output path. */
     void save_ppm(const std::string& filename) const;
-    /** @brief Saves the backbuffer as BMP via SDL.
-     *  @param filename Output path. */
     void save_bmp(const std::string& filename) const;
 
-private: // Core Operations (Internal)
+private:
     bool check_key_trigger(const KeyBinding& binding) const noexcept;
     void process_key_bindings() noexcept;
     void process_mouse_bindings() noexcept;
