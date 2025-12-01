@@ -153,9 +153,6 @@ void Rasterizer::face_wireframe(
     int width = window_.get_width();
     int height = window_.get_height();
 
-    // Fuzzy depth test epsilon to avoid gaps due to precision issues
-    constexpr FloatType epsilon = 0.005f;
-
     for (std::size_t i = 0; i < screen_verts.size(); i++) {
         ScreenNdcCoord from = screen_verts[i];
         ScreenNdcCoord to = screen_verts[(i + 1) % screen_verts.size()];
@@ -177,7 +174,7 @@ void Rasterizer::face_wireframe(
                 FloatType inv_z =
                     ComputeInvZndc(progress, std::array<FloatType, 2>{from.z_ndc, to.z_ndc});
                 FloatType& depth = z_buffer_[y * width + x];
-                if (inv_z > depth - epsilon) {
+                if (inv_z >= depth) {
                     depth = inv_z;
                     window_[{static_cast<int>(x), static_cast<int>(y)}] = colour;
                 }
@@ -202,7 +199,7 @@ void Rasterizer::face_wireframe(
                 FloatType inv_z =
                     ComputeInvZndc(progress, std::array<FloatType, 2>{from.z_ndc, to.z_ndc});
                 FloatType& depth = z_buffer_[y * width + x];
-                if (inv_z > depth - epsilon) {
+                if (inv_z >= depth) {
                     depth = inv_z;
                     window_[{static_cast<int>(x), static_cast<int>(y)}] = colour;
                 }

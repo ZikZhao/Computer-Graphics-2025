@@ -12,6 +12,7 @@
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
+
 #include "window.hpp"
 
 auto ParseIndexToken(const std::string& t) {
@@ -367,15 +368,16 @@ BVHAccelerator BVHAccelerator::Build(
         if (best_cost >= leaf_cost || best_axis == -1) {
             return node_index;
         }
-        auto mid_iter =
-            std::partition(bvh.tri_indices_.begin() + start, bvh.tri_indices_.begin() + end, [&](int idx) {
+        auto mid_iter = std::partition(
+            bvh.tri_indices_.begin() + start, bvh.tri_indices_.begin() + end, [&](int idx) {
                 FloatType centroid = data[idx].c[best_axis];
                 int bucket_idx = static_cast<int>(
                     sah_buckets * ((centroid - cbox.min[best_axis]) / extent[best_axis])
                 );
                 bucket_idx = std::clamp(bucket_idx, 0, sah_buckets - 1);
                 return bucket_idx <= best_split;
-            });
+            }
+        );
         int mid = static_cast<int>(mid_iter - bvh.tri_indices_.begin());
         if (mid == start || mid == end) {
             mid = (start + end) / 2;
@@ -739,8 +741,7 @@ void World::parse_txt(Model& model, const std::string& filename) {
             // Environment map hint (handled at World level)
             std::string hdr;
             iss >> hdr;
-            std::string hdr_path =
-                (std::filesystem::path(filename).parent_path() / hdr).string();
+            std::string hdr_path = (std::filesystem::path(filename).parent_path() / hdr).string();
             load_hdr_env_map(hdr_path);
         } else if (type == "Include") {
             // Include another scene file (relative path)
@@ -944,7 +945,7 @@ void World::parse_txt(Model& model, const std::string& filename) {
             model.objects.back().faces.emplace_back(std::move(new_face));
         }
     }
-    
+
     compute_model_normals(model);
     flatten_model_faces(model);
 }
@@ -1090,12 +1091,14 @@ Texture World::load_texture(const std::string& filename) {
 void World::flatten_model_faces(Model& model) {
     // Flatten per-object faces into a contiguous array for fast traversal and BVH build
     model.all_faces.clear();
-    model.all_faces.reserve(std::accumulate(
-        model.objects.begin(),
-        model.objects.end(),
-        std::size_t(0),
-        [](std::size_t sum, const Object& obj) { return sum + obj.faces.size(); }
-    ));
+    model.all_faces.reserve(
+        std::accumulate(
+            model.objects.begin(),
+            model.objects.end(),
+            std::size_t(0),
+            [](std::size_t sum, const Object& obj) { return sum + obj.faces.size(); }
+        )
+    );
 
     for (const auto& object : model.objects) {
         model.all_faces.insert(model.all_faces.end(), object.faces.begin(), object.faces.end());
@@ -1125,13 +1128,19 @@ void World::merge_models() noexcept {
     collect_emissive_faces();
 
     std::cout << std::format(
-        "[World] Merged stats: Verts: {} | Faces: {} | Lights: {}\n",
-        all_vertices_.size(), all_faces_.size(), emissive_faces_.size()
+        "[World] All models loaded: Vertex: {} | Vertex Normal: {} | Face: {} | Environment: {}\n",
+        all_vertices_.size(),
+        all_vertex_normals_.size() + all_vertex_normals_by_vertex_.size(),
+        all_faces_.size(),
+        env_map_.is_loaded()
     );
 
     accelerator_ = BVHAccelerator::Build(
-        all_faces_, all_vertices_, all_vertex_normals_,
-        all_vertex_normals_by_vertex_, all_texcoords_
+        all_faces_,
+        all_vertices_,
+        all_vertex_normals_,
+        all_vertex_normals_by_vertex_,
+        all_texcoords_
     );
 
     models_.clear();
@@ -1164,11 +1173,19 @@ void World::append_model_data(const Model& model) noexcept {
     std::uint32_t vt_offset = static_cast<std::uint32_t>(all_texcoords_.size());
     std::uint32_t vn_offset = static_cast<std::uint32_t>(all_vertex_normals_.size());
     std::uint32_t vnbv_offset = static_cast<std::uint32_t>(all_vertex_normals_by_vertex_.size());
-    
+
     all_vertices_.insert(all_vertices_.end(), model.vertices.begin(), model.vertices.end());
-    all_texcoords_.insert(all_texcoords_.end(), model.texture_coords.begin(), model.texture_coords.end());
-    all_vertex_normals_.insert(all_vertex_normals_.end(), model.vertex_normals.begin(), model.vertex_normals.end());
-    all_vertex_normals_by_vertex_.insert(all_vertex_normals_by_vertex_.end(), model.vertex_normals_by_vertex.begin(), model.vertex_normals_by_vertex.end());
+    all_texcoords_.insert(
+        all_texcoords_.end(), model.texture_coords.begin(), model.texture_coords.end()
+    );
+    all_vertex_normals_.insert(
+        all_vertex_normals_.end(), model.vertex_normals.begin(), model.vertex_normals.end()
+    );
+    all_vertex_normals_by_vertex_.insert(
+        all_vertex_normals_by_vertex_.end(),
+        model.vertex_normals_by_vertex.begin(),
+        model.vertex_normals_by_vertex.end()
+    );
 
     for (const auto& local_face : model.all_faces) {
         Face global_face = local_face;

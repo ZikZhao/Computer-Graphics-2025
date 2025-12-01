@@ -13,11 +13,14 @@
 #include "window.hpp"
 #include "world.hpp"
 
-constexpr std::size_t WindowWidth = 960;
-constexpr std::size_t WindowHeight = 540;
+constexpr std::size_t WindowWidth = 1920;
+constexpr std::size_t WindowHeight = 1080;
 
 int main(int argc, char* argv[]) {
-    assert(argc >= 2 && "Please provide a .obj file as a command line argument.");
+    if (argc < 2) {
+        std::cerr << "Usage: " << argv[0] << " <scene1.obj> [<scene2.obj> ...]" << std::endl;
+        return EXIT_FAILURE;
+    }
 
     // Load world assets from CLI arguments
     World world = {std::vector<std::string>(argv + 1, argv + argc)};
@@ -188,6 +191,26 @@ int main(int argc, char* argv[]) {
             FloatType d_pitch = -dx0 * s + dy0 * c;
             world.camera_.rotate(d_yaw, d_pitch);
             renderer.reset_accumulation();
+        }
+    );
+
+    // Keyboard look (arrow keys)
+    window.register_key(
+        {SDL_SCANCODE_UP, SDL_SCANCODE_DOWN, SDL_SCANCODE_LEFT, SDL_SCANCODE_RIGHT},
+        Window::Trigger::ANY_PRESSED_NO_MODIFIER,
+        [&](const Window::KeyState& ks, float dt) {
+            constexpr FloatType ROTATE_SPEED = 0.5f;
+            FloatType dx0 = (ks[SDL_SCANCODE_RIGHT] ? 1.0f : 0.0f) - (ks[SDL_SCANCODE_LEFT] ? 1.0f : 0.0f);
+            FloatType dy0 = (ks[SDL_SCANCODE_UP] ? 1.0f : 0.0f) - (ks[SDL_SCANCODE_DOWN] ? 1.0f : 0.0f);
+            if (dx0 != 0.0f || dy0 != 0.0f) {
+                FloatType roll = world.camera_.roll();
+                FloatType c = std::cos(roll);
+                FloatType s = std::sin(roll);
+                FloatType d_yaw = (dx0 * c + dy0 * s) * ROTATE_SPEED * dt;
+                FloatType d_pitch = (-dx0 * s + dy0 * c) * ROTATE_SPEED * dt;
+                world.camera_.rotate(d_yaw, d_pitch);
+                renderer.reset_accumulation();
+            }
         }
     );
 
