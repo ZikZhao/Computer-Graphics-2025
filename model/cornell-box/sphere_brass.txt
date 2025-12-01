@@ -1,7 +1,7 @@
 Include material.txt
 
-Object sphere
-    Use grey_metallic
+Object brass_sphere
+    Use brass
     Shading Phong
     Vertex 1.500000 -0.500000 -1.000000 / 0.000000 1.000000 0.000000
     Vertex 1.500000 -0.500000 -1.000000 / 0.000000 1.000000 0.000000

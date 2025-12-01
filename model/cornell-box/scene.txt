@@ -1,4 +1,4 @@
-Environ qwantani_dusk_2_puresky_4k.hdr
+Environ ../qwantani_dusk_2_puresky_4k.hdr
 
 Include material.txt
 

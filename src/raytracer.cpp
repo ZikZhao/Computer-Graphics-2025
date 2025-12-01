@@ -461,10 +461,24 @@ ColourHDR RayTracer::trace_ray(
             compensated_tp,
             rng
         );
+
+        // Schlick's Approximation for Metallic Fresnel
+        // F(θ) = F0 + (1.0 - F0)(1.0 - cosθ)^5
+        // For metals, F0 is the surface albedo (hdr_colour)
+        FloatType cos_theta = std::max(0.0f, glm::dot(-ray_dir, use_normal));
+        ColourHDR F0 = hdr_colour;
+        FloatType factor = std::pow(1.0f - cos_theta, 5.0f);
+        ColourHDR F = ColourHDR{
+            .red = F0.red + (1.0f - F0.red) * factor,
+            .green = F0.green + (1.0f - F0.green) * factor,
+            .blue = F0.blue + (1.0f - F0.blue) * factor
+        };
+
+        // The reflection is tinted by F, not just F0
         ColourHDR metallic_reflection = ColourHDR{
-            .red = reflected_color.red * hdr_colour.red,
-            .green = reflected_color.green * hdr_colour.green,
-            .blue = reflected_color.blue * hdr_colour.blue
+            .red = reflected_color.red * F.red,
+            .green = reflected_color.green * F.green,
+            .blue = reflected_color.blue * F.blue
         };
         ColourHDR out = direct_lighting * (1.0f - face.material.metallic) +
                         metallic_reflection * face.material.metallic;

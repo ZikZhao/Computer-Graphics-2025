@@ -784,7 +784,7 @@ void World::parse_txt(Model& model, const std::string& filename) {
                 iss >> td;
                 current_material->second.td = std::max(0.0f, td);
             }
-        } else if (type == "TransimissionWeight") {
+        } else if (type == "TransmissionWeight") {
             // Transmission weight tw for mixing reflection/refraction
             if (current_material != model.materials.end()) {
                 FloatType tw;
