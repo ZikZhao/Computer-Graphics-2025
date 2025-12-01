@@ -135,9 +135,8 @@ glm::vec3 Camera::clip_to_ndc(const glm::vec4& clip) const noexcept {
     return glm::vec3(clip) / clip.w;
 }
 
-void Camera::start_orbiting(glm::vec3 target) noexcept {
-    orbit_target_ = target;
-    orbit_radius_ = glm::length(position_ - orbit_target_);
+void Camera::start_orbiting() noexcept {
+    orbit_radius_ = glm::length(position_);
     is_orbiting_ = true;
 }
 
@@ -145,7 +144,7 @@ void Camera::orbiting() noexcept {
     if (is_orbiting_) {
         constexpr static FloatType angle_increment = glm::radians(-0.5f);
         yaw_ += angle_increment;
-        position_ = orbit_target_ - forward() * orbit_radius_;
+        position_ = -forward() * orbit_radius_;
     }
 }
 

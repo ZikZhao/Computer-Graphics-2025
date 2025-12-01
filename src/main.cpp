@@ -71,7 +71,7 @@ int main(int argc, char* argv[]) {
         Window::Trigger::ANY_JUST_PRESSED,
         [&](const Window::KeyState&, float) {
             if (!world.camera_.is_orbiting()) {
-                world.camera_.start_orbiting(world.camera_.orbit_target());
+                world.camera_.start_orbiting();
             } else {
                 world.camera_.stop_orbiting();
             }

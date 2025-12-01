@@ -199,7 +199,6 @@ private:
     FloatType yaw_ = 0.0f;    // Horizontal rotation (around world Y axis)
     FloatType pitch_ = 0.0f;  // Vertical rotation (clamped to ±89 degrees)
     FloatType roll_ = 0.0f;
-    glm::vec3 orbit_target_ = {0.0f, 0.0f, 0.0f};
     bool is_orbiting_ = false;
     FloatType orbit_radius_ = 0.0f;
 
@@ -222,7 +221,6 @@ public:
     [[nodiscard]] FloatType roll() const noexcept { return roll_; }
 
     [[nodiscard]] bool is_orbiting() const noexcept { return is_orbiting_; }
-    [[nodiscard]] glm::vec3 orbit_target() const noexcept { return orbit_target_; }
 
 public:
     /** @brief Projects a world-space vertex to homogeneous clip space. */
@@ -232,7 +230,7 @@ public:
     /** @brief Converts clip coordinates to NDC by dividing by w. */
     [[nodiscard]] glm::vec3 clip_to_ndc(const glm::vec4& clip) const noexcept;
 
-    void start_orbiting(glm::vec3 target) noexcept;
+    void start_orbiting() noexcept;
     void orbiting() noexcept;
     void stop_orbiting() noexcept;
     
