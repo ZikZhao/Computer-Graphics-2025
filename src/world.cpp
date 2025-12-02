@@ -467,6 +467,52 @@ RayTriangleIntersection BVHAccelerator::intersect(
                             uv2 = (*texcoords_)[face.vt_indices[2]];
                         uv_coord = uv0 * w + uv1 * u + uv2 * v;
                     }
+                    // Apply normal mapping if a normal map is present
+                    if (face.material.normal_map && texcoords_) {
+                        // Sample tangent-space normal from the normal map
+                        glm::vec3 tangent_normal = face.material.normal_map->sample(uv_coord.x, uv_coord.y);
+                        
+                        // Compute TBN matrix from triangle edges and UV deltas
+                        glm::vec2 uv0(0.0f), uv1(0.0f), uv2(0.0f);
+                        if (face.vt_indices[0] < texcoords_->size())
+                            uv0 = (*texcoords_)[face.vt_indices[0]];
+                        if (face.vt_indices[1] < texcoords_->size())
+                            uv1 = (*texcoords_)[face.vt_indices[1]];
+                        if (face.vt_indices[2] < texcoords_->size())
+                            uv2 = (*texcoords_)[face.vt_indices[2]];
+                        
+                        glm::vec3 edge1 = v1 - v0;
+                        glm::vec3 edge2 = v2 - v0;
+                        glm::vec2 deltaUV1 = uv1 - uv0;
+                        glm::vec2 deltaUV2 = uv2 - uv0;
+                        
+                        FloatType det = deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y;
+                        if (std::abs(det) > 1e-6f) {
+                            FloatType inv_det = 1.0f / det;
+                            glm::vec3 tangent = glm::normalize(
+                                (edge1 * deltaUV2.y - edge2 * deltaUV1.y) * inv_det
+                            );
+                            glm::vec3 bitangent = glm::normalize(
+                                (edge2 * deltaUV1.x - edge1 * deltaUV2.x) * inv_det
+                            );
+                            
+                            // Gram-Schmidt orthogonalize tangent with respect to normal
+                            glm::vec3 N = interpolated_normal;
+                            tangent = glm::normalize(tangent - N * glm::dot(N, tangent));
+                            bitangent = glm::cross(N, tangent);
+                            
+                            // TBN matrix transforms from tangent space to world space
+                            glm::mat3 TBN(tangent, bitangent, N);
+                            
+                            // Transform tangent-space normal to world space
+                            closest.normal = glm::normalize(TBN * tangent_normal);
+                            
+                            // Ensure normal faces the camera
+                            if (glm::dot(closest.normal, -rd) < 0.0f) {
+                                closest.normal = -closest.normal;
+                            }
+                        }
+                    }
                     if (face.material.texture) {
                         Colour tex_sample = face.material.texture->sample(uv_coord.x, uv_coord.y);
                         closest.color = glm::vec3(
@@ -809,6 +855,16 @@ void World::parse_txt(Model& model, const std::string& filename) {
                 current_material->second.texture =
                     std::make_shared<Texture>(load_texture(texture_filename));
             }
+        } else if (type == "NormalMap") {
+            // Bind a PPM normal map to the material
+            if (current_material != model.materials.end()) {
+                std::string normal_name;
+                iss >> normal_name;
+                std::string normal_filename =
+                    (std::filesystem::path(filename).parent_path() / normal_name).string();
+                current_material->second.normal_map =
+                    std::make_shared<NormalMap>(load_normal_map(normal_filename));
+            }
         } else if (type == "Object") {
             // Begin an object block; record offsets for local indexing within this file
             std::string rest;
@@ -1085,6 +1141,51 @@ Texture World::load_texture(const std::string& filename) {
         };
     }
     return Texture(width, height, std::move(texture_data));
+}
+
+NormalMap World::load_normal_map(const std::string& filename) {
+    // PPM (P6) loader for normal maps: parse header, dimensions and convert RGB to tangent-space normals
+    std::ifstream file(filename, std::ifstream::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Could not open normal map file: " + filename);
+    }
+
+    std::string magic_number;
+    std::getline(file, magic_number);
+    if (magic_number != "P6") {
+        throw std::runtime_error("Invalid PPM format (expected P6): " + filename);
+    }
+
+    std::string line;
+    std::getline(file, line);
+    while (!line.empty() && line[0] == '#') {
+        std::getline(file, line);
+    }
+
+    std::istringstream size_stream(line);
+    std::size_t width, height;
+    if (!(size_stream >> width >> height)) {
+        throw std::runtime_error("Failed to parse normal map dimensions: " + filename);
+    }
+
+    std::getline(file, line);
+
+    std::vector<glm::vec3> normal_data;
+    normal_data.resize(width * height);
+    for (std::size_t i = 0; i < width * height; i++) {
+        int red = file.get();
+        int green = file.get();
+        int blue = file.get();
+        if (red == EOF || green == EOF || blue == EOF) {
+            throw std::runtime_error("Unexpected end of file while reading normal map: " + filename);
+        }
+        // Convert from [0, 255] to [0, 1] then to [-1, 1] for tangent-space normal
+        FloatType nx = (static_cast<FloatType>(red) / 255.0f) * 2.0f - 1.0f;
+        FloatType ny = (static_cast<FloatType>(green) / 255.0f) * 2.0f - 1.0f;
+        FloatType nz = (static_cast<FloatType>(blue) / 255.0f) * 2.0f - 1.0f;
+        normal_data[i] = glm::normalize(glm::vec3(nx, ny, nz));
+    }
+    return NormalMap(width, height, std::move(normal_data));
 }
 
 void World::flatten_model_faces(Model& model) {

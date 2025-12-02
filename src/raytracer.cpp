@@ -323,25 +323,11 @@ ColourHDR RayTracer::trace_ray(
 
     FloatType w = 1.0f - intersection.u - intersection.v;
     if (!backface_view_gate) {
-        // Interpolate normal if Phong shading is enabled
-        glm::vec3 n_shade =
-            (face.material.shading == Material::Shading::FLAT) ? face.face_normal : [&]() {
-                auto fetch_normal = [&](int idx) -> glm::vec3 {
-                    std::uint32_t ni = face.vn_indices[idx];
-                    if (ni != std::numeric_limits<std::uint32_t>::max() &&
-                        ni < world_.all_vertex_normals_.size())
-                        return world_.all_vertex_normals_[ni];
-                    std::uint32_t vi = face.v_indices[idx];
-                    if (vi < world_.all_vertex_normals_by_vertex_.size() &&
-                        glm::length(world_.all_vertex_normals_by_vertex_[vi]) > 0.001f)
-                        return world_.all_vertex_normals_by_vertex_[vi];
-                    return face.face_normal;
-                };
-                glm::vec3 n0 = fetch_normal(0);
-                glm::vec3 n1 = fetch_normal(1);
-                glm::vec3 n2 = fetch_normal(2);
-                return glm::normalize(w * n0 + intersection.u * n1 + intersection.v * n2);
-            }();
+        // Use the normal from intersection which already includes:
+        // 1. Interpolated vertex normals (for smooth surfaces)
+        // 2. Normal mapping perturbation (if normal map is present)
+        // This applies regardless of shading mode when a normal map exists
+        glm::vec3 n_shade = intersection.normal;
 
         specular = 0.0f;
         if (!area_lights.empty()) {

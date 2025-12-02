@@ -33,7 +33,8 @@ Material cyan
 
 Material cobbles
     Colour 1.000000 1.000000 1.000000
-    Texture texture.ppm
+    Texture interior_tiles_diff_4k.ppm
+    NormalMap interior_tiles_nor_gl_4k.ppm
 
 Material mirror
     Metallic 1.0

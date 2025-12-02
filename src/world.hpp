@@ -153,8 +153,40 @@ public:
     }
 };
 
+/**
+ * @brief Normal map for tangent-space normal perturbation.
+ */
+class NormalMap {
+private:
+    std::size_t width_;
+    std::size_t height_;
+    std::vector<glm::vec3> data_;  // Tangent-space normals (xyz remapped from [0,1] to [-1,1])
+
+public:
+    NormalMap(std::size_t w, std::size_t h, std::vector<glm::vec3> data)
+        : width_(w), height_(h), data_(std::move(data)) {}
+
+public:
+    /**
+     * @brief Sample the tangent-space normal at the given UV coordinates.
+     * @param u Horizontal texture coordinate [0,1].
+     * @param v Vertical texture coordinate [0,1].
+     * @return Tangent-space normal vector (normalized).
+     */
+    [[nodiscard]] glm::vec3 sample(FloatType u, FloatType v) const {
+        std::size_t ix = static_cast<std::size_t>(std::clamp(
+            u * static_cast<FloatType>(width_ - 1), 0.0f, static_cast<FloatType>(width_ - 1)
+        ));
+        std::size_t iy = static_cast<std::size_t>(std::clamp(
+            v * static_cast<FloatType>(height_ - 1), 0.0f, static_cast<FloatType>(height_ - 1)
+        ));
+        return data_[iy * width_ + ix];
+    }
+};
+
 struct Material {
     std::shared_ptr<Texture> texture;
+    std::shared_ptr<NormalMap> normal_map;  // Tangent-space normal map
     glm::vec3 base_color =
         glm::vec3(1.0f, 1.0f, 1.0f);  // Color multiplier for texture (or base color if no texture)
     FloatType shininess = 64.0f;
@@ -382,6 +414,7 @@ private:
 
     void load_hdr_env_map(const std::string& filename);
     Texture load_texture(const std::string& filename);
+    NormalMap load_normal_map(const std::string& filename);
 
     void compute_model_normals(Model& model);
     void flatten_model_faces(Model& model);
