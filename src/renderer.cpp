@@ -51,8 +51,8 @@ Renderer::~Renderer() {
 }
 
 void Renderer::render() noexcept {
-    // In video mode, reset accumulation to produce per-frame averages
-    if (video_export_mode_) {
+    // In offline render mode, reset accumulation to produce per-frame averages
+    if (offline_render_mode_) {
         reset_accumulation();
     }
     aspect_ratio_ = static_cast<double>(rasterizer_->get_width()) / rasterizer_->get_height();
@@ -167,7 +167,8 @@ void Renderer::process_rows(int y0, int y1) noexcept {
             int w = get_width();
             int h = get_height();
             int pixel_index = y * w + x;
-            int samples_to_run = video_export_mode_ ? VideoSamples : 1;
+            // Use high sample count in offline mode (except DoF which has its own sampling)
+            int samples_to_run = (offline_render_mode_ && !is_dof) ? VideoSamples : 1;
             ColourHDR pixel_accum{0.0f, 0.0f, 0.0f};
             for (int s = 0; s < samples_to_run; ++s) {
                 if (is_dof) {
@@ -215,8 +216,8 @@ void Renderer::process_rows(int y0, int y1) noexcept {
             };
             std::size_t idx =
                 static_cast<std::size_t>(y) * get_width() + static_cast<std::size_t>(x);
-            // Update accumulation buffer (video mode vs progressive mode)
-            if (video_export_mode_) {
+            // Update accumulation buffer (offline mode vs progressive mode)
+            if (offline_render_mode_) {
                 accumulation_buffer_[idx] = final_hdr_avg;
             } else {
                 accumulation_buffer_[idx] = ColourHDR{
@@ -226,7 +227,7 @@ void Renderer::process_rows(int y0, int y1) noexcept {
                 };
             }
             // Compute display HDR (per-frame or progressive average)
-            ColourHDR avg_hdr = video_export_mode_
+            ColourHDR avg_hdr = offline_render_mode_
                                     ? accumulation_buffer_[idx]
                                     : ColourHDR{
                                           .red = accumulation_buffer_[idx].red /

@@ -64,7 +64,7 @@ private:
     FloatType focal_distance_ = 8.0f;
     FloatType aperture_size_ = 0.1f;
     int dof_samples_ = 16;
-    bool video_export_mode_ = false;
+    bool offline_render_mode_ = false;
     int frame_count_ = 0;
     int rendering_frame_count_ = 0;
     double aspect_ratio_ = 1.0;
@@ -123,8 +123,10 @@ public:
     [[nodiscard]] int get_width() const noexcept { return rasterizer_->get_width(); }
     [[nodiscard]] int get_height() const noexcept { return rasterizer_->get_height(); }
 
-    [[nodiscard]] bool video_export_mode() const noexcept { return video_export_mode_; }
-    void set_video_export_mode(bool mode) noexcept { video_export_mode_ = mode; }
+    [[nodiscard]] bool offline_render_mode() const noexcept { return offline_render_mode_; }
+    void toggle_offline_render_mode() noexcept {
+        offline_render_mode_ = !offline_render_mode_;
+    }
 
 public:
     void render() noexcept;

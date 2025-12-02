@@ -178,7 +178,20 @@ int main(int argc, char* argv[]) {
         Window::Trigger::ALL_JUST_PRESSED,
         [&](const Window::KeyState&, float) {
             video_recorder.toggle_recording();
-            renderer.set_video_export_mode(video_recorder.is_recording());
+        }
+    );
+
+    // Offline/Realtime render mode toggle (H)
+    window.register_key(
+        {SDL_SCANCODE_H},
+        Window::Trigger::ANY_JUST_PRESSED,
+        [&](const Window::KeyState&, float) {
+            renderer.toggle_offline_render_mode();
+            std::cout << std::format(
+                "[Renderer] Render mode: {}\n",
+                renderer.offline_render_mode() ? "OFFLINE (64 samples/frame)" : "REALTIME (progressive)"
+            );
+            renderer.reset_accumulation();
         }
     );
 
@@ -248,7 +261,6 @@ int main(int argc, char* argv[]) {
     while (true) {
         // Advance any orbit animation and render the frame
         world.camera_.orbiting();
-        renderer.set_video_export_mode(video_recorder.is_recording());
         renderer.render();
 
         // Process input; exit on window close or ESC

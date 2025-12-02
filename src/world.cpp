@@ -142,7 +142,7 @@ void Camera::start_orbiting() noexcept {
 
 void Camera::orbiting() noexcept {
     if (is_orbiting_) {
-        constexpr static FloatType angle_increment = glm::radians(-0.5f);
+        constexpr static FloatType angle_increment = glm::radians(-0.25f);
         yaw_ += angle_increment;
         position_ = -forward() * orbit_radius_;
     }
