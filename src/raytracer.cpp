@@ -505,7 +505,7 @@ ColourHDR RayTracer::trace_ray(
         };
 
         // Tame intensity for stability
-        caustics_contribution = caustics_contribution * 0.25f;
+        // caustics_contribution = caustics_contribution * 0.25f;
     }
 
     ColourHDR out = (direct_lighting + caustics_contribution) * medium_absorption;

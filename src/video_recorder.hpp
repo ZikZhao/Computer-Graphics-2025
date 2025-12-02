@@ -29,7 +29,7 @@ public:
      * @param width Frame width.
      * @param height Frame height.
      */
-    explicit VideoRecorder(
+    VideoRecorder(
         const std::vector<std::uint32_t>& pixel_buffer, std::size_t width, std::size_t height
     );
 

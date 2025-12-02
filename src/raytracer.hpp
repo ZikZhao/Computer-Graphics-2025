@@ -60,6 +60,13 @@ public:
         return photon_map_ && photon_map_->is_ready();
     }
 
+    /**
+     * @brief Returns a pointer to the photon map for debug visualization.
+     */
+    [[nodiscard]] const PhotonMap* photon_map() const noexcept {
+        return photon_map_.get();
+    }
+
 public:
     /**
      * @brief Renders a single pixel using standard pinhole camera model.

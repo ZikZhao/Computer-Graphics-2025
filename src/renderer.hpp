@@ -21,6 +21,7 @@ public:
         RASTERIZED,
         RAYTRACED,
         DEPTH_OF_FIELD,
+        PHOTON_VISUALIZATION,
     };
 
 public:
@@ -106,6 +107,13 @@ public:
         return raytracer_ && raytracer_->is_photon_map_ready();
     }
 
+    /**
+     * @brief Returns a pointer to the photon map for debug visualization.
+     */
+    [[nodiscard]] const PhotonMap* photon_map() const noexcept {
+        return raytracer_ ? raytracer_->photon_map() : nullptr;
+    }
+
     [[nodiscard]] FloatType focal_distance() const noexcept { return focal_distance_; }
     void set_focal_distance(FloatType d) noexcept { focal_distance_ = d; }
 
@@ -132,6 +140,7 @@ private:
     void render_rasterized() noexcept;
     void render_raytraced() noexcept;
     void render_dof() noexcept;
+    void render_photon_cloud() noexcept;
 
     /**
      * @brief Worker thread function for processing tiles.

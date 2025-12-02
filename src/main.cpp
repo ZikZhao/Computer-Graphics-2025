@@ -80,7 +80,7 @@ int main(int argc, char* argv[]) {
     );
 
     window.register_key(
-        {SDL_SCANCODE_1, SDL_SCANCODE_2, SDL_SCANCODE_3, SDL_SCANCODE_4},
+        {SDL_SCANCODE_1, SDL_SCANCODE_2, SDL_SCANCODE_3, SDL_SCANCODE_4, SDL_SCANCODE_0},
         Window::Trigger::ANY_JUST_PRESSED,
         [&](const Window::KeyState& ks, float) {
             std::string_view mode_name;
@@ -96,6 +96,9 @@ int main(int argc, char* argv[]) {
             } else if (ks[SDL_SCANCODE_4]) {
                 renderer.set_mode(Renderer::Mode::DEPTH_OF_FIELD);
                 mode_name = "DEPTH_OF_FIELD";
+            } else if (ks[SDL_SCANCODE_0]) {
+                renderer.set_mode(Renderer::Mode::PHOTON_VISUALIZATION);
+                mode_name = "PHOTON_VISUALIZATION";
             }
             renderer.reset_accumulation();
             std::cout << std::format("[Renderer] Mode set to {}\n", mode_name);

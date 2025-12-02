@@ -44,7 +44,8 @@ std::vector<Photon> PhotonMap::query_photons(
                 );
                 const auto& cell = grid_[idx];
                 for (const auto& photon : cell) {
-                    if (photon.face != face) continue;
+                    // Removed strict face matching - use spatial proximity only
+                    // Photons on nearby surfaces contribute to caustics
                     glm::vec3 diff = photon.position - point;
                     FloatType dist_sq = glm::dot(diff, diff);
                     if (dist_sq < radius_sq) result.push_back(photon);
@@ -80,17 +81,11 @@ ColourHDR PhotonMap::estimate_caustic(
 void PhotonMap::trace_photons() {
     const auto& emissive_faces = world_.emissive_faces_;
 
-    // Find all transparent (refractive) objects in the scene and compute global AABB
+    // Find all transparent (refractive) objects in the scene
     std::vector<const Face*> transparent_faces;
-    glm::vec3 aabb_min(std::numeric_limits<FloatType>::infinity());
-    glm::vec3 aabb_max(-std::numeric_limits<FloatType>::infinity());
     for (const auto& face : world_.all_faces_) {
         if (IsTransparent(face.material)) {
             transparent_faces.push_back(&face);
-            for (int k = 0; k < 3; ++k) {
-                aabb_min = glm::min(aabb_min, world_.all_vertices_[face.v_indices[k]]);
-                aabb_max = glm::max(aabb_max, world_.all_vertices_[face.v_indices[k]]);
-            }
         }
     }
 
@@ -98,6 +93,26 @@ void PhotonMap::trace_photons() {
         std::cout << "[PhotonMap] No Emissive or Refractive Faces\n";
         is_ready_.store(true, std::memory_order_release);
         return;
+    }
+
+    // Compute AABB for transparent objects (for targeting emission)
+    glm::vec3 transparent_aabb_min(std::numeric_limits<FloatType>::infinity());
+    glm::vec3 transparent_aabb_max(-std::numeric_limits<FloatType>::infinity());
+    for (const auto* face : transparent_faces) {
+        for (int k = 0; k < 3; ++k) {
+            transparent_aabb_min = glm::min(transparent_aabb_min, world_.all_vertices_[face->v_indices[k]]);
+            transparent_aabb_max = glm::max(transparent_aabb_max, world_.all_vertices_[face->v_indices[k]]);
+        }
+    }
+
+    // Compute AABB for ENTIRE scene (for photon storage grid)
+    glm::vec3 scene_aabb_min(std::numeric_limits<FloatType>::infinity());
+    glm::vec3 scene_aabb_max(-std::numeric_limits<FloatType>::infinity());
+    for (const auto& face : world_.all_faces_) {
+        for (int k = 0; k < 3; ++k) {
+            scene_aabb_min = glm::min(scene_aabb_min, world_.all_vertices_[face.v_indices[k]]);
+            scene_aabb_max = glm::max(scene_aabb_max, world_.all_vertices_[face.v_indices[k]]);
+        }
     }
 
     std::cout << std::format(
@@ -108,17 +123,17 @@ void PhotonMap::trace_photons() {
 
     auto start_time = std::chrono::steady_clock::now();
 
-    glm::vec3 target_center = (aabb_min + aabb_max) * 0.5f;
-    FloatType target_radius = glm::length(aabb_max - target_center);
+    // Reset killed photon counter
+    killed_photon_count_.store(0, std::memory_order_relaxed);
 
-    // Spatial indexing:
-    // Switch from hash-based buckets to a flattened 1D grid. The grid index
-    // is computed from integer cell coordinates, yielding O(1) addressing and
-    // much better cache locality than unordered_map lookups during photon
-    // queries. This matters because caustic estimation probes many neighboring
-    // cells per shading point.
-    grid_origin_ = aabb_min;
-    glm::vec3 extent = aabb_max - aabb_min;
+    // Target center/radius for emission cone (based on transparent objects)
+    glm::vec3 target_center = (transparent_aabb_min + transparent_aabb_max) * 0.5f;
+    FloatType target_radius = glm::length(transparent_aabb_max - target_center);
+
+    // Spatial indexing: use ENTIRE SCENE bounds for grid
+    // This ensures photons landing on floors/walls are properly stored
+    grid_origin_ = scene_aabb_min - glm::vec3(GridCellSize);  // Add padding
+    glm::vec3 extent = (scene_aabb_max - scene_aabb_min) + glm::vec3(2.0f * GridCellSize);
     grid_width_ = std::max(1, static_cast<int>(std::ceil(extent.x / GridCellSize)));
     grid_height_ = std::max(1, static_cast<int>(std::ceil(extent.y / GridCellSize)));
     grid_depth_ = std::max(1, static_cast<int>(std::ceil(extent.z / GridCellSize)));
@@ -128,9 +143,11 @@ void PhotonMap::trace_photons() {
     grid_.clear();
     grid_.resize(grid_size);
 
-    // Distribute photons across area lights based on area * luminance
+    // Phase 1: Compute total scene flux and relative probability weights for each light
     std::vector<FloatType> weights(emissive_faces.size());
     FloatType weight_sum = 0.0f;
+    total_light_flux_ = 0.0f;
+    
     for (std::size_t i = 0; i < emissive_faces.size(); ++i) {
         const Face* lf = emissive_faces[i];
         glm::vec3 e0 =
@@ -141,55 +158,92 @@ void PhotonMap::trace_photons() {
         glm::vec3 Le = lf->material.emission;
         // Luminance (ITU-R BT.709) used for energy-aware photon allocation.
         FloatType lum = 0.2126f * Le.x + 0.7152f * Le.y + 0.0722f * Le.z;
-        FloatType w = std::max<FloatType>(1e-6f, area * lum);
+        FloatType flux = area * lum;
+        total_light_flux_ += flux;
+        FloatType w = std::max<FloatType>(1e-6f, flux);
         weights[i] = w;
         weight_sum += w;
     }
 
-    int photons_emitted = 0;
-    for (std::size_t i = 0; i < emissive_faces.size(); ++i) {
-        int photons_for_light = static_cast<int>(PhotonsPerLight * (weights[i] / weight_sum));
-        if (photons_for_light <= 0) continue;
-        emit_photons_from_area_light(
-            *emissive_faces[i], target_center, target_radius, photons_for_light
-        );
-        photons_emitted += photons_for_light;
+    // Phase 2: Adaptive emission loop
+    // Keep emitting batches until we reach TargetStoredPhotons or hit the safety limit
+    std::size_t total_emitted_count = 0;
+    std::size_t batch_index = 0;
+    
+    while (total_photons() < TargetStoredPhotons && total_emitted_count < MaxEmittedPhotons) {
+        // Emit a batch distributed across all light sources
+        for (std::size_t i = 0; i < emissive_faces.size(); ++i) {
+            // Calculate how many photons this light gets from the batch
+            std::size_t photons_for_light = static_cast<std::size_t>(
+                static_cast<FloatType>(BatchSize) * (weights[i] / weight_sum)
+            );
+            if (photons_for_light == 0) photons_for_light = 1;  // At least 1 photon per light
+            
+            emit_photon_batch(
+                *emissive_faces[i],
+                target_center,
+                target_radius,
+                batch_index * BatchSize + total_emitted_count,  // Unique Halton index
+                photons_for_light,
+                weights[i],
+                weight_sum
+            );
+            total_emitted_count += photons_for_light;
+        }
+        batch_index++;
+        
+        // Progress report every 100 batches
+        if (batch_index % 100 == 0) {
+            std::cout << std::format(
+                "[PhotonMap] Progress: Stored {} / {} target | Emitted: {}\n",
+                total_photons(),
+                TargetStoredPhotons,
+                total_emitted_count
+            );
+        }
     }
+
+    // Phase 3: Energy normalization
+    // Scale all stored photon powers by (Total Light Flux / Total Emitted Count) * ArtisticBoost
+    normalize_photon_power(total_emitted_count);
 
     auto end_time = std::chrono::steady_clock::now();
     std::chrono::duration<double> elapsed = end_time - start_time;
-    double percentage = photons_emitted > 0
-                            ? (static_cast<double>(total_photons()) / photons_emitted) * 100.0
-                            : 0.0;
 
     std::cout << std::format(
-        "[PhotonMap] End Tracing: Stored {} / {} ({:.1f}%) | Time: {:#.3g}s\n",
-        total_photons(),
-        photons_emitted,
-        percentage,
+        "[PhotonMap] Completed in {:#.3g}s\n",
         elapsed.count()
     );
 
     is_ready_.store(true, std::memory_order_release);
 }
 
-void PhotonMap::emit_photons_from_area_light(
-    const Face& light_face, const glm::vec3& target_center, FloatType target_radius, int num_photons
+void PhotonMap::emit_photon_batch(
+    const Face& light_face,
+    const glm::vec3& target_center,
+    FloatType target_radius,
+    std::size_t batch_start_index,
+    std::size_t batch_size,
+    FloatType weight,
+    FloatType weight_sum
 ) {
     glm::vec3 e0 = world_.all_vertices_[light_face.v_indices[1]] -
                    world_.all_vertices_[light_face.v_indices[0]];
     glm::vec3 e1 = world_.all_vertices_[light_face.v_indices[2]] -
                    world_.all_vertices_[light_face.v_indices[0]];
-    FloatType area = 0.5f * glm::length(glm::cross(e0, e1));
     glm::vec3 Le = light_face.material.emission;
     glm::vec3 n_light = glm::normalize(light_face.face_normal);
 
-    glm::vec3 photon_power = Le * (area / static_cast<FloatType>(std::max(1, num_photons)));
-    photon_power *= 5.0f;
+    // Store photons with light emission color as base.
+    // Actual power will be normalized later using:
+    //   factor = total_flux / (stored_count + killed_count)
+    // This ensures absorbed energy (killed photons) reduces the final brightness.
+    glm::vec3 photon_base_color = Le;
 
-    for (int i = 0; i < num_photons; ++i) {
-        FloatType u1 = Halton(i, 2);
-        FloatType u2 = Halton(i, 3);
+    for (std::size_t i = 0; i < batch_size; ++i) {
+        std::size_t halton_idx = batch_start_index + i;
+        FloatType u1 = Halton(static_cast<int>(halton_idx), 2);
+        FloatType u2 = Halton(static_cast<int>(halton_idx), 3);
         FloatType su = std::sqrt(u1);
         FloatType b0 = 1.0f - su;
         FloatType b1 = su * (1.0f - u2);
@@ -199,8 +253,57 @@ void PhotonMap::emit_photons_from_area_light(
         glm::vec3 to_center = glm::normalize(target_center - origin);
         FloatType dist = glm::length(target_center - origin);
         FloatType cone_angle = std::atan(target_radius / std::max<FloatType>(dist, 1e-4f)) * 1.5f;
-        glm::vec3 direction = SampleConeHalton(i, to_center, cone_angle);
-        trace_single_photon(origin, direction, photon_power, 0);
+        glm::vec3 direction = SampleConeHalton(static_cast<int>(halton_idx), to_center, cone_angle);
+        trace_single_photon(origin, direction, photon_base_color, 0);
+    }
+}
+
+void PhotonMap::normalize_photon_power(std::size_t total_emitted_count) {
+    if (total_emitted_count == 0) return;
+    
+    std::size_t stored_count = total_photons();
+    std::size_t killed_count = killed_photon_count_.load(std::memory_order_relaxed);
+    std::size_t invalid_count = total_emitted_count - stored_count - killed_count;
+    
+    // Energy conservation: ALL emitted photons share the total light flux equally.
+    // - stored photons: energy that reached diffuse surfaces (contributes to caustics)
+    // - killed photons: energy absorbed by the medium (no contribution)
+    // - invalid photons: energy that missed/escaped (no contribution)
+    //
+    // Each photon carries: total_flux / total_emitted_count
+    // Only stored photons contribute their (attenuated) power to the final image.
+    
+    // Scaling factor for artistic control (adjust if too bright/dim)
+    constexpr FloatType ScalingFactor = 0.1f;
+    FloatType factor = (total_light_flux_ / static_cast<FloatType>(total_emitted_count)) * ScalingFactor;
+    
+    std::cout << std::format(
+        "[PhotonMap] Summary:\n"
+        "           Emitted: {}\n"
+        "           Stored:  {} ({:.1f}%)\n"
+        "           Killed:  {} ({:.1f}%)\n"
+        "           Invalid: {} ({:.1f}%)\n"
+        "           Flux: {:.4f}, Factor: {:.6f}\n",
+        total_emitted_count,
+        stored_count, 100.0 * stored_count / total_emitted_count,
+        killed_count, 100.0 * killed_count / total_emitted_count,
+        invalid_count, 100.0 * invalid_count / total_emitted_count,
+        total_light_flux_,
+        factor
+    );
+    
+    // Scale all photons in photon_map_
+    for (auto& [face, photons] : photon_map_) {
+        for (auto& p : photons) {
+            p.power *= factor;
+        }
+    }
+    
+    // Scale all photons in grid_ (same photons, stored by spatial location)
+    for (auto& cell : grid_) {
+        for (auto& p : cell) {
+            p.power *= factor;
+        }
     }
 }
 
@@ -266,15 +369,30 @@ void PhotonMap::trace_single_photon(
             }
         }
 
+        // Russian Roulette for early termination of low-power photons
+        // We compare against the ORIGINAL power to detect significant absorption.
+        // If power drops below a threshold of the original, probabilistically terminate.
         if (depth >= 1) {
-            FloatType power_magnitude = glm::length(new_power);
-            FloatType survival_prob =
-                std::min(0.95f, std::max(0.1f, power_magnitude / MinPhotonPower));
-            FloatType rr = RandomFloat();
-            if (rr > survival_prob) {
-                return;
+            FloatType original_magnitude = glm::length(power);  // power before absorption this bounce
+            FloatType new_magnitude = glm::length(new_power);   // power after absorption
+            
+            // Calculate survival ratio (how much energy remains)
+            FloatType survival_ratio = (original_magnitude > 1e-6f) 
+                ? (new_magnitude / original_magnitude) 
+                : 0.0f;
+            
+            // If significant absorption occurred, apply RR
+            constexpr FloatType RR_Threshold = 0.5f;  // Trigger RR when < 50% survives
+            if (survival_ratio < RR_Threshold) {
+                // Probability of survival proportional to remaining energy
+                FloatType survival_prob = survival_ratio / RR_Threshold;
+                if (RandomFloat() > survival_prob) {
+                    // Kill the photon - count it as absorbed energy
+                    killed_photon_count_.fetch_add(1, std::memory_order_relaxed);
+                    return;
+                }
+                // Photon survives but keeps its attenuated power (no compensation)
             }
-            new_power /= survival_prob;
         }
 
         if (cannot_refract) {
@@ -343,7 +461,6 @@ void PhotonMap::trace_single_photon(
 }
 
 void PhotonMap::store_photon(const Photon& photon) {
-    // No mutex needed: only single worker thread writes during construction
     photon_map_[photon.face].push_back(photon);
 
     // Store in flattened grid: contiguous vectors per cell minimize pointer

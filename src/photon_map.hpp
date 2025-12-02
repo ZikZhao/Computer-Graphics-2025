@@ -43,7 +43,9 @@ public:
     using GridCell = std::tuple<int, int, int>;
 
 public:
-    static constexpr int PhotonsPerLight = 200000;
+    static constexpr std::size_t TargetStoredPhotons = 50000;   // Target number of stored caustic photons
+    static constexpr std::size_t MaxEmittedPhotons = 10000000;  // Safety bailout to prevent infinite loops
+    static constexpr std::size_t BatchSize = 5000;              // Photons emitted per batch iteration
     static constexpr int MaxPhotonBounces = 5;
     static constexpr FloatType MinPhotonPower = 0.01f;
     static constexpr FloatType CausticSearchRadius = 0.4f;
@@ -70,6 +72,8 @@ private:
     int grid_height_ = 0;
     int grid_depth_ = 0;
     glm::vec3 grid_origin_ = glm::vec3(0.0f);
+    FloatType total_light_flux_ = 0.0f;  // Total scene flux for energy normalization
+    std::atomic<std::size_t> killed_photon_count_{0};  // Photons terminated by RR (absorbed energy)
 
     std::jthread worker_thread_;
     std::atomic<bool> is_ready_{false};
@@ -100,6 +104,20 @@ public:
     ) const;
 
     /**
+     * @brief Helper to iterate all photons for debug visualization.
+     * @tparam Func Callable taking a const Photon& parameter.
+     * @param func Function to call for each stored photon.
+     */
+    template <typename Func>
+    void for_each_photon(Func func) const {
+        for (const auto& [face, photons] : photon_map_) {
+            for (const auto& p : photons) {
+                func(p);
+            }
+        }
+    }
+
+    /**
      * @brief Estimates caustic radiance at a surface point.
      * @param face Surface being shaded.
      * @param point World-space hit position.
@@ -114,12 +132,31 @@ public:
 private:
     void trace_photons();
 
-    void emit_photons_from_area_light(
+    /**
+     * @brief Emits a batch of photons from an area light.
+     * @param light_face The emissive face.
+     * @param target_center Center of the transparent objects AABB.
+     * @param target_radius Radius encompassing transparent objects.
+     * @param batch_start_index Starting index for Halton sequence.
+     * @param batch_size Number of photons to emit in this batch.
+     * @param weight Relative weight of this light source.
+     * @param weight_sum Total weight of all light sources.
+     */
+    void emit_photon_batch(
         const Face& light_face,
         const glm::vec3& target_center,
         FloatType target_radius,
-        int num_photons
+        std::size_t batch_start_index,
+        std::size_t batch_size,
+        FloatType weight,
+        FloatType weight_sum
     );
+
+    /**
+     * @brief Normalizes all stored photon powers based on total emitted count.
+     * @param total_emitted_count Number of photons that were attempted/emitted.
+     */
+    void normalize_photon_power(std::size_t total_emitted_count);
 
     void trace_single_photon(
         const glm::vec3& origin,

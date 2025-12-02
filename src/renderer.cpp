@@ -73,6 +73,9 @@ void Renderer::render() noexcept {
     case Mode::DEPTH_OF_FIELD:
         render_dof();
         break;
+    case Mode::PHOTON_VISUALIZATION:
+        render_photon_cloud();
+        break;
     }
 
     // FPS counter
@@ -260,5 +263,91 @@ void Renderer::worker_thread(std::stop_token st) noexcept {
 
         // Signal frame completion
         frame_barrier_.arrive_and_wait();
+    }
+}
+
+void Renderer::render_photon_cloud() noexcept {
+    const int width = get_width();
+    const int height = get_height();
+
+    // Clear screen to black
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            window_[{x, y}] = Colour{0, 0, 0};
+        }
+    }
+
+    // Check if photon map is available
+    const PhotonMap* pm = photon_map();
+    if (!pm || !pm->is_ready()) {
+        return;  // Nothing to visualize yet
+    }
+
+    // Count photons drawn for debug output
+    std::size_t photons_drawn = 0;
+    const std::size_t total_photons = pm->total_photons();
+
+    // Iterate over all stored photons and project them to screen space
+    pm->for_each_photon([&](const Photon& photon) {
+        // Project photon position to clip space
+        glm::vec4 clip = world_.camera_.world_to_clip(photon.position, aspect_ratio_);
+
+        // Skip points behind the camera (w <= 0)
+        if (clip.w <= 0.0f) return;
+
+        // Perspective divide to get NDC
+        glm::vec3 ndc = glm::vec3(clip) / clip.w;
+
+        // Check if within NDC bounds [-1, 1]
+        if (ndc.x < -1.0f || ndc.x > 1.0f || ndc.y < -1.0f || ndc.y > 1.0f || ndc.z < 0.0f ||
+            ndc.z > 1.0f) {
+            return;
+        }
+
+        // Convert NDC to screen coordinates
+        // NDC x: [-1, 1] -> screen x: [0, width]
+        // NDC y: [-1, 1] -> screen y: [height, 0] (flip Y)
+        int screen_x = static_cast<int>((ndc.x + 1.0f) * 0.5f * static_cast<FloatType>(width));
+        int screen_y = static_cast<int>((1.0f - ndc.y) * 0.5f * static_cast<FloatType>(height));
+
+        // Clamp to screen bounds
+        if (screen_x < 0 || screen_x >= width || screen_y < 0 || screen_y >= height) {
+            return;
+        }
+
+        // Compute brightness from photon power (with exposure boost for visibility)
+        constexpr FloatType exposure = 10000.0f;  // Boost to make photons visible
+        FloatType lum = (photon.power.r + photon.power.g + photon.power.b) / 3.0f * exposure;
+        lum = std::clamp(lum, 0.0f, 1.0f);
+
+        // Use white dots for visibility, or tint by photon power
+        Colour dot_color = Colour{
+            .red = static_cast<std::uint8_t>(std::clamp(photon.power.r * exposure * 255.0f, 0.0f, 255.0f)),
+            .green = static_cast<std::uint8_t>(std::clamp(photon.power.g * exposure * 255.0f, 0.0f, 255.0f)),
+            .blue = static_cast<std::uint8_t>(std::clamp(photon.power.b * exposure * 255.0f, 0.0f, 255.0f))
+        };
+
+        // Draw a 2x2 block for better visibility
+        for (int dy = 0; dy < 2; ++dy) {
+            for (int dx = 0; dx < 2; ++dx) {
+                int px = screen_x + dx;
+                int py = screen_y + dy;
+                if (px >= 0 && px < width && py >= 0 && py < height) {
+                    window_[{px, py}] = dot_color;
+                }
+            }
+        }
+
+        ++photons_drawn;
+    });
+
+    // Print debug info once per second
+    static auto last_print = std::chrono::steady_clock::now();
+    auto now = std::chrono::steady_clock::now();
+    if (now - last_print >= std::chrono::seconds(1)) {
+        std::cout << std::format(
+            "[PhotonVisualization] Drawn: {} / {} photons\n", photons_drawn, total_photons
+        );
+        last_print = now;
     }
 }
