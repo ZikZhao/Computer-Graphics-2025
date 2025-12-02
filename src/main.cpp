@@ -1,9 +1,11 @@
+#include <chrono>
 #include <fstream>
 #include <iostream>
 #include <map>
 #include <memory>
 #include <sstream>
 #include <stdexcept>
+#include <thread>
 #include <vector>
 
 #include "raytracer.hpp"
@@ -41,7 +43,7 @@ int main(int argc, char* argv[]) {
         Window::Trigger::ANY_PRESSED_NO_MODIFIER,
         [&](const Window::KeyState& ks, float dt) {
             constexpr FloatType move_step = 3.0f;
-            constexpr FloatType video_fixed_dt = 1.0f / 30.0f;  // Fixed step for video recording
+            constexpr FloatType video_fixed_dt = 1.0f / 60.0f;  // Fixed step for video recording
             FloatType fwd = (ks[SDL_SCANCODE_W] ? 1.0f : 0.0f) - (ks[SDL_SCANCODE_S] ? 1.0f : 0.0f);
             FloatType right =
                 (ks[SDL_SCANCODE_D] ? 1.0f : 0.0f) - (ks[SDL_SCANCODE_A] ? 1.0f : 0.0f);
@@ -59,8 +61,8 @@ int main(int argc, char* argv[]) {
         {SDL_SCANCODE_Q, SDL_SCANCODE_E},
         Window::Trigger::ANY_PRESSED_NO_MODIFIER,
         [&](const Window::KeyState& ks, float dt) {
-            constexpr FloatType roll_speed = 2.0f;
-            constexpr FloatType video_fixed_dt = 1.0f / 30.0f;  // Fixed step for video recording
+            constexpr FloatType roll_speed = 0.5f;
+            constexpr FloatType video_fixed_dt = 1.0f / 60.0f;  // Fixed step for video recording
             FloatType r = (ks[SDL_SCANCODE_E] ? 1.0f : 0.0f) - (ks[SDL_SCANCODE_Q] ? 1.0f : 0.0f);
             if (r != 0.0f) {
                 FloatType effective_dt = video_recorder.is_recording() ? video_fixed_dt : dt;
@@ -259,6 +261,8 @@ int main(int argc, char* argv[]) {
     });
 
     while (true) {
+        auto frame_start = std::chrono::steady_clock::now();
+
         // Advance any orbit animation and render the frame
         world.camera_.orbiting();
         renderer.render();
@@ -271,5 +275,16 @@ int main(int argc, char* argv[]) {
 
         // Present backbuffer
         window.update();
+
+        // Soft frame rate limit for video recording mode (target ~60fps)
+        if (video_recorder.is_recording()) {
+            auto frame_end = std::chrono::steady_clock::now();
+            auto frame_duration = std::chrono::duration_cast<std::chrono::microseconds>(frame_end - frame_start);
+            // Target ~16.67ms per frame (60fps), but use slightly shorter sleep to stay above 60fps
+            constexpr auto target_frame_time = std::chrono::microseconds(14000);  // ~71fps target for sleep
+            if (frame_duration < target_frame_time) {
+                std::this_thread::sleep_for(target_frame_time - frame_duration);
+            }
+        }
     }
 }
