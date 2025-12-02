@@ -53,7 +53,7 @@ void VideoRecorder::capture_frame() {
 }
 
 void VideoRecorder::write_header() {
-    file_stream_ << "YUV4MPEG2 W" << width_ << " H" << height_ << " F30:1 Ip A1:1 C420jpeg\n";
+    file_stream_ << "YUV4MPEG2 W" << width_ << " H" << height_ << " F60:1 Ip A1:1 C420jpeg\n";
 }
 
 void VideoRecorder::append_frame() {
