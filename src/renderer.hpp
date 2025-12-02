@@ -61,6 +61,7 @@ private:
     Mode mode_ = Mode::RASTERIZED;
     FloatType gamma_ = 2.2f;
     bool caustics_enabled_ = false;
+    bool normal_debug_mode_ = false;
     FloatType focal_distance_ = 8.0f;
     FloatType aperture_size_ = 0.1f;
     int dof_samples_ = 16;
@@ -102,6 +103,9 @@ public:
 
     [[nodiscard]] bool caustics_enabled() const noexcept { return caustics_enabled_; }
     void set_caustics_enabled(bool e) noexcept { caustics_enabled_ = e; }
+
+    [[nodiscard]] bool normal_debug_mode() const noexcept { return normal_debug_mode_; }
+    void set_normal_debug_mode(bool e) noexcept { normal_debug_mode_ = e; }
 
     [[nodiscard]] bool is_photon_map_ready() const noexcept {
         return raytracer_ && raytracer_->is_photon_map_ready();

@@ -36,9 +36,9 @@ Object # floor
     Vertex 2.780989 -2.742686 -2.785598
     Vertex -2.7150111 -2.742686 -2.785598
     TextureCoord 0.1 0.1
-    TextureCoord 0.1 0.9
-    TextureCoord 0.9 0.9
-    TextureCoord 0.9 0.1
+    TextureCoord 0.1 1.9
+    TextureCoord 1.9 1.9
+    TextureCoord 1.9 0.1
     Face 1/2 3/0 0/1
     Face 1/2 2/3 3/0
 

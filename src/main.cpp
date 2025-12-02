@@ -197,6 +197,20 @@ int main(int argc, char* argv[]) {
         }
     );
 
+    // Normal debug mode toggle (N) - only for raytracing modes
+    window.register_key(
+        {SDL_SCANCODE_N},
+        Window::Trigger::ANY_JUST_PRESSED,
+        [&](const Window::KeyState&, float) {
+            renderer.set_normal_debug_mode(!renderer.normal_debug_mode());
+            std::cout << std::format(
+                "[Renderer] Normal debug mode: {}\n",
+                renderer.normal_debug_mode() ? "ON" : "OFF"
+            );
+            renderer.reset_accumulation();
+        }
+    );
+
     // Mouse look (left button drag)
     window.register_mouse(
         SDL_BUTTON_LEFT,

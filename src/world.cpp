@@ -487,19 +487,18 @@ RayTriangleIntersection BVHAccelerator::intersect(
                         glm::vec2 deltaUV2 = uv2 - uv0;
                         
                         FloatType det = deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y;
+                        
                         if (std::abs(det) > 1e-6f) {
                             FloatType inv_det = 1.0f / det;
                             glm::vec3 tangent = glm::normalize(
                                 (edge1 * deltaUV2.y - edge2 * deltaUV1.y) * inv_det
                             );
-                            glm::vec3 bitangent = glm::normalize(
-                                (edge2 * deltaUV1.x - edge1 * deltaUV2.x) * inv_det
-                            );
                             
                             // Gram-Schmidt orthogonalize tangent with respect to normal
                             glm::vec3 N = interpolated_normal;
                             tangent = glm::normalize(tangent - N * glm::dot(N, tangent));
-                            bitangent = glm::cross(N, tangent);
+                            // Recompute bitangent: T × N gives correct direction for UV mapping
+                            glm::vec3 bitangent = glm::normalize(glm::cross(tangent, N));
                             
                             // TBN matrix transforms from tangent space to world space
                             glm::mat3 TBN(tangent, bitangent, N);
@@ -1073,6 +1072,20 @@ void World::parse_mtl(Model& model, const std::string& filename) {
                 (std::filesystem::path(filename).parent_path() / texture_filename).string();
             current_material->second.texture =
                 std::make_shared<Texture>(load_texture(texture_filename));
+        } else if (type == "map_Bump" || type == "bump" || type == "map_Kn" || type == "norm") {
+            // Normal map: supports map_Bump, bump, map_Kn (custom), and norm keywords
+            assert(current_material != model.materials.end());
+            std::string normal_filename;
+            iss >> normal_filename;
+            // Handle optional -bm flag for bump multiplier (ignored for now)
+            if (normal_filename == "-bm") {
+                FloatType bm;
+                iss >> bm >> normal_filename;  // Skip multiplier, get actual filename
+            }
+            normal_filename =
+                (std::filesystem::path(filename).parent_path() / normal_filename).string();
+            current_material->second.normal_map =
+                std::make_shared<NormalMap>(load_normal_map(normal_filename));
         }
     }
 }
@@ -1183,6 +1196,7 @@ NormalMap World::load_normal_map(const std::string& filename) {
         FloatType nx = (static_cast<FloatType>(red) / 255.0f) * 2.0f - 1.0f;
         FloatType ny = (static_cast<FloatType>(green) / 255.0f) * 2.0f - 1.0f;
         FloatType nz = (static_cast<FloatType>(blue) / 255.0f) * 2.0f - 1.0f;
+        // Note: No Y-flip needed if TBN is constructed correctly for OpenGL convention
         normal_data[i] = glm::normalize(glm::vec3(nx, ny, nz));
     }
     return NormalMap(width, height, std::move(normal_data));

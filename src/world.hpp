@@ -143,12 +143,11 @@ public:
 
 public:
     [[nodiscard]] constexpr Colour sample(FloatType u, FloatType v) const {
-        std::size_t ix = static_cast<std::size_t>(std::clamp(
-            u * static_cast<FloatType>(width_ - 1), 0.0f, static_cast<FloatType>(width_ - 1)
-        ));
-        std::size_t iy = static_cast<std::size_t>(std::clamp(
-            v * static_cast<FloatType>(height_ - 1), 0.0f, static_cast<FloatType>(height_ - 1)
-        ));
+        // Wrap UV coordinates for tiling (Repeat mode)
+        u = u - std::floor(u);
+        v = v - std::floor(v);
+        std::size_t ix = static_cast<std::size_t>(u * static_cast<FloatType>(width_)) % width_;
+        std::size_t iy = static_cast<std::size_t>(v * static_cast<FloatType>(height_)) % height_;
         return data_[iy * width_ + ix];
     }
 };
@@ -174,12 +173,11 @@ public:
      * @return Tangent-space normal vector (normalized).
      */
     [[nodiscard]] glm::vec3 sample(FloatType u, FloatType v) const {
-        std::size_t ix = static_cast<std::size_t>(std::clamp(
-            u * static_cast<FloatType>(width_ - 1), 0.0f, static_cast<FloatType>(width_ - 1)
-        ));
-        std::size_t iy = static_cast<std::size_t>(std::clamp(
-            v * static_cast<FloatType>(height_ - 1), 0.0f, static_cast<FloatType>(height_ - 1)
-        ));
+        // Wrap UV coordinates for tiling (Repeat mode)
+        u = u - std::floor(u);
+        v = v - std::floor(v);
+        std::size_t ix = static_cast<std::size_t>(u * static_cast<FloatType>(width_)) % width_;
+        std::size_t iy = static_cast<std::size_t>(v * static_cast<FloatType>(height_)) % height_;
         return data_[iy * width_ + ix];
     }
 };

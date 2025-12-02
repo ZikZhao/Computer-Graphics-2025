@@ -22,7 +22,8 @@ ColourHDR RayTracer::render_pixel(
     bool soft_shadows,
     bool use_caustics,
     int sample_index,
-    std::uint32_t initial_seed
+    std::uint32_t initial_seed,
+    bool normal_debug
 ) const noexcept {
     // Anti-aliasing: Jitter the pixel coordinate to sample within the pixel area
     FloatType jitter_x = RandFloat(initial_seed) - 0.5f;
@@ -42,7 +43,8 @@ ColourHDR RayTracer::render_pixel(
         use_caustics,
         sample_index,
         glm::vec3(1.0f),
-        initial_seed
+        initial_seed,
+        normal_debug
     );
 }
 
@@ -56,7 +58,8 @@ ColourHDR RayTracer::render_pixel_dof(
     FloatType aperture_size,
     int samples,
     bool soft_shadows,
-    bool use_caustics
+    bool use_caustics,
+    bool normal_debug
 ) const noexcept {
     ColourHDR accumulated_color(0.0f, 0.0f, 0.0f);
     double aspect_ratio = static_cast<double>(width) / height;
@@ -103,7 +106,8 @@ ColourHDR RayTracer::render_pixel_dof(
                                                     use_caustics,
                                                     0,
                                                     glm::vec3(1.0f),
-                                                    seed
+                                                    seed,
+                                                    normal_debug
                                                 );
     }
 
@@ -123,7 +127,8 @@ ColourHDR RayTracer::trace_ray(
     bool use_caustics,
     int sample_index,
     const glm::vec3& throughput,
-    std::uint32_t& rng
+    std::uint32_t& rng,
+    bool normal_debug
 ) const noexcept {
     // Recursion limit: sample environment on termination
     constexpr int ABS_MAX_DEPTH = 8;
@@ -136,6 +141,13 @@ ColourHDR RayTracer::trace_ray(
 
     // Scene intersection
     RayTriangleIntersection intersection = hit(ray_origin, ray_dir);
+
+    // Normal visualization mode: maps normal from [-1, 1] to [0, 1] for color display
+    // Colors: Floor (Y-up) = green (0.5, 1.0, 0.5), Walls facing camera = blue-ish
+    if (normal_debug && intersection.triangleIndex != static_cast<std::size_t>(-1)) {
+        glm::vec3 debug_n = intersection.normal * 0.5f + 0.5f;
+        return ColourHDR{debug_n.x, debug_n.y, debug_n.z};
+    }
 
     // Medium absorption (Beer's Law): attenuate radiance by traveled distance
     ColourHDR medium_absorption{1.0f, 1.0f, 1.0f};
@@ -225,7 +237,8 @@ ColourHDR RayTracer::trace_ray(
                 use_caustics,
                 sample_index,
                 next_tp,
-                rng
+                rng,
+                normal_debug
             );
             ColourHDR out = reflected * medium_absorption;
             if (depth > 0) out = ClampRadiance(out, 10.0f);
@@ -258,7 +271,8 @@ ColourHDR RayTracer::trace_ray(
                 use_caustics,
                 sample_index,
                 next_tp,
-                rng
+                rng,
+                normal_debug
             );
             result_color = result_color + reflected_color * reflect_weight;
         }
@@ -286,7 +300,8 @@ ColourHDR RayTracer::trace_ray(
                 use_caustics,
                 sample_index,
                 next_tp,
-                rng
+                rng,
+                normal_debug
             );
             result_color = result_color + refracted_color * refract_weight;
         }
@@ -417,9 +432,13 @@ ColourHDR RayTracer::trace_ray(
 
     // Glossy reflection for metallic surfaces with Russian Roulette
     if (face.material.metallic > 0.0f) {
-        glm::vec3 use_normal = (face.material.shading == Material::Shading::FLAT)
-                                   ? face.face_normal
-                                   : intersection.normal;
+        // Use normal-mapped normal for reflection if available (intersection.normal already
+        // contains the perturbed normal from normal mapping), otherwise fall back based on shading
+        glm::vec3 use_normal = intersection.normal;
+        // Only use flat face normal if no normal mapping was applied and shading is FLAT
+        if (!face.material.normal_map && face.material.shading == Material::Shading::FLAT) {
+            use_normal = face.face_normal;
+        }
         if (glm::dot(use_normal, -ray_dir) < 0.0f) {
             use_normal = -use_normal;
         }
@@ -445,7 +464,8 @@ ColourHDR RayTracer::trace_ray(
             use_caustics,
             sample_index,
             compensated_tp,
-            rng
+            rng,
+            normal_debug
         );
 
         // Schlick's Approximation for Metallic Fresnel
