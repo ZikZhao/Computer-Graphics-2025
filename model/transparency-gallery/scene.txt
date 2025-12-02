@@ -91,19 +91,19 @@ Object # right_wall
 
 Object # back_wall_outer
     Use wall_matte
-    Vertex -8.0 -3.0 -6.1
-    Vertex  8.0 -3.0 -6.1
-    Vertex  8.0  3.0 -6.1
-    Vertex -8.0  3.0 -6.1
+    Vertex -8.0 -3.0 -6.0
+    Vertex  8.0 -3.0 -6.0
+    Vertex  8.0  3.0 -6.0
+    Vertex -8.0  3.0 -6.0
     Face 0 1 2
     Face 0 2 3
 
 Object # back_wall_inner
     Use mirror_surface
-    Vertex -7.8 -2.9 -6.0
-    Vertex  7.8 -2.9 -6.0
-    Vertex  7.8  2.9 -6.0
-    Vertex -7.8  2.9 -6.0
+    Vertex -8.0 -3.0 -5.95
+    Vertex  8.0 -3.0 -5.95
+    Vertex  8.0  3.0 -5.95
+    Vertex -8.0  3.0 -5.95
     Face 0 1 2
     Face 0 2 3
 

@@ -91,13 +91,14 @@ void VideoRecorder::convert_to_mp4() {
 // Invoke ffmpeg to transcode Y4M to MP4; silence console output
 #ifdef _WIN32
     constexpr std::string_view null_device = "nul";
-    constexpr std::string_view del_cmd = "del"; // Windows uses del
+    constexpr std::string_view del_cmd = "del";
 #else
     constexpr std::string_view null_device = "/dev/null";
-    constexpr std::string_view del_cmd = "rm";  // Linux/Mac uses rm
+    constexpr std::string_view del_cmd = "rm";
 #endif
+    constexpr std::string_view flags = "-c:v libx264 -pix_fmt yuv420p -crf 18 -preset slow";
     std::string command =
-        std::format("ffmpeg -y -i {} {} > {} 2>&1", Y4MFilename, MP4Filename, null_device);
+        std::format("ffmpeg -y -i {} {} {} > {} 2>&1", Y4MFilename, flags, MP4Filename, null_device);
     int result = std::system(command.c_str());
     if (result == 0) {
         std::string clean_cmd = std::format("{} {}", del_cmd, Y4MFilename);
