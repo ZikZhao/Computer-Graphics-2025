@@ -146,8 +146,13 @@ public:
         // Wrap UV coordinates for tiling (Repeat mode)
         u = u - std::floor(u);
         v = v - std::floor(v);
-        std::size_t ix = static_cast<std::size_t>(u * static_cast<FloatType>(width_)) % width_;
-        std::size_t iy = static_cast<std::size_t>(v * static_cast<FloatType>(height_)) % height_;
+        
+        std::size_t ix = static_cast<std::size_t>(u * static_cast<FloatType>(width_ - 1));
+        std::size_t iy = static_cast<std::size_t>(v * static_cast<FloatType>(height_ - 1));
+        // Safety check for floating point precision
+        if (ix >= width_) ix = width_ - 1;
+        if (iy >= height_) iy = height_ - 1;
+        
         return data_[iy * width_ + ix];
     }
 };
@@ -176,8 +181,13 @@ public:
         // Wrap UV coordinates for tiling (Repeat mode)
         u = u - std::floor(u);
         v = v - std::floor(v);
-        std::size_t ix = static_cast<std::size_t>(u * static_cast<FloatType>(width_)) % width_;
-        std::size_t iy = static_cast<std::size_t>(v * static_cast<FloatType>(height_)) % height_;
+        
+        std::size_t ix = static_cast<std::size_t>(u * static_cast<FloatType>(width_ - 1));
+        std::size_t iy = static_cast<std::size_t>(v * static_cast<FloatType>(height_ - 1));
+        // Safety check for floating point precision
+        if (ix >= width_) ix = width_ - 1;
+        if (iy >= height_) iy = height_ - 1;
+        
         return data_[iy * width_ + ix];
     }
 };

@@ -493,23 +493,27 @@ RayTriangleIntersection BVHAccelerator::intersect(
                             glm::vec3 tangent = glm::normalize(
                                 (edge1 * deltaUV2.y - edge2 * deltaUV1.y) * inv_det
                             );
+                            glm::vec3 bitangent = glm::normalize(
+                                (edge2 * deltaUV1.x - edge1 * deltaUV2.x) * inv_det
+                            );
                             
-                            // Gram-Schmidt orthogonalize tangent with respect to normal
+                            // Gram-Schmidt orthogonalize tangent and bitangent with respect to normal
                             glm::vec3 N = interpolated_normal;
                             tangent = glm::normalize(tangent - N * glm::dot(N, tangent));
-                            // Recompute bitangent: T × N gives correct direction for UV mapping
-                            glm::vec3 bitangent = glm::normalize(glm::cross(tangent, N));
+                            bitangent = glm::normalize(bitangent - N * glm::dot(N, bitangent) 
+                                                       - tangent * glm::dot(tangent, bitangent));
                             
                             // TBN matrix transforms from tangent space to world space
                             glm::mat3 TBN(tangent, bitangent, N);
+
+                            // Fix normal map handedness: flip X and Y components
+                            // tangent_normal.x = -tangent_normal.x;
+                            // tangent_normal.y = -tangent_normal.y;
                             
                             // Transform tangent-space normal to world space
                             closest.normal = glm::normalize(TBN * tangent_normal);
-                            
-                            // Ensure normal faces the camera
-                            if (glm::dot(closest.normal, -rd) < 0.0f) {
-                                closest.normal = -closest.normal;
-                            }
+                            // Note: Do NOT flip based on view direction for normal-mapped surfaces
+                            // The TBN matrix already ensures correct orientation
                         }
                     }
                     if (face.material.texture) {
@@ -1185,6 +1189,7 @@ NormalMap World::load_normal_map(const std::string& filename) {
 
     std::vector<glm::vec3> normal_data;
     normal_data.resize(width * height);
+    constexpr FloatType gamma = 2.2f;
     for (std::size_t i = 0; i < width * height; i++) {
         int red = file.get();
         int green = file.get();
@@ -1192,10 +1197,15 @@ NormalMap World::load_normal_map(const std::string& filename) {
         if (red == EOF || green == EOF || blue == EOF) {
             throw std::runtime_error("Unexpected end of file while reading normal map: " + filename);
         }
-        // Convert from [0, 255] to [0, 1] then to [-1, 1] for tangent-space normal
-        FloatType nx = (static_cast<FloatType>(red) / 255.0f) * 2.0f - 1.0f;
-        FloatType ny = (static_cast<FloatType>(green) / 255.0f) * 2.0f - 1.0f;
-        FloatType nz = (static_cast<FloatType>(blue) / 255.0f) * 2.0f - 1.0f;
+        // Apply inverse gamma correction (sRGB to linear) before converting to tangent-space normal
+        // Normal maps are often stored in sRGB, so we need to convert back to linear space
+        FloatType r_linear = std::pow(static_cast<FloatType>(red) / 255.0f, gamma);
+        FloatType g_linear = std::pow(static_cast<FloatType>(green) / 255.0f, gamma);
+        FloatType b_linear = std::pow(static_cast<FloatType>(blue) / 255.0f, gamma);
+        // Convert from [0, 1] to [-1, 1] for tangent-space normal
+        FloatType nx = r_linear * 2.0f - 1.0f;
+        FloatType ny = g_linear * 2.0f - 1.0f;
+        FloatType nz = b_linear * 2.0f - 1.0f;
         // Note: No Y-flip needed if TBN is constructed correctly for OpenGL convention
         normal_data[i] = glm::normalize(glm::vec3(nx, ny, nz));
     }

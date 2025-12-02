@@ -167,6 +167,18 @@ void Renderer::process_rows(int y0, int y1) noexcept {
             int w = get_width();
             int h = get_height();
             int pixel_index = y * w + x;
+            
+            // Normal debug mode: simple single-sample rendering
+            if (normal_debug_mode_) {
+                ColourHDR hdr = raytracer_->render_pixel_normal(camera, x, y, w, h);
+                std::size_t idx =
+                    static_cast<std::size_t>(y) * get_width() + static_cast<std::size_t>(x);
+                accumulation_buffer_[idx] = hdr;
+                Colour c = TonemapAndGammaCorrect(hdr, gamma_);
+                window_[{x, y}] = c;
+                continue;
+            }
+            
             // Use high sample count in offline mode (except DoF which has its own sampling)
             int samples_to_run = (offline_render_mode_ && !is_dof) ? VideoSamples : 1;
             ColourHDR pixel_accum{0.0f, 0.0f, 0.0f};
@@ -183,8 +195,7 @@ void Renderer::process_rows(int y0, int y1) noexcept {
                         aperture_size_,
                         dof_samples_,
                         true,
-                        caustics_enabled_,
-                        normal_debug_mode_
+                        caustics_enabled_
                     );
                     pixel_accum = ColourHDR{
                         .red = pixel_accum.red + hdr.red,
@@ -200,8 +211,7 @@ void Renderer::process_rows(int y0, int y1) noexcept {
                     std::uint32_t sub_seed =
                         base_seed ^ (static_cast<std::uint32_t>(s) * 0x9e3779b9u);
                     ColourHDR hdr = raytracer_->render_pixel(
-                        camera, x, y, w, h, true, caustics_enabled_, sample_index, sub_seed,
-                        normal_debug_mode_
+                        camera, x, y, w, h, true, caustics_enabled_, sample_index, sub_seed
                     );
                     pixel_accum = ColourHDR{
                         .red = pixel_accum.red + hdr.red,

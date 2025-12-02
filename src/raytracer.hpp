@@ -80,7 +80,6 @@ public:
      * @param use_caustics Enable photon map lookup.
      * @param sample_index Index of the current sample (for accumulation).
      * @param initial_seed Seed for RNG.
-     * @param normal_debug Enable normal visualization mode.
      * @return The computed color for this sample.
      */
     [[nodiscard]] ColourHDR render_pixel(
@@ -92,8 +91,19 @@ public:
         bool soft_shadows,
         bool use_caustics = false,
         int sample_index = 0,
-        std::uint32_t initial_seed = 1u,
-        bool normal_debug = false
+        std::uint32_t initial_seed = 1u
+    ) const noexcept;
+
+    /**
+     * @brief Renders a single pixel showing normal colors (for debugging).
+     * Maps normals from [-1,1] to [0,1] RGB.
+     */
+    [[nodiscard]] ColourHDR render_pixel_normal(
+        const Camera& cam,
+        int x,
+        int y,
+        int width,
+        int height
     ) const noexcept;
 
     /**
@@ -109,7 +119,6 @@ public:
      * @param samples Number of samples per pixel for DoF.
      * @param soft_shadows Enable area light sampling.
      * @param use_caustics Enable photon map lookup.
-     * @param normal_debug Enable normal visualization mode.
      * @return The averaged color of the samples.
      */
     [[nodiscard]] ColourHDR render_pixel_dof(
@@ -122,8 +131,7 @@ public:
         FloatType aperture_size,
         int samples,
         bool soft_shadows,
-        bool use_caustics = false,
-        bool normal_debug = false
+        bool use_caustics = false
     ) const noexcept;
 
 private:
@@ -139,7 +147,6 @@ private:
      * @param sample_index Current sample index.
      * @param throughput Current path throughput (for Russian Roulette).
      * @param rng RNG state.
-     * @param normal_debug Enable normal visualization mode.
      * @return Radiance found along the ray.
      */
     ColourHDR trace_ray(
@@ -151,8 +158,7 @@ private:
         bool use_caustics,
         int sample_index,
         const glm::vec3& throughput,
-        std::uint32_t& rng,
-        bool normal_debug = false
+        std::uint32_t& rng
     ) const noexcept;
 
     /**

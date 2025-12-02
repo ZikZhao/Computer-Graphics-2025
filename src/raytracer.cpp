@@ -22,8 +22,7 @@ ColourHDR RayTracer::render_pixel(
     bool soft_shadows,
     bool use_caustics,
     int sample_index,
-    std::uint32_t initial_seed,
-    bool normal_debug
+    std::uint32_t initial_seed
 ) const noexcept {
     // Anti-aliasing: Jitter the pixel coordinate to sample within the pixel area
     FloatType jitter_x = RandFloat(initial_seed) - 0.5f;
@@ -43,9 +42,36 @@ ColourHDR RayTracer::render_pixel(
         use_caustics,
         sample_index,
         glm::vec3(1.0f),
-        initial_seed,
-        normal_debug
+        initial_seed
     );
+}
+
+ColourHDR RayTracer::render_pixel_normal(
+    const Camera& cam,
+    int x,
+    int y,
+    int width,
+    int height
+) const noexcept {
+    FloatType u = (static_cast<FloatType>(x) + 0.5f) / static_cast<FloatType>(width);
+    FloatType v = (static_cast<FloatType>(y) + 0.5f) / static_cast<FloatType>(height);
+
+    auto [ray_origin, ray_dir] =
+        cam.generate_ray_uv(u, v, width, height, static_cast<double>(width) / height);
+
+    RayTriangleIntersection intersection = hit(ray_origin, ray_dir);
+    
+    if (intersection.triangleIndex != static_cast<std::size_t>(-1)) {
+        // Map normal from [-1, 1] to [0, 1] for color display
+        glm::vec3 n = intersection.normal * 0.5f + 0.5f;
+        return ColourHDR{n.x, n.y, n.z};
+    }
+    
+    // Miss: return environment or black
+    if (world_.env_map_.is_loaded()) {
+        return world_.env_map_.sample(ray_dir);
+    }
+    return ColourHDR{0.0f, 0.0f, 0.0f};
 }
 
 ColourHDR RayTracer::render_pixel_dof(
@@ -58,8 +84,7 @@ ColourHDR RayTracer::render_pixel_dof(
     FloatType aperture_size,
     int samples,
     bool soft_shadows,
-    bool use_caustics,
-    bool normal_debug
+    bool use_caustics
 ) const noexcept {
     ColourHDR accumulated_color(0.0f, 0.0f, 0.0f);
     double aspect_ratio = static_cast<double>(width) / height;
@@ -106,8 +131,7 @@ ColourHDR RayTracer::render_pixel_dof(
                                                     use_caustics,
                                                     0,
                                                     glm::vec3(1.0f),
-                                                    seed,
-                                                    normal_debug
+                                                    seed
                                                 );
     }
 
@@ -127,8 +151,7 @@ ColourHDR RayTracer::trace_ray(
     bool use_caustics,
     int sample_index,
     const glm::vec3& throughput,
-    std::uint32_t& rng,
-    bool normal_debug
+    std::uint32_t& rng
 ) const noexcept {
     // Recursion limit: sample environment on termination
     constexpr int ABS_MAX_DEPTH = 8;
@@ -141,13 +164,6 @@ ColourHDR RayTracer::trace_ray(
 
     // Scene intersection
     RayTriangleIntersection intersection = hit(ray_origin, ray_dir);
-
-    // Normal visualization mode: maps normal from [-1, 1] to [0, 1] for color display
-    // Colors: Floor (Y-up) = green (0.5, 1.0, 0.5), Walls facing camera = blue-ish
-    if (normal_debug && intersection.triangleIndex != static_cast<std::size_t>(-1)) {
-        glm::vec3 debug_n = intersection.normal * 0.5f + 0.5f;
-        return ColourHDR{debug_n.x, debug_n.y, debug_n.z};
-    }
 
     // Medium absorption (Beer's Law): attenuate radiance by traveled distance
     ColourHDR medium_absorption{1.0f, 1.0f, 1.0f};
@@ -237,8 +253,7 @@ ColourHDR RayTracer::trace_ray(
                 use_caustics,
                 sample_index,
                 next_tp,
-                rng,
-                normal_debug
+                rng
             );
             ColourHDR out = reflected * medium_absorption;
             if (depth > 0) out = ClampRadiance(out, 10.0f);
@@ -271,8 +286,7 @@ ColourHDR RayTracer::trace_ray(
                 use_caustics,
                 sample_index,
                 next_tp,
-                rng,
-                normal_debug
+                rng
             );
             result_color = result_color + reflected_color * reflect_weight;
         }
@@ -300,8 +314,7 @@ ColourHDR RayTracer::trace_ray(
                 use_caustics,
                 sample_index,
                 next_tp,
-                rng,
-                normal_debug
+                rng
             );
             result_color = result_color + refracted_color * refract_weight;
         }
@@ -439,7 +452,8 @@ ColourHDR RayTracer::trace_ray(
         if (!face.material.normal_map && face.material.shading == Material::Shading::FLAT) {
             use_normal = face.face_normal;
         }
-        if (glm::dot(use_normal, -ray_dir) < 0.0f) {
+        // Only flip normal for non-normal-mapped surfaces (normal maps handle their own orientation)
+        if (!face.material.normal_map && glm::dot(use_normal, -ray_dir) < 0.0f) {
             use_normal = -use_normal;
         }
         glm::vec3 reflected_dir = glm::reflect(ray_dir, use_normal);
@@ -464,8 +478,7 @@ ColourHDR RayTracer::trace_ray(
             use_caustics,
             sample_index,
             compensated_tp,
-            rng,
-            normal_debug
+            rng
         );
 
         // Schlick's Approximation for Metallic Fresnel
