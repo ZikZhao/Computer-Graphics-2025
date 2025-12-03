@@ -13,7 +13,7 @@ FloatType PhotonMap::RandomFloat(FloatType min, FloatType max) noexcept {
 }
 
 PhotonMap::PhotonMap(const World& world) : world_(world) {
-    worker_thread_ = std::jthread([this]() { trace_photons(); });
+    worker_thread_ = std::jthread([this](std::stop_token st) { trace_photons(st); });
 }
 
 std::size_t PhotonMap::total_photons() const noexcept {
@@ -76,7 +76,7 @@ ColourHDR PhotonMap::estimate_caustic(
     return ColourHDR{.red = radiance.x, .green = radiance.y, .blue = radiance.z};
 }
 
-void PhotonMap::trace_photons() {
+void PhotonMap::trace_photons(std::stop_token st) {
     const auto& emissive_faces = world_.emissive_faces_;
 
     // Find all transparent (refractive) objects in the scene
@@ -171,6 +171,12 @@ void PhotonMap::trace_photons() {
     std::size_t batch_index = 0;
 
     while (total_photons() < TargetStoredPhotons && total_emitted_count < MaxEmittedPhotons) {
+        // Check for stop request at the beginning of each batch
+        if (st.stop_requested()) {
+            std::cout << "[PhotonMap] Stopping early due to stop request\n";
+            break;
+        }
+
         // Emit a batch distributed across all light sources
         for (std::size_t i = 0; i < emissive_faces.size(); ++i) {
             // Calculate how many photons this light gets from the batch
@@ -198,6 +204,12 @@ void PhotonMap::trace_photons() {
                 TargetStoredPhotons,
                 total_emitted_count
             );
+        }
+
+        // Check for stop request after each batch
+        if (st.stop_requested()) {
+            std::cout << "[PhotonMap] Stopping early due to stop request\n";
+            break;
         }
     }
 

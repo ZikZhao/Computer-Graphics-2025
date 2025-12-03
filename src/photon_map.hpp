@@ -128,7 +128,7 @@ public:
     ) const noexcept;
 
 private:
-    void trace_photons();
+    void trace_photons(std::stop_token st);
 
     /**
      * @brief Emits a batch of photons from an area light.

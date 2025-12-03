@@ -153,15 +153,21 @@ void Renderer::render_dof() noexcept {
     frame_count_ = rendering_frame_count_;
 }
 
-void Renderer::process_rows(int y0, int y1) noexcept {
+void Renderer::process_tile(int tile_x, int tile_y) noexcept {
     const Camera& camera = world_.camera_;
     const bool is_dof = mode_ == Mode::DEPTH_OF_FIELD;
 
-    // Row-batched loop over pixels; sampling and accumulation
+    // 32x32 block scheduling for better cache locality
     const int w = static_cast<int>(window_.width_);
     const int h = static_cast<int>(window_.height_);
+    
+    int x0 = tile_x * TileSize;
+    int y0 = tile_y * TileSize;
+    int x1 = std::min(x0 + TileSize, w);
+    int y1 = std::min(y0 + TileSize, h);
+    
     for (int y = y0; y < y1; ++y) {
-        for (int x = 0; x < w; x++) {
+        for (int x = x0; x < x1; ++x) {
             int pixel_index = y * w + x;
 
             // Normal debug mode: simple single-sample rendering
@@ -254,16 +260,19 @@ void Renderer::worker_thread(std::stop_token st) noexcept {
         frame_barrier_.arrive_and_wait();
         if (st.stop_requested()) break;
 
-        // Process tiles until all are done (row-batched for cache locality)
+        // Process tiles until all are done (32x32 block scheduling for cache locality)
+        const int width = static_cast<int>(window_.width_);
         const int height = static_cast<int>(window_.height_);
-        const int num_tiles = (height + TileHeight - 1) / TileHeight;
+        const int tiles_x = (width + TileSize - 1) / TileSize;
+        const int tiles_y = (height + TileSize - 1) / TileSize;
+        const int num_tiles = tiles_x * tiles_y;
         while (true) {
             int tile_idx = tile_counter_.fetch_add(1, std::memory_order_relaxed);
             if (tile_idx >= num_tiles) break;
 
-            int y0 = tile_idx * TileHeight;
-            int y1 = std::min(y0 + TileHeight, height);
-            process_rows(y0, y1);
+            int tile_x = tile_idx % tiles_x;
+            int tile_y = tile_idx / tiles_x;
+            process_tile(tile_x, tile_y);
             if (st.stop_requested()) break;
         }
 

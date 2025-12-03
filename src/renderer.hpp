@@ -25,7 +25,7 @@ public:
     };
 
 public:
-    static constexpr int TileHeight = 16;
+    static constexpr int TileSize = 32;  // 32x32 block scheduling
     static constexpr int VideoSamples = 64;
 
     /**
@@ -141,9 +141,9 @@ private:
     void worker_thread(std::stop_token st) noexcept;
 
     /**
-     * @brief Processes a range of scanlines (tiles) for the current frame.
-     * @param y0 Starting scanline (inclusive).
-     * @param y1 Ending scanline (exclusive).
+     * @brief Processes a 2D tile block for the current frame.
+     * @param tile_x Tile X index.
+     * @param tile_y Tile Y index.
      */
-    void process_rows(int y0, int y1) noexcept;
+    void process_tile(int tile_x, int tile_y) noexcept;
 };
