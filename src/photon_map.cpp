@@ -227,11 +227,38 @@ void PhotonMap::emit_photon_batch(
     glm::vec3 Le = light_face.material.emission;
     glm::vec3 n_light = glm::normalize(light_face.face_normal);
 
-    // Store photons with light emission color as base.
+    // Compute the light center for cone angle calculation (average of all sample points)
+    glm::vec3 light_center = world_.all_vertices_[light_face.v_indices[0]] +
+                             (e0 + e1) / 3.0f;  // Triangle centroid
+    FloatType avg_dist = glm::length(target_center - light_center);
+    FloatType raw_cone_angle =
+        std::atan(target_radius / std::max<FloatType>(avg_dist, 1e-4f)) * 1.5f;
+    // Clamp cone angle to π/2 (90°) to prevent photons from emitting backwards
+    constexpr FloatType HalfPi = std::numbers::pi_v<FloatType> / 2.0f;
+    FloatType cone_angle = std::min(raw_cone_angle, HalfPi);
+
+    // Dynamic Flux Scaling using exact solid angle formula:
+    // The fraction of hemisphere solid angle covered by a cone of half-angle θ is:
+    //   Ω_cone / Ω_hemisphere = (2π(1-cosθ)) / (2π) = 1 - cos(θ)
+    // This corrects the "magnifying glass" effect where forcing all flux into a
+    // small cone artificially brightens distant targets.
+    FloatType cone_fraction = 1.0f - std::cos(cone_angle);
+    cone_fraction = std::min(cone_fraction, 1.0f);  // Clamp to 1.0 max
+
+    // Fix double-counting: Separate intensity from color.
+    // The total_light_flux_ (computed in trace_photons) already incorporates Le's magnitude,
+    // so using Le directly here would cause photon power to scale as Le².
+    // Instead, we use the normalized color "tint" so that energy is controlled solely
+    // by the global flux normalization in normalize_photon_power().
+    FloatType luminance = 0.2126f * Le.x + 0.7152f * Le.y + 0.0722f * Le.z;
+    glm::vec3 normalized_tint =
+        (luminance > 1e-6f) ? (Le / luminance) : glm::vec3(1.0f);  // Handle black lights
+
+    // photon_base_color = normalized color tint * cone fraction
     // Actual power will be normalized later using:
-    //   factor = total_flux / (stored_count + killed_count)
-    // This ensures absorbed energy (killed photons) reduces the final brightness.
-    glm::vec3 photon_base_color = Le;
+    //   factor = total_flux / total_emitted_count
+    // This ensures caustic brightness scales linearly with light intensity.
+    glm::vec3 photon_base_color = normalized_tint * cone_fraction;
 
     for (std::size_t i = 0; i < batch_size; ++i) {
         std::size_t halton_idx = batch_start_index + i;
@@ -244,8 +271,6 @@ void PhotonMap::emit_photon_batch(
         glm::vec3 light_p = world_.all_vertices_[light_face.v_indices[0]] + b1 * e0 + b2 * e1;
         glm::vec3 origin = light_p + n_light * 1e-4f;
         glm::vec3 to_center = glm::normalize(target_center - origin);
-        FloatType dist = glm::length(target_center - origin);
-        FloatType cone_angle = std::atan(target_radius / std::max<FloatType>(dist, 1e-4f)) * 1.5f;
         glm::vec3 direction = SampleConeHalton(static_cast<int>(halton_idx), to_center, cone_angle);
         trace_single_photon(origin, direction, photon_base_color, 0);
     }
