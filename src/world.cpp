@@ -368,7 +368,9 @@ BVHAccelerator BVHAccelerator::Build(
             return node_index;
         }
         auto mid_iter = std::partition(
-            bvh.tri_indices_.begin() + start, bvh.tri_indices_.begin() + end, [&](int idx) {
+            bvh.tri_indices_.begin() + start,
+            bvh.tri_indices_.begin() + end,
+            [&](int idx) {
                 FloatType centroid = data[idx].c[best_axis];
                 int bucket_idx = static_cast<int>(
                     sah_buckets * ((centroid - cbox.min[best_axis]) / extent[best_axis])
@@ -470,8 +472,9 @@ RayTriangleIntersection BVHAccelerator::intersect(
                     // Apply normal mapping if a normal map is present
                     if (face.material.normal_map && texcoords_) {
                         // Sample tangent-space normal from the normal map
-                        glm::vec3 tangent_normal = face.material.normal_map->sample(uv_coord.x, uv_coord.y);
-                        
+                        glm::vec3 tangent_normal =
+                            face.material.normal_map->sample(uv_coord.x, uv_coord.y);
+
                         // Compute TBN matrix from triangle edges and UV deltas
                         glm::vec2 uv0(0.0f), uv1(0.0f), uv2(0.0f);
                         if (face.vt_indices[0] < texcoords_->size())
@@ -480,36 +483,37 @@ RayTriangleIntersection BVHAccelerator::intersect(
                             uv1 = (*texcoords_)[face.vt_indices[1]];
                         if (face.vt_indices[2] < texcoords_->size())
                             uv2 = (*texcoords_)[face.vt_indices[2]];
-                        
+
                         glm::vec3 edge1 = v1 - v0;
                         glm::vec3 edge2 = v2 - v0;
                         glm::vec2 deltaUV1 = uv1 - uv0;
                         glm::vec2 deltaUV2 = uv2 - uv0;
-                        
+
                         FloatType det = deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y;
-                        
+
                         if (std::abs(det) > 1e-6f) {
                             FloatType inv_det = 1.0f / det;
-                            glm::vec3 tangent = glm::normalize(
-                                (edge1 * deltaUV2.y - edge2 * deltaUV1.y) * inv_det
-                            );
-                            glm::vec3 bitangent = glm::normalize(
-                                (edge2 * deltaUV1.x - edge1 * deltaUV2.x) * inv_det
-                            );
-                            
-                            // Gram-Schmidt orthogonalize tangent and bitangent with respect to normal
+                            glm::vec3 tangent =
+                                glm::normalize((edge1 * deltaUV2.y - edge2 * deltaUV1.y) * inv_det);
+                            glm::vec3 bitangent =
+                                glm::normalize((edge2 * deltaUV1.x - edge1 * deltaUV2.x) * inv_det);
+
+                            // Gram-Schmidt orthogonalize tangent and bitangent with respect to
+                            // normal
                             glm::vec3 N = interpolated_normal;
                             tangent = glm::normalize(tangent - N * glm::dot(N, tangent));
-                            bitangent = glm::normalize(bitangent - N * glm::dot(N, bitangent) 
-                                                       - tangent * glm::dot(tangent, bitangent));
-                            
+                            bitangent = glm::normalize(
+                                bitangent - N * glm::dot(N, bitangent) -
+                                tangent * glm::dot(tangent, bitangent)
+                            );
+
                             // TBN matrix transforms from tangent space to world space
                             glm::mat3 TBN(tangent, bitangent, N);
 
                             // Fix normal map handedness: flip X and Y components
                             // tangent_normal.x = -tangent_normal.x;
                             // tangent_normal.y = -tangent_normal.y;
-                            
+
                             // Transform tangent-space normal to world space
                             closest.normal = glm::normalize(TBN * tangent_normal);
                             // Note: Do NOT flip based on view direction for normal-mapped surfaces
@@ -1161,7 +1165,8 @@ Texture World::load_texture(const std::string& filename) {
 }
 
 NormalMap World::load_normal_map(const std::string& filename) {
-    // PPM (P6) loader for normal maps: parse header, dimensions and convert RGB to tangent-space normals
+    // PPM (P6) loader for normal maps: parse header, dimensions and convert RGB to tangent-space
+    // normals
     std::ifstream file(filename, std::ifstream::binary);
     if (!file.is_open()) {
         throw std::runtime_error("Could not open normal map file: " + filename);
@@ -1195,7 +1200,9 @@ NormalMap World::load_normal_map(const std::string& filename) {
         int green = file.get();
         int blue = file.get();
         if (red == EOF || green == EOF || blue == EOF) {
-            throw std::runtime_error("Unexpected end of file while reading normal map: " + filename);
+            throw std::runtime_error(
+                "Unexpected end of file while reading normal map: " + filename
+            );
         }
         // Apply inverse gamma correction (sRGB to linear) before converting to tangent-space normal
         // Normal maps are often stored in sRGB, so we need to convert back to linear space
@@ -1215,14 +1222,12 @@ NormalMap World::load_normal_map(const std::string& filename) {
 void World::flatten_model_faces(Model& model) {
     // Flatten per-object faces into a contiguous array for fast traversal and BVH build
     model.all_faces.clear();
-    model.all_faces.reserve(
-        std::accumulate(
-            model.objects.begin(),
-            model.objects.end(),
-            std::size_t(0),
-            [](std::size_t sum, const Object& obj) { return sum + obj.faces.size(); }
-        )
-    );
+    model.all_faces.reserve(std::accumulate(
+        model.objects.begin(),
+        model.objects.end(),
+        std::size_t(0),
+        [](std::size_t sum, const Object& obj) { return sum + obj.faces.size(); }
+    ));
 
     for (const auto& object : model.objects) {
         model.all_faces.insert(model.all_faces.end(), object.faces.begin(), object.faces.end());

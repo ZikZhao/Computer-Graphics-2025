@@ -43,9 +43,11 @@ public:
     using GridCell = std::tuple<int, int, int>;
 
 public:
-    static constexpr std::size_t TargetStoredPhotons = 50000;   // Target number of stored caustic photons
-    static constexpr std::size_t MaxEmittedPhotons = 10000000;  // Safety bailout to prevent infinite loops
-    static constexpr std::size_t BatchSize = 5000;              // Photons emitted per batch iteration
+    static constexpr std::size_t TargetStoredPhotons =
+        50000;  // Target number of stored caustic photons
+    static constexpr std::size_t MaxEmittedPhotons =
+        10000000;                                   // Safety bailout to prevent infinite loops
+    static constexpr std::size_t BatchSize = 5000;  // Photons emitted per batch iteration
     static constexpr int MaxPhotonBounces = 5;
     static constexpr FloatType MinPhotonPower = 0.01f;
     static constexpr FloatType CausticSearchRadius = 0.4f;
@@ -72,7 +74,7 @@ private:
     int grid_height_ = 0;
     int grid_depth_ = 0;
     glm::vec3 grid_origin_ = glm::vec3(0.0f);
-    FloatType total_light_flux_ = 0.0f;  // Total scene flux for energy normalization
+    FloatType total_light_flux_ = 0.0f;                // Total scene flux for energy normalization
     std::atomic<std::size_t> killed_photon_count_{0};  // Photons terminated by RR (absorbed energy)
 
     std::jthread worker_thread_;
@@ -98,9 +100,7 @@ public:
      * @param radius Search radius.
      * @return List of nearby photons satisfying the radial filter.
      */
-    [[nodiscard]] std::vector<Photon> query_photons(
-        const glm::vec3& point, FloatType radius
-    ) const;
+    [[nodiscard]] std::vector<Photon> query_photons(const glm::vec3& point, FloatType radius) const;
 
     /**
      * @brief Helper to iterate all photons for debug visualization.

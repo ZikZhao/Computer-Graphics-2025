@@ -99,11 +99,14 @@ public:
      * @param intensity Exposure multiplier.
      */
     EnvironmentMap(
-        std::size_t width, std::size_t height, std::vector<ColourHDR> data, FloatType intensity = 0.3f
+        std::size_t width,
+        std::size_t height,
+        std::vector<ColourHDR> data,
+        FloatType intensity = 0.3f
     ) noexcept;
 
 public:
-    /// @brief Indicates whether a valid map is present. 
+    /// @brief Indicates whether a valid map is present.
     [[nodiscard]] constexpr bool is_loaded() const noexcept { return width_ > 0 && height_ > 0; }
 
 public:
@@ -127,12 +130,13 @@ struct RayTriangleIntersection {
     FloatType v;  // Barycentric coordinate for vertex 2
 };
 
-template<typename T>
+template <typename T>
 class ImageBuffer {
 private:
     std::size_t width_;
     std::size_t height_;
     std::vector<T> data_;
+
 public:
     ImageBuffer(std::size_t width, std::size_t height, std::vector<T> data)
         : width_(width), height_(height), data_(std::move(data)) {}
@@ -153,9 +157,6 @@ public:
     using ImageBuffer<Colour>::ImageBuffer;
 };
 
-/**
- * @brief Normal map for tangent-space normal perturbation.
- */
 class NormalMap : public ImageBuffer<glm::vec3> {
 public:
     using ImageBuffer<glm::vec3>::ImageBuffer;
@@ -191,9 +192,6 @@ struct ScreenNdcCoord {
     FloatType inv_w;  // 1/w for perspective correction
 };
 
-/**
- * @brief Camera with yaw/pitch/roll and orbit helper.
- */
 class Camera {
     friend class World;
 
@@ -217,17 +215,17 @@ public:
     [[nodiscard]] glm::vec3 up() const noexcept;
 
 public:
-    /// @brief Projects a world-space vertex to homogeneous clip space. 
+    /// @brief Projects a world-space vertex to homogeneous clip space.
     [[nodiscard]] glm::vec4 world_to_clip(const glm::vec3& vertex, double aspect_ratio)
         const noexcept;
-    
-    /// @brief Converts clip coordinates to NDC by dividing by w. 
+
+    /// @brief Converts clip coordinates to NDC by dividing by w.
     [[nodiscard]] glm::vec3 clip_to_ndc(const glm::vec4& clip) const noexcept;
 
     void start_orbiting() noexcept;
     void orbiting() noexcept;
     void stop_orbiting() noexcept;
-    
+
     void rotate(FloatType delta_yaw, FloatType delta_pitch) noexcept;
     void roll(FloatType delta_roll) noexcept;
     void move(
@@ -259,9 +257,6 @@ struct Object {
     std::vector<Face> faces;
 };
 
-/**
- * @brief Aggregates objects, geometry arrays, and materials for a scene asset.
- */
 struct Model {
     std::vector<Object> objects;
     std::vector<Face> all_faces;
@@ -360,7 +355,8 @@ public:
     std::vector<glm::vec3> all_vertices_;
     std::vector<glm::vec2> all_texcoords_;
     std::vector<glm::vec3> all_vertex_normals_;
-    std::vector<glm::vec3> all_vertex_normals_by_vertex_;  // Vertex normals defined by "Vertex x y z / xn yn zn" lines
+    std::vector<glm::vec3>
+        all_vertex_normals_by_vertex_;  // Vertex normals defined by "Vertex x y z / xn yn zn" lines
     EnvironmentMap env_map_;
     std::vector<const Face*> emissive_faces_;
     BVHAccelerator accelerator_;
@@ -380,7 +376,7 @@ private:
 
     void compute_model_normals(Model& model);
     void flatten_model_faces(Model& model);
-    
+
     void merge_models() noexcept;
     void reserve_global_buffers() noexcept;
     void append_model_data(const Model& model) noexcept;

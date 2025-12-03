@@ -30,8 +30,8 @@ Colour Renderer::TonemapAndGammaCorrect(const ColourHDR& hdr, FloatType gamma) n
 Renderer::Renderer(const World& world, Window& window)
     : world_(world),
       window_(window),
-      hdr_buffer_(window.get_width() * window.get_height(), ColourHDR{}),
-      accumulation_buffer_(window.get_width() * window.get_height(), ColourHDR{}),
+      hdr_buffer_(window.width_ * window.height_, ColourHDR{}),
+      accumulation_buffer_(window.width_ * window.height_, ColourHDR{}),
       frame_barrier_(std::thread::hardware_concurrency() + 1) {
     // Create sub-engines (ray tracing and rasterization backends)
     raytracer_ = std::make_unique<RayTracer>(world);
@@ -55,7 +55,7 @@ void Renderer::render() noexcept {
     if (offline_render_mode_) {
         reset_accumulation();
     }
-    aspect_ratio_ = static_cast<double>(rasterizer_->get_width()) / rasterizer_->get_height();
+    aspect_ratio_ = static_cast<double>(window_.width_) / window_.height_;
 
     // Dispatch to selected rendering mode
     switch (mode_) {
@@ -103,13 +103,11 @@ void Renderer::reset_accumulation() noexcept {
 
 void Renderer::clear() noexcept {
     rasterizer_->clear();
-    hdr_buffer_.assign(get_width() * get_height(), ColourHDR{});
+    hdr_buffer_.assign(window_.width_ * window_.height_, ColourHDR{});
 }
 
 void Renderer::render_wireframe() noexcept {
-    rasterizer_->wireframe(
-        world_.camera_, world_.all_faces_, world_.all_vertices_, aspect_ratio_
-    );
+    rasterizer_->wireframe(world_.camera_, world_.all_faces_, world_.all_vertices_, aspect_ratio_);
 }
 
 void Renderer::render_rasterized() noexcept {
@@ -161,29 +159,28 @@ void Renderer::process_rows(int y0, int y1) noexcept {
     const bool is_dof = mode_ == Mode::DEPTH_OF_FIELD;
 
     // Row-batched loop over pixels; sampling and accumulation
+    const int w = static_cast<int>(window_.width_);
+    const int h = static_cast<int>(window_.height_);
     for (int y = y0; y < y1; ++y) {
-        for (int x = 0; x < get_width(); x++) {
-            int w = get_width();
-            int h = get_height();
+        for (int x = 0; x < w; x++) {
             int pixel_index = y * w + x;
-            
+
             // Normal debug mode: simple single-sample rendering
             if (normal_debug_mode_) {
                 ColourHDR hdr = raytracer_->render_pixel_normal(camera, x, y, w, h);
-                std::size_t idx =
-                    static_cast<std::size_t>(y) * get_width() + static_cast<std::size_t>(x);
+                std::size_t idx = static_cast<std::size_t>(y) * w + static_cast<std::size_t>(x);
                 accumulation_buffer_[idx] = hdr;
                 Colour c = TonemapAndGammaCorrect(hdr, gamma_);
                 window_[{x, y}] = c;
                 continue;
             }
-            
-            // Use high sample count in offline mode (except DoF which has its own sampling)
-            int samples_to_run = (offline_render_mode_ && !is_dof) ? VideoSamples : 1;
+
+            // Use high sample count in offline mode
+            int samples_to_run = offline_render_mode_ ? VideoSamples : 1;
             ColourHDR pixel_accum{0.0f, 0.0f, 0.0f};
             for (int s = 0; s < samples_to_run; ++s) {
                 if (is_dof) {
-                    // Depth-of-field rendering — thin lens (aperture/focal plane)
+                    // Depth-of-field rendering
                     ColourHDR hdr = raytracer_->render_pixel_dof(
                         camera,
                         x,
@@ -207,9 +204,8 @@ void Renderer::process_rows(int y0, int y1) noexcept {
                         1u;
                     std::uint32_t sub_seed =
                         base_seed ^ (static_cast<std::uint32_t>(s) * 0x9e3779b9u);
-                    ColourHDR hdr = raytracer_->render_pixel(
-                        camera, x, y, w, h, caustics_enabled_, sub_seed
-                    );
+                    ColourHDR hdr =
+                        raytracer_->render_pixel(camera, x, y, w, h, caustics_enabled_, sub_seed);
                     pixel_accum = ColourHDR{
                         .red = pixel_accum.red + hdr.red,
                         .green = pixel_accum.green + hdr.green,
@@ -223,9 +219,8 @@ void Renderer::process_rows(int y0, int y1) noexcept {
                 pixel_accum.green / static_cast<FloatType>(samples_to_run),
                 pixel_accum.blue / static_cast<FloatType>(samples_to_run)
             };
-            std::size_t idx =
-                static_cast<std::size_t>(y) * get_width() + static_cast<std::size_t>(x);
-            // Update accumulation buffer (offline mode vs progressive mode)
+            std::size_t idx = static_cast<std::size_t>(y) * w + static_cast<std::size_t>(x);
+            // Update accumulation buffer
             if (offline_render_mode_) {
                 accumulation_buffer_[idx] = final_hdr_avg;
             } else {
@@ -246,7 +241,6 @@ void Renderer::process_rows(int y0, int y1) noexcept {
                                           .blue = accumulation_buffer_[idx].blue /
                                                   static_cast<FloatType>(rendering_frame_count_)
                                       };
-            // Tone map + gamma correct, then write to window backbuffer
             Colour final_colour = TonemapAndGammaCorrect(avg_hdr, gamma_);
             window_[{x, y}] = final_colour;
         }
@@ -260,13 +254,14 @@ void Renderer::worker_thread(std::stop_token st) noexcept {
         if (st.stop_requested()) break;
 
         // Process tiles until all are done (row-batched for cache locality)
-        const int num_tiles = (get_height() + TileHeight - 1) / TileHeight;
+        const int height = static_cast<int>(window_.height_);
+        const int num_tiles = (height + TileHeight - 1) / TileHeight;
         while (true) {
             int tile_idx = tile_counter_.fetch_add(1, std::memory_order_relaxed);
             if (tile_idx >= num_tiles) break;
 
             int y0 = tile_idx * TileHeight;
-            int y1 = std::min(y0 + TileHeight, get_height());
+            int y1 = std::min(y0 + TileHeight, height);
             process_rows(y0, y1);
             if (st.stop_requested()) break;
         }
@@ -277,50 +272,29 @@ void Renderer::worker_thread(std::stop_token st) noexcept {
 }
 
 void Renderer::render_photon_cloud() noexcept {
-    const int width = get_width();
-    const int height = get_height();
+    const int width = static_cast<int>(window_.width_);
+    const int height = static_cast<int>(window_.height_);
 
-    // Clear screen to black
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
             window_[{x, y}] = Colour{0, 0, 0};
         }
     }
 
-    // Check if photon map is available
-    const PhotonMap* pm = photon_map();
-    if (!pm || !pm->is_ready()) {
-        return;  // Nothing to visualize yet
-    }
+    const PhotonMap& pm = photon_map();
+    if (!pm.is_ready()) return;
 
-    // Count photons drawn for debug output
-    std::size_t photons_drawn = 0;
-    const std::size_t total_photons = pm->total_photons();
-
-    // Iterate over all stored photons and project them to screen space
-    pm->for_each_photon([&](const Photon& photon) {
-        // Project photon position to clip space
+    pm.for_each_photon([&](const Photon& photon) {
         glm::vec4 clip = world_.camera_.world_to_clip(photon.position, aspect_ratio_);
-
-        // Skip points behind the camera (w <= 0)
         if (clip.w <= 0.0f) return;
-
-        // Perspective divide to get NDC
-        glm::vec3 ndc = glm::vec3(clip) / clip.w;
-
-        // Check if within NDC bounds [-1, 1]
+        glm::vec3 ndc = world_.camera_.clip_to_ndc(clip);
         if (ndc.x < -1.0f || ndc.x > 1.0f || ndc.y < -1.0f || ndc.y > 1.0f || ndc.z < 0.0f ||
             ndc.z > 1.0f) {
             return;
         }
 
-        // Convert NDC to screen coordinates
-        // NDC x: [-1, 1] -> screen x: [0, width]
-        // NDC y: [-1, 1] -> screen y: [height, 0] (flip Y)
         int screen_x = static_cast<int>((ndc.x + 1.0f) * 0.5f * static_cast<FloatType>(width));
         int screen_y = static_cast<int>((1.0f - ndc.y) * 0.5f * static_cast<FloatType>(height));
-
-        // Clamp to screen bounds
         if (screen_x < 0 || screen_x >= width || screen_y < 0 || screen_y >= height) {
             return;
         }
@@ -332,9 +306,15 @@ void Renderer::render_photon_cloud() noexcept {
 
         // Use white dots for visibility, or tint by photon power
         Colour dot_color = Colour{
-            .red = static_cast<std::uint8_t>(std::clamp(photon.power.r * exposure * 255.0f, 0.0f, 255.0f)),
-            .green = static_cast<std::uint8_t>(std::clamp(photon.power.g * exposure * 255.0f, 0.0f, 255.0f)),
-            .blue = static_cast<std::uint8_t>(std::clamp(photon.power.b * exposure * 255.0f, 0.0f, 255.0f))
+            .red = static_cast<std::uint8_t>(
+                std::clamp(photon.power.r * exposure * 255.0f, 0.0f, 255.0f)
+            ),
+            .green = static_cast<std::uint8_t>(
+                std::clamp(photon.power.g * exposure * 255.0f, 0.0f, 255.0f)
+            ),
+            .blue = static_cast<std::uint8_t>(
+                std::clamp(photon.power.b * exposure * 255.0f, 0.0f, 255.0f)
+            )
         };
 
         // Draw a 2x2 block for better visibility
@@ -347,17 +327,5 @@ void Renderer::render_photon_cloud() noexcept {
                 }
             }
         }
-
-        ++photons_drawn;
     });
-
-    // Print debug info once per second
-    static auto last_print = std::chrono::steady_clock::now();
-    auto now = std::chrono::steady_clock::now();
-    if (now - last_print >= std::chrono::seconds(1)) {
-        std::cout << std::format(
-            "[PhotonVisualization] Drawn: {} / {} photons\n", photons_drawn, total_photons
-        );
-        last_print = now;
-    }
 }

@@ -28,7 +28,7 @@ int main(int argc, char* argv[]) {
     World world = {std::vector<std::string>(argv + 1, argv + argc)};
 
     // Initialize output window and rendering engines
-    Window window(WindowWidth, WindowHeight, false);
+    Window window(WindowWidth, WindowHeight);
     Renderer renderer(world, window);
     VideoRecorder video_recorder(window.get_pixel_buffer(), WindowWidth, WindowHeight);
 
@@ -51,7 +51,9 @@ int main(int argc, char* argv[]) {
                 (ks[SDL_SCANCODE_SPACE] ? 1.0f : 0.0f) - (ks[SDL_SCANCODE_C] ? 1.0f : 0.0f);
             if (fwd != 0.0f || right != 0.0f || up != 0.0f) {
                 FloatType effective_dt = video_recorder.is_recording() ? video_fixed_dt : dt;
-                world.camera_.move(fwd * move_step, right * move_step, up * move_step, effective_dt);
+                world.camera_.move(
+                    fwd * move_step, right * move_step, up * move_step, effective_dt
+                );
                 renderer.reset_accumulation();
             }
         }
@@ -178,9 +180,7 @@ int main(int argc, char* argv[]) {
     window.register_key(
         {SDL_SCANCODE_LCTRL, SDL_SCANCODE_R},
         Window::Trigger::ALL_JUST_PRESSED,
-        [&](const Window::KeyState&, float) {
-            video_recorder.toggle_recording();
-        }
+        [&](const Window::KeyState&, float) { video_recorder.toggle_recording(); }
     );
 
     // Offline/Realtime render mode toggle (H)
@@ -191,7 +191,8 @@ int main(int argc, char* argv[]) {
             renderer.toggle_offline_render_mode();
             std::cout << std::format(
                 "[Renderer] Render mode: {}\n",
-                renderer.offline_render_mode() ? "OFFLINE (64 samples/frame)" : "REALTIME (progressive)"
+                renderer.offline_render_mode() ? "OFFLINE (64 samples/frame)"
+                                               : "REALTIME (progressive)"
             );
             renderer.reset_accumulation();
         }
@@ -204,8 +205,7 @@ int main(int argc, char* argv[]) {
         [&](const Window::KeyState&, float) {
             renderer.set_normal_debug_mode(!renderer.normal_debug_mode());
             std::cout << std::format(
-                "[Renderer] Normal debug mode: {}\n",
-                renderer.normal_debug_mode() ? "ON" : "OFF"
+                "[Renderer] Normal debug mode: {}\n", renderer.normal_debug_mode() ? "ON" : "OFF"
             );
             renderer.reset_accumulation();
         }
@@ -237,8 +237,10 @@ int main(int argc, char* argv[]) {
         [&](const Window::KeyState& ks, float dt) {
             constexpr FloatType ROTATE_SPEED = 0.2f;
             constexpr FloatType video_fixed_dt = 1.0f / 60.0f;  // Fixed step for video recording
-            FloatType dx0 = (ks[SDL_SCANCODE_RIGHT] ? 1.0f : 0.0f) - (ks[SDL_SCANCODE_LEFT] ? 1.0f : 0.0f);
-            FloatType dy0 = (ks[SDL_SCANCODE_UP] ? 1.0f : 0.0f) - (ks[SDL_SCANCODE_DOWN] ? 1.0f : 0.0f);
+            FloatType dx0 =
+                (ks[SDL_SCANCODE_RIGHT] ? 1.0f : 0.0f) - (ks[SDL_SCANCODE_LEFT] ? 1.0f : 0.0f);
+            FloatType dy0 =
+                (ks[SDL_SCANCODE_UP] ? 1.0f : 0.0f) - (ks[SDL_SCANCODE_DOWN] ? 1.0f : 0.0f);
             if (dx0 != 0.0f || dy0 != 0.0f) {
                 FloatType roll = world.camera_.roll_;
                 FloatType c = std::cos(roll);
@@ -293,9 +295,11 @@ int main(int argc, char* argv[]) {
         // Soft frame rate limit for video recording mode (target ~60fps)
         if (video_recorder.is_recording()) {
             auto frame_end = std::chrono::steady_clock::now();
-            auto frame_duration = std::chrono::duration_cast<std::chrono::microseconds>(frame_end - frame_start);
+            auto frame_duration =
+                std::chrono::duration_cast<std::chrono::microseconds>(frame_end - frame_start);
             // Target ~16.67ms per frame (60fps), but use slightly shorter sleep to stay above 60fps
-            constexpr auto target_frame_time = std::chrono::microseconds(14000);  // ~71fps target for sleep
+            constexpr auto target_frame_time =
+                std::chrono::microseconds(14000);  // ~71fps target for sleep
             if (frame_duration < target_frame_time) {
                 std::this_thread::sleep_for(target_frame_time - frame_duration);
             }

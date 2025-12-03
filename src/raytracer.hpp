@@ -53,19 +53,11 @@ public:
     RayTracer(const World& world);
 
 public:
-    /**
-     * @brief Checks if the photon map has finished building.
-     */
     [[nodiscard]] bool is_photon_map_ready() const noexcept {
         return photon_map_ && photon_map_->is_ready();
     }
 
-    /**
-     * @brief Returns a pointer to the photon map for debug visualization.
-     */
-    [[nodiscard]] const PhotonMap* photon_map() const noexcept {
-        return photon_map_.get();
-    }
+    [[nodiscard]] const PhotonMap& photon_map() const noexcept { return *photon_map_; }
 
 public:
     /**
@@ -95,11 +87,7 @@ public:
      * Maps normals from [-1,1] to [0,1] RGB.
      */
     [[nodiscard]] ColourHDR render_pixel_normal(
-        const Camera& cam,
-        int x,
-        int y,
-        int width,
-        int height
+        const Camera& cam, int x, int y, int width, int height
     ) const noexcept;
 
     /**

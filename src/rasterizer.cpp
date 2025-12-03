@@ -88,23 +88,20 @@ Colour Rasterizer::SampleTexture(
 }
 
 Rasterizer::Rasterizer(Window& window)
-    : window_(window), z_buffer_(window.get_width() * window.get_height(), 0.0f) {}
+    : window_(window), z_buffer_(window.width_ * window.height_, 0.0f) {}
 
-void Rasterizer::clear() noexcept {
-    z_buffer_.assign(window_.get_width() * window_.get_height(), 0.0f);
-}
+void Rasterizer::clear() noexcept { z_buffer_.assign(window_.width_ * window_.height_, 0.0f); }
 
 void Rasterizer::resize() noexcept {
-    z_buffer_.resize(window_.get_width() * window_.get_height());
+    z_buffer_.resize(window_.width_ * window_.height_);
     clear();
 }
 
 FloatType Rasterizer::get_depth(int x, int y) const noexcept {
-    if (x < 0 || static_cast<std::size_t>(x) >= window_.get_width() || y < 0 ||
-        static_cast<std::size_t>(y) >= window_.get_height())
+    if (x < 0 || static_cast<std::size_t>(x) >= window_.width_ || y < 0 ||
+        static_cast<std::size_t>(y) >= window_.height_)
         return 0.0f;
-    return z_buffer_
-        [static_cast<std::size_t>(y) * window_.get_width() + static_cast<std::size_t>(x)];
+    return z_buffer_[static_cast<std::size_t>(y) * window_.width_ + static_cast<std::size_t>(x)];
 }
 
 void Rasterizer::wireframe(
@@ -150,8 +147,8 @@ void Rasterizer::face_wireframe(
 
     // Edge rasterization using DDA with inverse-Z depth testing
     Colour colour = clipped[0].colour;
-    int width = window_.get_width();
-    int height = window_.get_height();
+    int width = window_.width_;
+    int height = window_.height_;
 
     for (std::size_t i = 0; i < screen_verts.size(); i++) {
         ScreenNdcCoord from = screen_verts[i];
@@ -230,8 +227,8 @@ void Rasterizer::face_rasterized(
     }
 
     // Triangulate convex polygon fan-wise and perform two-pass scanline fill (top/bottom)
-    int width = window_.get_width();
-    int height = window_.get_height();
+    int width = window_.width_;
+    int height = window_.height_;
     for (std::size_t i = 1; i + 1 < clipped.size(); i++) {
         ScreenNdcCoord v0 = screen_verts[0];
         ScreenNdcCoord v1 = screen_verts[i];
@@ -389,8 +386,8 @@ InplaceVector<ClipVertex, 9> Rasterizer::clip_triangle(
 ScreenNdcCoord Rasterizer::ndc_to_screen(const glm::vec3& ndc, const glm::vec2& uv, FloatType w)
     const noexcept {
     return ScreenNdcCoord{
-        .x = (ndc.x + 1.0f) * 0.5f * window_.get_width(),
-        .y = (1.0f - ndc.y) * 0.5f * window_.get_height(),
+        .x = (ndc.x + 1.0f) * 0.5f * window_.width_,
+        .y = (1.0f - ndc.y) * 0.5f * window_.height_,
         .z_ndc = ndc.z,
         .uv = uv,
         .inv_w = 1.0f / w

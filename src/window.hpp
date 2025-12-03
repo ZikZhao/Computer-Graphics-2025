@@ -60,15 +60,18 @@ private:
                t == Trigger::ALL_DOWN || t == Trigger::ANY_PRESSED_NO_MODIFIER;
     }
 
+public:
+    // Window properties
+    const std::size_t width_;
+    const std::size_t height_;
+
 private:
     // SDL components
     SDL_Window* window_;
     SDL_Renderer* renderer_;
     SDL_Texture* texture_;
 
-    // Window properties
-    std::size_t width_;
-    std::size_t height_;
+    // Backbuffer
     std::vector<std::uint32_t> pixel_buffer_;
 
     // Input management
@@ -89,7 +92,7 @@ private:
     std::size_t next_event_id_ = 0;
 
 public:
-    Window(int width, int height, bool fullscreen = false);
+    Window(int width, int height);
     ~Window();
 
 public:
@@ -98,9 +101,6 @@ public:
     [[nodiscard]] const std::vector<std::uint32_t>& get_pixel_buffer() const noexcept {
         return pixel_buffer_;
     }
-
-    [[nodiscard]] std::size_t get_width() const noexcept { return width_; }
-    [[nodiscard]] std::size_t get_height() const noexcept { return height_; }
 
     [[nodiscard]] bool is_key_pressed(SDL_Scancode key) const noexcept;
     [[nodiscard]] bool is_key_just_pressed(SDL_Scancode key) const noexcept;
@@ -131,11 +131,11 @@ public:
      */
     void register_scroll(ScrollHandler handler) noexcept;
 
-    /// @brief Polls SDL events and dispatches registered handlers. 
+    /// @brief Polls SDL events and dispatches registered handlers.
     bool process_events() noexcept;
-    /// @brief Uploads backbuffer to SDL texture, presents and clears buffer. 
+    /// @brief Uploads backbuffer to SDL texture, presents and clears buffer.
     void update() noexcept;
-    /// @brief Clears the ARGB backbuffer to black. 
+    /// @brief Clears the ARGB backbuffer to black.
     void clear() noexcept;
 
     void save_ppm(const std::string& filename) const;

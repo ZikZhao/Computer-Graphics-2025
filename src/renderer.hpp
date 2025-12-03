@@ -84,11 +84,11 @@ public:
      * @brief Constructs the renderer with shared window/world.
      * @param world Scene data and camera.
      * @param window Reference to the output window.
-     * 
+     *
      * Renderer orchestrates rasterizer/raytracer and multi-threaded tiling.
      */
     Renderer(const World& world, Window& window);
-    
+
     ~Renderer();
 
 public:
@@ -107,12 +107,7 @@ public:
         return raytracer_ && raytracer_->is_photon_map_ready();
     }
 
-    /**
-     * @brief Returns a pointer to the photon map for debug visualization.
-     */
-    [[nodiscard]] const PhotonMap* photon_map() const noexcept {
-        return raytracer_ ? raytracer_->photon_map() : nullptr;
-    }
+    [[nodiscard]] const PhotonMap& photon_map() const noexcept { return raytracer_->photon_map(); }
 
     [[nodiscard]] FloatType focal_distance() const noexcept { return focal_distance_; }
     void set_focal_distance(FloatType d) noexcept { focal_distance_ = d; }
@@ -120,13 +115,8 @@ public:
     [[nodiscard]] FloatType aperture_size() const noexcept { return aperture_size_; }
     void set_aperture_size(FloatType size) noexcept { aperture_size_ = size; }
 
-    [[nodiscard]] int get_width() const noexcept { return rasterizer_->get_width(); }
-    [[nodiscard]] int get_height() const noexcept { return rasterizer_->get_height(); }
-
     [[nodiscard]] bool offline_render_mode() const noexcept { return offline_render_mode_; }
-    void toggle_offline_render_mode() noexcept {
-        offline_render_mode_ = !offline_render_mode_;
-    }
+    void toggle_offline_render_mode() noexcept { offline_render_mode_ = !offline_render_mode_; }
 
 public:
     void render() noexcept;

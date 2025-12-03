@@ -104,8 +104,6 @@ public:
 
 public:
     [[nodiscard]] FloatType get_depth(int x, int y) const noexcept;
-    [[nodiscard]] int get_width() const noexcept { return window_.get_width(); }
-    [[nodiscard]] int get_height() const noexcept { return window_.get_height(); }
 
     void clear() noexcept;
     void resize() noexcept;
@@ -144,7 +142,7 @@ private:
 
     /**
      * @brief Clips a triangle to the view frustum using Sutherland-Hodgman algorithm.
-     * 
+     *
      * @param camera The camera for transforming to clip space.
      * @param face The face defining the triangle.
      * @param vertices The list of vertex positions.

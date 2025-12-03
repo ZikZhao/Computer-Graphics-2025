@@ -22,9 +22,7 @@ std::size_t PhotonMap::total_photons() const noexcept {
     return count;
 }
 
-std::vector<Photon> PhotonMap::query_photons(
-    const glm::vec3& point, FloatType radius
-) const {
+std::vector<Photon> PhotonMap::query_photons(const glm::vec3& point, FloatType radius) const {
     std::vector<Photon> result;
     GridCell center_cell = get_grid_cell(point);
     auto [cx, cy, cz] = center_cell;
@@ -100,8 +98,10 @@ void PhotonMap::trace_photons() {
     glm::vec3 transparent_aabb_max(-std::numeric_limits<FloatType>::infinity());
     for (const auto* face : transparent_faces) {
         for (int k = 0; k < 3; ++k) {
-            transparent_aabb_min = glm::min(transparent_aabb_min, world_.all_vertices_[face->v_indices[k]]);
-            transparent_aabb_max = glm::max(transparent_aabb_max, world_.all_vertices_[face->v_indices[k]]);
+            transparent_aabb_min =
+                glm::min(transparent_aabb_min, world_.all_vertices_[face->v_indices[k]]);
+            transparent_aabb_max =
+                glm::max(transparent_aabb_max, world_.all_vertices_[face->v_indices[k]]);
         }
     }
 
@@ -147,7 +147,7 @@ void PhotonMap::trace_photons() {
     std::vector<FloatType> weights(emissive_faces.size());
     FloatType weight_sum = 0.0f;
     total_light_flux_ = 0.0f;
-    
+
     for (std::size_t i = 0; i < emissive_faces.size(); ++i) {
         const Face* lf = emissive_faces[i];
         glm::vec3 e0 =
@@ -169,7 +169,7 @@ void PhotonMap::trace_photons() {
     // Keep emitting batches until we reach TargetStoredPhotons or hit the safety limit
     std::size_t total_emitted_count = 0;
     std::size_t batch_index = 0;
-    
+
     while (total_photons() < TargetStoredPhotons && total_emitted_count < MaxEmittedPhotons) {
         // Emit a batch distributed across all light sources
         for (std::size_t i = 0; i < emissive_faces.size(); ++i) {
@@ -178,7 +178,7 @@ void PhotonMap::trace_photons() {
                 static_cast<FloatType>(BatchSize) * (weights[i] / weight_sum)
             );
             if (photons_for_light == 0) photons_for_light = 1;  // At least 1 photon per light
-            
+
             emit_photon_batch(
                 *emissive_faces[i],
                 target_center,
@@ -189,7 +189,7 @@ void PhotonMap::trace_photons() {
             total_emitted_count += photons_for_light;
         }
         batch_index++;
-        
+
         // Progress report every 100 batches
         if (batch_index % 100 == 0) {
             std::cout << std::format(
@@ -208,10 +208,7 @@ void PhotonMap::trace_photons() {
     auto end_time = std::chrono::steady_clock::now();
     std::chrono::duration<double> elapsed = end_time - start_time;
 
-    std::cout << std::format(
-        "[PhotonMap] Completed in {:#.3g}s\n",
-        elapsed.count()
-    );
+    std::cout << std::format("[PhotonMap] Completed in {:#.3g}s\n", elapsed.count());
 
     is_ready_.store(true, std::memory_order_release);
 }
@@ -256,11 +253,11 @@ void PhotonMap::emit_photon_batch(
 
 void PhotonMap::normalize_photon_power(std::size_t total_emitted_count) {
     if (total_emitted_count == 0) return;
-    
+
     std::size_t stored_count = total_photons();
     std::size_t killed_count = killed_photon_count_.load(std::memory_order_relaxed);
     std::size_t invalid_count = total_emitted_count - stored_count - killed_count;
-    
+
     // Energy conservation: ALL emitted photons share the total light flux equally.
     // - stored photons: energy that reached diffuse surfaces (contributes to caustics)
     // - killed photons: energy absorbed by the medium (no contribution)
@@ -268,11 +265,12 @@ void PhotonMap::normalize_photon_power(std::size_t total_emitted_count) {
     //
     // Each photon carries: total_flux / total_emitted_count
     // Only stored photons contribute their (attenuated) power to the final image.
-    
+
     // Scaling factor for artistic control (adjust if too bright/dim)
     constexpr FloatType ScalingFactor = 0.1f;
-    FloatType factor = (total_light_flux_ / static_cast<FloatType>(total_emitted_count)) * ScalingFactor;
-    
+    FloatType factor =
+        (total_light_flux_ / static_cast<FloatType>(total_emitted_count)) * ScalingFactor;
+
     std::cout << std::format(
         "[PhotonMap] Summary:\n"
         "           Emitted: {}\n"
@@ -281,20 +279,23 @@ void PhotonMap::normalize_photon_power(std::size_t total_emitted_count) {
         "           Invalid: {} ({:.1f}%)\n"
         "           Flux: {:.4f}, Factor: {:.6f}\n",
         total_emitted_count,
-        stored_count, 100.0 * stored_count / total_emitted_count,
-        killed_count, 100.0 * killed_count / total_emitted_count,
-        invalid_count, 100.0 * invalid_count / total_emitted_count,
+        stored_count,
+        100.0 * stored_count / total_emitted_count,
+        killed_count,
+        100.0 * killed_count / total_emitted_count,
+        invalid_count,
+        100.0 * invalid_count / total_emitted_count,
         total_light_flux_,
         factor
     );
-    
+
     // Scale all photons in photon_map_
     for (auto& [face, photons] : photon_map_) {
         for (auto& p : photons) {
             p.power *= factor;
         }
     }
-    
+
     // Scale all photons in grid_ (same photons, stored by spatial location)
     for (auto& cell : grid_) {
         for (auto& p : cell) {
@@ -369,14 +370,14 @@ void PhotonMap::trace_single_photon(
         // We compare against the ORIGINAL power to detect significant absorption.
         // If power drops below a threshold of the original, probabilistically terminate.
         if (depth >= 1) {
-            FloatType original_magnitude = glm::length(power);  // power before absorption this bounce
-            FloatType new_magnitude = glm::length(new_power);   // power after absorption
-            
+            FloatType original_magnitude =
+                glm::length(power);  // power before absorption this bounce
+            FloatType new_magnitude = glm::length(new_power);  // power after absorption
+
             // Calculate survival ratio (how much energy remains)
-            FloatType survival_ratio = (original_magnitude > 1e-6f) 
-                ? (new_magnitude / original_magnitude) 
-                : 0.0f;
-            
+            FloatType survival_ratio =
+                (original_magnitude > 1e-6f) ? (new_magnitude / original_magnitude) : 0.0f;
+
             // If significant absorption occurred, apply RR
             constexpr FloatType RR_Threshold = 0.5f;  // Trigger RR when < 50% survives
             if (survival_ratio < RR_Threshold) {

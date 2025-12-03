@@ -2,26 +2,29 @@
 
 #include <algorithm>
 
-Window::Window(int width, int height, bool fullscreen)
+Window::Window(int width, int height)
     : width_(width), height_(height), pixel_buffer_(width * height) {
     // Initialize SDL video subsystem
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0)
-        throw std::runtime_error(std::format("[SDL] Could not initialise SDL: {}\n", SDL_GetError()));
-    
-    // Create window surface (optional fullscreen)
+        throw std::runtime_error(std::format("[SDL] Could not initialise SDL: {}\n", SDL_GetError())
+        );
+
+    // Create window surface
     std::uint32_t flags = SDL_WINDOW_OPENGL;
-    if (fullscreen) flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
 
     int anywhere = SDL_WINDOWPOS_UNDEFINED;
     window_ = SDL_CreateWindow("COMS30020", anywhere, anywhere, width_, height_, flags);
     if (!window_)
-        throw std::runtime_error(std::format("[SDL] Could not set video mode: {}\n", SDL_GetError()));
+        throw std::runtime_error(std::format("[SDL] Could not set video mode: {}\n", SDL_GetError())
+        );
 
     // Renderer bound to window (software for portability)
     flags = SDL_RENDERER_SOFTWARE;
     renderer_ = SDL_CreateRenderer(window_, -1, flags);
     if (!renderer_)
-        throw std::runtime_error(std::format("[SDL] Could not create renderer: {}\n", SDL_GetError()));
+        throw std::runtime_error(
+            std::format("[SDL] Could not create renderer: {}\n", SDL_GetError())
+        );
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
     SDL_RenderSetLogicalSize(renderer_, width_, height_);
 
@@ -30,7 +33,9 @@ Window::Window(int width, int height, bool fullscreen)
     texture_ =
         SDL_CreateTexture(renderer_, pixel_format, SDL_TEXTUREACCESS_STATIC, width_, height_);
     if (!texture_)
-        throw std::runtime_error(std::format("[SDL] Could not allocate texture: {}\n", SDL_GetError()));
+        throw std::runtime_error(
+            std::format("[SDL] Could not allocate texture: {}\n", SDL_GetError())
+        );
 }
 
 Window::~Window() {

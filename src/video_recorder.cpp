@@ -97,8 +97,9 @@ void VideoRecorder::convert_to_mp4() {
     constexpr std::string_view del_cmd = "rm";
 #endif
     constexpr std::string_view flags = "-c:v libx264 -pix_fmt yuv420p -crf 18 -preset slow";
-    std::string command =
-        std::format("ffmpeg -y -i {} {} {} > {} 2>&1", Y4MFilename, flags, MP4Filename, null_device);
+    std::string command = std::format(
+        "ffmpeg -y -i {} {} {} > {} 2>&1", Y4MFilename, flags, MP4Filename, null_device
+    );
     int result = std::system(command.c_str());
     if (result == 0) {
         std::string clean_cmd = std::format("{} {}", del_cmd, Y4MFilename);
