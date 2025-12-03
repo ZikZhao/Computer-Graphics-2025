@@ -168,7 +168,7 @@ void Rasterizer::face_wireframe(
                                                       : static_cast<FloatType>(x - from.x) /
                                                             static_cast<FloatType>(to.x - from.x);
                 FloatType inv_z =
-                    ComputeInvZndc(progress, std::array<FloatType, 2>{from.z_ndc, to.z_ndc});
+                    InvZndc(progress, std::array<FloatType, 2>{from.z_ndc, to.z_ndc});
                 FloatType& depth = z_buffer_[y * width + x];
                 if (inv_z >= depth) {
                     depth = inv_z;
@@ -193,7 +193,7 @@ void Rasterizer::face_wireframe(
                                                       : static_cast<FloatType>(y - from.y) /
                                                             static_cast<FloatType>(to.y - from.y);
                 FloatType inv_z =
-                    ComputeInvZndc(progress, std::array<FloatType, 2>{from.z_ndc, to.z_ndc});
+                    InvZndc(progress, std::array<FloatType, 2>{from.z_ndc, to.z_ndc});
                 FloatType& depth = z_buffer_[y * width + x];
                 if (inv_z >= depth) {
                     depth = inv_z;
@@ -265,7 +265,7 @@ void Rasterizer::face_rasterized(
                     Barycentric({v0.x, v0.y}, {v1.x, v1.y}, {v2.x, v2.y}, {x_center, y_center});
                 if (bary.x >= 0.0f && bary.y >= 0.0f && bary.z >= 0.0f) {
                     Colour colour = SampleTexture(face, bary, v0, v1, v2);
-                    FloatType inv_z = ComputeInvZndc(
+                    FloatType inv_z = InvZndc(
                         std::array<FloatType, 3>{bary.x, bary.y, bary.z},
                         std::array<FloatType, 3>{v0.z_ndc, v1.z_ndc, v2.z_ndc}
                     );
@@ -296,7 +296,7 @@ void Rasterizer::face_rasterized(
                     Barycentric({v0.x, v0.y}, {v1.x, v1.y}, {v2.x, v2.y}, {x_center, y_center});
                 if (bary.x >= 0.0f && bary.y >= 0.0f && bary.z >= 0.0f) {
                     Colour colour = SampleTexture(face, bary, v0, v1, v2);
-                    FloatType inv_z = ComputeInvZndc(
+                    FloatType inv_z = InvZndc(
                         std::array<FloatType, 3>{bary.x, bary.y, bary.z},
                         std::array<FloatType, 3>{v0.z_ndc, v1.z_ndc, v2.z_ndc}
                     );

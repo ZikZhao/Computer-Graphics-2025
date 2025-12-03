@@ -136,7 +136,7 @@ inline void WritePPM(
  * @param vertices_z_ndc Z components (NDC) for the two edge endpoints.
  * @return 1/z value suitable for depth comparison and perspective-correct interpolation.
  */
-constexpr FloatType ComputeInvZndc(
+constexpr FloatType InvZndc(
     FloatType progress, std::array<FloatType, 2> vertices_z_ndc
 ) noexcept {
     return (1.0f - progress) / vertices_z_ndc[0] + progress / vertices_z_ndc[1];
@@ -148,7 +148,7 @@ constexpr FloatType ComputeInvZndc(
  * @param vertices_z_ndc Z components (NDC) for the three triangle vertices.
  * @return 1/z value for perspective-correct interpolation and depth testing.
  */
-constexpr FloatType ComputeInvZndc(
+constexpr FloatType InvZndc(
     std::array<FloatType, 3> bary, std::array<FloatType, 3> vertices_z_ndc
 ) noexcept {
     return bary[0] / vertices_z_ndc[0] + bary[1] / vertices_z_ndc[1] + bary[2] / vertices_z_ndc[2];
@@ -161,7 +161,7 @@ constexpr FloatType ComputeInvZndc(
  * @param v2 Third vertex in world space.
  * @return Unit-length geometric normal (right-hand cross).
  */
-inline glm::vec3 CalculateNormal(
+inline glm::vec3 FaceNormal(
     const glm::vec3& v0, const glm::vec3& v1, const glm::vec3& v2
 ) noexcept {
     glm::vec3 edge1 = v1 - v0;

@@ -42,8 +42,6 @@ std::vector<Photon> PhotonMap::query_photons(const glm::vec3& point, FloatType r
                 );
                 const auto& cell = grid_[idx];
                 for (const auto& photon : cell) {
-                    // Removed strict face matching - use spatial proximity only
-                    // Photons on nearby surfaces contribute to caustics
                     glm::vec3 diff = photon.position - point;
                     FloatType dist_sq = glm::dot(diff, diff);
                     if (dist_sq < radius_sq) result.push_back(photon);
@@ -123,9 +121,6 @@ void PhotonMap::trace_photons(std::stop_token st) {
 
     auto start_time = std::chrono::steady_clock::now();
 
-    // Reset killed photon counter
-    killed_photon_count_.store(0, std::memory_order_relaxed);
-
     // Target center/radius for emission cone (based on transparent objects)
     glm::vec3 target_center = (transparent_aabb_min + transparent_aabb_max) * 0.5f;
     FloatType target_radius = glm::length(transparent_aabb_max - target_center);
@@ -143,7 +138,7 @@ void PhotonMap::trace_photons(std::stop_token st) {
     grid_.clear();
     grid_.resize(grid_size);
 
-    // Phase 1: Compute total scene flux and relative probability weights for each light
+    // Compute total scene flux and relative probability weights for each light
     std::vector<FloatType> weights(emissive_faces.size());
     FloatType weight_sum = 0.0f;
     total_light_flux_ = 0.0f;
@@ -156,7 +151,7 @@ void PhotonMap::trace_photons(std::stop_token st) {
             world_.all_vertices_[lf->v_indices[2]] - world_.all_vertices_[lf->v_indices[0]];
         FloatType area = 0.5f * glm::length(glm::cross(e0, e1));
         glm::vec3 Le = lf->material.emission;
-        // Luminance (ITU-R BT.709) used for energy-aware photon allocation.
+        // Luminance (formula from ITU-R BT.709) used for energy-aware photon allocation.
         FloatType lum = 0.2126f * Le.x + 0.7152f * Le.y + 0.0722f * Le.z;
         FloatType flux = area * lum * std::numbers::pi_v<FloatType>;
         total_light_flux_ += flux;
@@ -165,18 +160,11 @@ void PhotonMap::trace_photons(std::stop_token st) {
         weight_sum += w;
     }
 
-    // Phase 2: Adaptive emission loop
     // Keep emitting batches until we reach TargetStoredPhotons or hit the safety limit
     std::size_t total_emitted_count = 0;
     std::size_t batch_index = 0;
 
     while (total_photons() < TargetStoredPhotons && total_emitted_count < MaxEmittedPhotons) {
-        // Check for stop request at the beginning of each batch
-        if (st.stop_requested()) {
-            std::cout << "[PhotonMap] Stopping early due to stop request\n";
-            break;
-        }
-
         // Emit a batch distributed across all light sources
         for (std::size_t i = 0; i < emissive_faces.size(); ++i) {
             // Calculate how many photons this light gets from the batch
@@ -196,7 +184,6 @@ void PhotonMap::trace_photons(std::stop_token st) {
         }
         batch_index++;
 
-        // Progress report every 100 batches
         if (batch_index % 100 == 0) {
             std::cout << std::format(
                 "[PhotonMap] Progress: Stored {} / {} target | Emitted: {}\n",
@@ -206,7 +193,6 @@ void PhotonMap::trace_photons(std::stop_token st) {
             );
         }
 
-        // Check for stop request after each batch
         if (st.stop_requested()) {
             std::cout << "[PhotonMap] Stopping early due to stop request\n";
             break;
@@ -219,9 +205,7 @@ void PhotonMap::trace_photons(std::stop_token st) {
 
     auto end_time = std::chrono::steady_clock::now();
     std::chrono::duration<double> elapsed = end_time - start_time;
-
     std::cout << std::format("[PhotonMap] Completed in {:#.3g}s\n", elapsed.count());
-
     is_ready_.store(true, std::memory_order_release);
 }
 
@@ -245,9 +229,9 @@ void PhotonMap::emit_photon_batch(
     FloatType avg_dist = glm::length(target_center - light_center);
     FloatType raw_cone_angle =
         std::atan(target_radius / std::max<FloatType>(avg_dist, 1e-4f)) * 1.5f;
-    // Clamp cone angle to π/2 (90°) to prevent photons from emitting backwards
-    constexpr FloatType HalfPi = std::numbers::pi_v<FloatType> / 2.0f;
-    FloatType cone_angle = std::min(raw_cone_angle, HalfPi);
+    // Clamp cone angle to 90 degrees to prevent photons from emitting backwards
+    constexpr FloatType half_pi = std::numbers::pi_v<FloatType> / 2.0f;
+    FloatType cone_angle = std::min(raw_cone_angle, half_pi);
 
     // Dynamic Flux Scaling using exact solid angle formula:
     // The fraction of hemisphere solid angle covered by a cone of half-angle θ is:
@@ -292,46 +276,23 @@ void PhotonMap::normalize_photon_power(std::size_t total_emitted_count) {
     if (total_emitted_count == 0) return;
 
     std::size_t stored_count = total_photons();
-    std::size_t killed_count = killed_photon_count_.load(std::memory_order_relaxed);
-    std::size_t invalid_count = total_emitted_count - stored_count - killed_count;
-
-    // Energy conservation: ALL emitted photons share the total light flux equally.
-    // - stored photons: energy that reached diffuse surfaces (contributes to caustics)
-    // - killed photons: energy absorbed by the medium (no contribution)
-    // - invalid photons: energy that missed/escaped (no contribution)
-    //
-    // Each photon carries: total_flux / total_emitted_count
-    // Only stored photons contribute their (attenuated) power to the final image.
 
     FloatType factor =
         total_light_flux_ / static_cast<FloatType>(total_emitted_count);
 
     std::cout << std::format(
-        "[PhotonMap] Summary:\n"
-        "           Emitted: {}\n"
-        "           Stored:  {} ({:.1f}%)\n"
-        "           Killed:  {} ({:.1f}%)\n"
-        "           Invalid: {} ({:.1f}%)\n"
-        "           Flux: {:.4f}, Factor: {:.6f}\n",
-        total_emitted_count,
+        "[PhotonMap] End Tracing: Stored {} / {} ({:.1f}%)\n",
         stored_count,
-        100.0 * stored_count / total_emitted_count,
-        killed_count,
-        100.0 * killed_count / total_emitted_count,
-        invalid_count,
-        100.0 * invalid_count / total_emitted_count,
-        total_light_flux_,
-        factor
+        total_emitted_count,
+        100.0 * stored_count / total_emitted_count
     );
 
-    // Scale all photons in photon_map_
+    // Scale all photons in photon_map_ and grid_ by the normalization factor
     for (auto& [face, photons] : photon_map_) {
         for (auto& p : photons) {
             p.power *= factor;
         }
     }
-
-    // Scale all photons in grid_ (same photons, stored by spatial location)
     for (auto& cell : grid_) {
         for (auto& p : cell) {
             p.power *= factor;
@@ -401,29 +362,14 @@ void PhotonMap::trace_single_photon(
             }
         }
 
-        // Russian Roulette for early termination of low-power photons
-        // We compare against the ORIGINAL power to detect significant absorption.
-        // If power drops below a threshold of the original, probabilistically terminate.
+        // Russian Roulette: probabilistically terminate photons with significant absorption
         if (depth >= 1) {
-            FloatType original_magnitude =
-                glm::length(power);  // power before absorption this bounce
-            FloatType new_magnitude = glm::length(new_power);  // power after absorption
-
-            // Calculate survival ratio (how much energy remains)
-            FloatType survival_ratio =
-                (original_magnitude > 1e-6f) ? (new_magnitude / original_magnitude) : 0.0f;
-
-            // If significant absorption occurred, apply RR
-            constexpr FloatType RR_Threshold = 0.5f;  // Trigger RR when < 50% survives
-            if (survival_ratio < RR_Threshold) {
-                // Probability of survival proportional to remaining energy
-                FloatType survival_prob = survival_ratio / RR_Threshold;
-                if (RandomFloat() > survival_prob) {
-                    // Kill the photon - count it as absorbed energy
-                    killed_photon_count_.fetch_add(1, std::memory_order_relaxed);
+            constexpr FloatType rr_threshold = 0.5f;
+            FloatType survival_ratio = glm::length(new_power) / glm::length(power);
+            if (survival_ratio < rr_threshold) {
+                if (RandomFloat() > survival_ratio / rr_threshold) {
                     return;
                 }
-                // Photon survives but keeps its attenuated power (no compensation)
             }
         }
 

@@ -74,8 +74,7 @@ private:
     int grid_height_ = 0;
     int grid_depth_ = 0;
     glm::vec3 grid_origin_ = glm::vec3(0.0f);
-    FloatType total_light_flux_ = 0.0f;                // Total scene flux for energy normalization
-    std::atomic<std::size_t> killed_photon_count_{0};  // Photons terminated by RR (absorbed energy)
+    FloatType total_light_flux_ = 0.0f;  // Total scene flux for energy normalization
 
     std::jthread worker_thread_;
     std::atomic<bool> is_ready_{false};

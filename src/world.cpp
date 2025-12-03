@@ -772,7 +772,7 @@ void World::parse_obj(Model& model, const std::filesystem::path& path) {
         }
     }
 
-    compute_model_normals(model);
+    compute_all_face_normals(model);
     flatten_model_faces(model);
 }
 
@@ -1008,7 +1008,7 @@ void World::parse_txt(Model& model, const std::filesystem::path& path) {
         }
     }
 
-    compute_model_normals(model);
+    compute_all_face_normals(model);
     flatten_model_faces(model);
 }
 
@@ -1156,7 +1156,6 @@ NormalMap World::load_normal_map(const std::filesystem::path& path) {
 }
 
 void World::flatten_model_faces(Model& model) {
-    // Flatten per-object faces into a contiguous array for fast traversal and BVH build
     model.all_faces.clear();
     model.all_faces.reserve(
         std::accumulate(
@@ -1172,26 +1171,24 @@ void World::flatten_model_faces(Model& model) {
     }
 }
 
-void World::compute_model_normals(Model& model) {
-    // Compute geometric normals per face from vertex positions; used for flat shading and backface
-    // tests
+void World::compute_all_face_normals(Model& model) {
+    // Compute geometric normals per face from vertex positions;
+    // used for flat shading and backface tests
     for (auto& obj : model.objects) {
         for (auto& f : obj.faces) {
             const glm::vec3& v0 = model.vertices[f.v_indices[0]];
             const glm::vec3& v1 = model.vertices[f.v_indices[1]];
             const glm::vec3& v2 = model.vertices[f.v_indices[2]];
-            f.face_normal = CalculateNormal(v0, v1, v2);
+            f.face_normal = FaceNormal(v0, v1, v2);
         }
     }
 }
 
 void World::merge_models() noexcept {
     reserve_global_buffers();
-
     for (const auto& model : models_) {
         append_model_data(model);
     }
-
     collect_emissive_faces();
 
     std::cout << std::format(

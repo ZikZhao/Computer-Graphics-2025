@@ -386,7 +386,7 @@ private:
     Texture load_texture(const std::filesystem::path& path);
     NormalMap load_normal_map(const std::filesystem::path& path);
     
-    void compute_model_normals(Model& model);
+    void compute_all_face_normals(Model& model);
     void flatten_model_faces(Model& model);
 
     void merge_models() noexcept;
