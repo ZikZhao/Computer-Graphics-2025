@@ -19,15 +19,10 @@ class Window {
 public:
     // Event trigger types
     enum class Trigger {
-        ANY_PRESSED,
-        ALL_PRESSED,
-        ANY_RELEASED,
-        ALL_RELEASED,
-        ANY_DOWN,
-        ALL_DOWN,
-        ANY_JUST_PRESSED,
-        ALL_JUST_PRESSED,
-        ANY_PRESSED_NO_MODIFIER
+        ANY_PRESSED,          // Non-modifier keys: blocked when modifiers held
+        ALL_PRESSED,          // Modifier combo: only triggers when ALL keys held (including modifiers)
+        ANY_JUST_PRESSED,     // Non-modifier keys: blocked when modifiers held
+        ALL_JUST_PRESSED      // Modifier combo: triggers on just-pressed when ALL keys held
     };
 
     using KeyState = std::array<bool, SDL_NUM_SCANCODES>;
@@ -53,12 +48,6 @@ private:
         std::chrono::steady_clock::time_point last_time;
         bool time_initialized = false;
     };
-
-private:
-    static constexpr bool IsPressedMode(Trigger t) noexcept {
-        return t == Trigger::ANY_PRESSED || t == Trigger::ALL_PRESSED || t == Trigger::ANY_DOWN ||
-               t == Trigger::ALL_DOWN || t == Trigger::ANY_PRESSED_NO_MODIFIER;
-    }
 
 public:
     // Window properties
@@ -102,10 +91,6 @@ public:
         return pixel_buffer_;
     }
 
-    [[nodiscard]] bool is_key_pressed(SDL_Scancode key) const noexcept;
-    [[nodiscard]] bool is_key_just_pressed(SDL_Scancode key) const noexcept;
-    [[nodiscard]] bool is_key_just_released(SDL_Scancode key) const noexcept;
-
 public:
     /**
      * @brief Registers a key binding with a trigger policy.
@@ -142,9 +127,8 @@ public:
     void save_bmp(const std::string& filename) const;
 
 private:
-    bool check_key_trigger(const KeyBinding& binding) const noexcept;
     void process_key_bindings() noexcept;
     void process_mouse_bindings() noexcept;
-    void update_keyboard_state() noexcept;
     bool has_modifier_keys() const noexcept;
+    bool check_key_trigger(const KeyBinding& binding) const noexcept;
 };

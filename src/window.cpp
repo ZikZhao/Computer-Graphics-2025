@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include "utils.hpp"
+
 Window::Window(int width, int height)
     : width_(width), height_(height), pixel_buffer_(width * height) {
     // Initialize SDL video subsystem
@@ -149,18 +151,59 @@ bool Window::process_events() noexcept {
     return true;
 }
 
-void Window::update_keyboard_state() noexcept {
-    const Uint8* keystate = SDL_GetKeyboardState(nullptr);
-    std::copy(keystate, keystate + SDL_NUM_SCANCODES, keys_this_frame_.begin());
+void Window::update() noexcept {
+    // Upload ARGB backbuffer to texture and present; then clear for next frame
+    SDL_UpdateTexture(texture_, nullptr, pixel_buffer_.data(), width_ * sizeof(std::uint32_t));
+    SDL_RenderClear(renderer_);
+    SDL_RenderCopy(renderer_, texture_, nullptr, nullptr);
+    SDL_RenderPresent(renderer_);
+    clear();
+}
+
+std::uint32_t& Window::operator[](const std::pair<int, int>& xy) noexcept {
+    std::size_t x = static_cast<std::size_t>(xy.first);
+    std::size_t y = static_cast<std::size_t>(xy.second);
+    return pixel_buffer_[y * width_ + x];
+}
+
+std::uint32_t Window::operator[](const std::pair<int, int>& xy) const noexcept {
+    std::size_t x = static_cast<std::size_t>(xy.first);
+    std::size_t y = static_cast<std::size_t>(xy.second);
+    return pixel_buffer_[y * width_ + x];
+}
+
+void Window::clear() noexcept { std::fill(pixel_buffer_.begin(), pixel_buffer_.end(), 0); }
+
+void Window::save_ppm(const std::string& filename) const {
+    WritePPM(filename, width_, height_, 255, pixel_buffer_);
+}
+
+void Window::save_bmp(const std::string& filename) const {
+    auto surface = SDL_CreateRGBSurfaceFrom(
+        (void*)pixel_buffer_.data(),
+        width_,
+        height_,
+        32,
+        width_ * sizeof(std::uint32_t),
+        0xFF << 16,
+        0xFF << 8,
+        0xFF << 0,
+        0xFF << 24
+    );
+    SDL_SaveBMP(surface, filename.c_str());
+    SDL_FreeSurface(surface);
 }
 
 void Window::process_key_bindings() noexcept {
     auto now = std::chrono::steady_clock::now();
     for (auto& binding : key_bindings_) {
-        if (IsPressedMode(binding.trigger)) {
+        if (binding.trigger == Trigger::ANY_PRESSED ||
+            binding.trigger == Trigger::ALL_PRESSED) {
+            // For ANY_PRESSED (non-modifier keys), block when any modifier is held
+            if (binding.trigger == Trigger::ANY_PRESSED && has_modifier_keys()) continue;
+
             bool any_down = true;
-            if (binding.trigger == Trigger::ANY_DOWN || binding.trigger == Trigger::ANY_PRESSED ||
-                binding.trigger == Trigger::ANY_PRESSED_NO_MODIFIER) {
+            if (binding.trigger == Trigger::ANY_PRESSED) {
                 any_down = false;
                 for (auto k : binding.keys) {
                     if (keys_this_frame_[k]) {
@@ -168,8 +211,7 @@ void Window::process_key_bindings() noexcept {
                         break;
                     }
                 }
-            } else if (binding.trigger == Trigger::ALL_DOWN ||
-                       binding.trigger == Trigger::ALL_PRESSED) {
+            } else if (binding.trigger == Trigger::ALL_PRESSED) {
                 any_down = true;
                 for (auto k : binding.keys) {
                     if (!keys_this_frame_[k]) {
@@ -178,8 +220,6 @@ void Window::process_key_bindings() noexcept {
                     }
                 }
             }
-            if (binding.trigger == Trigger::ANY_PRESSED_NO_MODIFIER && has_modifier_keys())
-                any_down = false;
 
             bool just_pressed = false;
             for (auto k : binding.keys) {
@@ -208,103 +248,16 @@ void Window::process_key_bindings() noexcept {
                 // sees keys that were pressed this frame even if they are currently released (e.g.
                 // pressed and released quickly). This is critical for long render frames where
                 // input polling is sparse.
-                if (binding.trigger == Trigger::ANY_JUST_PRESSED ||
-                    binding.trigger == Trigger::ALL_JUST_PRESSED) {
-                    KeyState effective_keys = keys_this_frame_;
-                    for (auto k : keys_pressed_this_frame_) {
-                        if (k >= 0 && k < SDL_NUM_SCANCODES) {
-                            effective_keys[k] = true;
-                        }
+                KeyState effective_keys = keys_this_frame_;
+                for (auto k : keys_pressed_this_frame_) {
+                    if (k >= 0 && k < SDL_NUM_SCANCODES) {
+                        effective_keys[k] = true;
                     }
-                    binding.handler(effective_keys, 0.0f);
-                } else {
-                    binding.handler(keys_this_frame_, 0.0f);
                 }
+                binding.handler(effective_keys, 0.0f);
             }
         }
     }
-}
-
-bool Window::has_modifier_keys() const noexcept {
-    return keys_this_frame_[SDL_SCANCODE_LCTRL] || keys_this_frame_[SDL_SCANCODE_RCTRL] ||
-           keys_this_frame_[SDL_SCANCODE_LSHIFT] || keys_this_frame_[SDL_SCANCODE_RSHIFT] ||
-           keys_this_frame_[SDL_SCANCODE_LALT] || keys_this_frame_[SDL_SCANCODE_RALT];
-}
-
-bool Window::check_key_trigger(const KeyBinding& binding) const noexcept {
-    if (binding.keys.empty()) return false;
-
-    switch (binding.trigger) {
-    case Trigger::ANY_PRESSED: {
-        for (auto key : binding.keys) {
-            if (keys_updated_this_frame_.count(key) && keys_this_frame_[key]) return true;
-        }
-        return false;
-    }
-
-    case Trigger::ALL_PRESSED: {
-        for (auto key : binding.keys) {
-            if (!keys_this_frame_[key]) return false;
-        }
-        return true;
-    }
-
-    case Trigger::ANY_RELEASED: {
-        for (auto key : binding.keys) {
-            if (keys_updated_this_frame_.count(key) && !keys_this_frame_[key]) return true;
-        }
-        return false;
-    }
-
-    case Trigger::ALL_RELEASED: {
-        for (auto key : binding.keys) {
-            if (!(keys_updated_this_frame_.count(key) && !keys_this_frame_[key])) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    case Trigger::ANY_DOWN: {
-        for (auto key : binding.keys) {
-            if (keys_this_frame_[key]) return true;
-        }
-        return false;
-    }
-
-    case Trigger::ALL_DOWN: {
-        for (auto key : binding.keys) {
-            if (!keys_this_frame_[key]) return false;
-        }
-        return true;
-    }
-
-    case Trigger::ANY_JUST_PRESSED: {
-        for (auto key : binding.keys) {
-            if (keys_pressed_this_frame_.count(key)) return true;
-        }
-        return false;
-    }
-
-    case Trigger::ALL_JUST_PRESSED: {
-        bool exists_pressed_this_frame = false;
-        for (auto key : binding.keys) {
-            if (!(keys_this_frame_[key] || keys_pressed_this_frame_.count(key))) return false;
-            if (keys_pressed_this_frame_.count(key)) exists_pressed_this_frame = true;
-        }
-        return exists_pressed_this_frame;
-    }
-
-    case Trigger::ANY_PRESSED_NO_MODIFIER: {
-        if (has_modifier_keys()) return false;
-        for (auto key : binding.keys) {
-            if (keys_this_frame_[key]) return true;
-        }
-        return false;
-    }
-    }
-
-    return false;
 }
 
 void Window::process_mouse_bindings() noexcept {
@@ -343,68 +296,49 @@ void Window::process_mouse_bindings() noexcept {
     mouse_yrel_ = 0;
 }
 
-void Window::update() noexcept {
-    // Upload ARGB backbuffer to texture and present; then clear for next frame
-    SDL_UpdateTexture(texture_, nullptr, pixel_buffer_.data(), width_ * sizeof(std::uint32_t));
-    SDL_RenderClear(renderer_);
-    SDL_RenderCopy(renderer_, texture_, nullptr, nullptr);
-    SDL_RenderPresent(renderer_);
-    clear();
+bool Window::has_modifier_keys() const noexcept {
+    return keys_this_frame_[SDL_SCANCODE_LCTRL] || keys_this_frame_[SDL_SCANCODE_RCTRL] ||
+           keys_this_frame_[SDL_SCANCODE_LSHIFT] || keys_this_frame_[SDL_SCANCODE_RSHIFT] ||
+           keys_this_frame_[SDL_SCANCODE_LALT] || keys_this_frame_[SDL_SCANCODE_RALT];
 }
 
-std::uint32_t& Window::operator[](const std::pair<int, int>& xy) noexcept {
-    std::size_t x = static_cast<std::size_t>(xy.first);
-    std::size_t y = static_cast<std::size_t>(xy.second);
-    return pixel_buffer_[y * width_ + x];
-}
+bool Window::check_key_trigger(const KeyBinding& binding) const noexcept {
+    if (binding.keys.empty()) return false;
 
-std::uint32_t Window::operator[](const std::pair<int, int>& xy) const noexcept {
-    std::size_t x = static_cast<std::size_t>(xy.first);
-    std::size_t y = static_cast<std::size_t>(xy.second);
-    return pixel_buffer_[y * width_ + x];
-}
-
-void Window::clear() noexcept { std::fill(pixel_buffer_.begin(), pixel_buffer_.end(), 0); }
-
-void Window::save_ppm(const std::string& filename) const {
-    std::ofstream output_stream(filename, std::ofstream::out);
-    output_stream << "P6\n";
-    output_stream << width_ << " " << height_ << "\n";
-    output_stream << "255\n";
-
-    for (std::size_t i = 0; i < width_ * height_; i++) {
-        std::array<char, 3> rgb{
-            {static_cast<char>((pixel_buffer_[i] >> 16) & 0xFF),
-             static_cast<char>((pixel_buffer_[i] >> 8) & 0xFF),
-             static_cast<char>((pixel_buffer_[i] >> 0) & 0xFF)}
-        };
-        output_stream.write(rgb.data(), 3);
+    switch (binding.trigger) {
+    case Trigger::ANY_PRESSED: {
+        for (auto key : binding.keys) {
+            if (keys_updated_this_frame_.count(key) && keys_this_frame_[key]) return true;
+        }
+        return false;
     }
-    output_stream.close();
-}
 
-void Window::save_bmp(const std::string& filename) const {
-    auto surface = SDL_CreateRGBSurfaceFrom(
-        (void*)pixel_buffer_.data(),
-        width_,
-        height_,
-        32,
-        width_ * sizeof(std::uint32_t),
-        0xFF << 16,
-        0xFF << 8,
-        0xFF << 0,
-        0xFF << 24
-    );
-    SDL_SaveBMP(surface, filename.c_str());
-    SDL_FreeSurface(surface);
-}
+    case Trigger::ALL_PRESSED: {
+        for (auto key : binding.keys) {
+            if (!keys_this_frame_[key]) return false;
+        }
+        return true;
+    }
 
-bool Window::is_key_pressed(SDL_Scancode key) const noexcept { return keys_this_frame_[key] != 0; }
+    case Trigger::ANY_JUST_PRESSED: {
+        // Block when any modifier is held (for non-modifier bindings)
+        if (has_modifier_keys()) return false;
+        for (auto key : binding.keys) {
+            if (keys_pressed_this_frame_.count(key)) return true;
+        }
+        return false;
+    }
 
-bool Window::is_key_just_pressed(SDL_Scancode key) const noexcept {
-    return keys_pressed_this_frame_.count(key);
-}
+    case Trigger::ALL_JUST_PRESSED: {
+        // For modifier combos: triggers when all keys held and at least one just pressed
+        bool exists_pressed_this_frame = false;
+        for (auto key : binding.keys) {
+            if (!(keys_this_frame_[key] || keys_pressed_this_frame_.count(key))) return false;
+            if (keys_pressed_this_frame_.count(key)) exists_pressed_this_frame = true;
+        }
+        return exists_pressed_this_frame;
+    }
+    }
 
-bool Window::is_key_just_released(SDL_Scancode key) const noexcept {
-    return keys_updated_this_frame_.count(key) && !keys_this_frame_[key];
+    return false;
 }

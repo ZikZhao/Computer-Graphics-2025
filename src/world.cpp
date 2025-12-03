@@ -1037,7 +1037,7 @@ void World::parse_mtl(Model& model, const std::filesystem::path& path) {
             FloatType ns;
             iss >> ns;
             current_material->second.shininess = ns;
-        } else if (type == "metallic") {
+        } else if (type == "Mt") {
             assert(current_material != model.materials.end());
             FloatType metallic_value;
             iss >> metallic_value;
@@ -1109,33 +1109,13 @@ void World::load_hdr_env_map(const std::filesystem::path& path) {
 }
 
 Texture World::load_texture(const std::filesystem::path& path) {
-    std::ifstream file(path, std::ifstream::binary);
-    if (!file.is_open()) throw std::runtime_error("Could not open texture file: " + path.string());
-
-    std::string magic_number;
-    std::getline(file, magic_number);
-    if (magic_number != "P6")
-        throw std::runtime_error("Invalid PPM format (expected P6): " + path.string());
-
-    std::string line;
-    std::getline(file, line);
-    while (!line.empty() && line[0] == '#') {
-        std::getline(file, line);
-    }
-
-    std::istringstream size_stream(line);
-    std::size_t width, height;
-    if (!(size_stream >> width >> height))
-        throw std::runtime_error("Failed to parse texture dimensions: " + path.string());
-
-    std::getline(file, line);
-
+    auto ppm = ReadPPM(path);
     std::vector<Colour> texture_data;
-    texture_data.resize(width * height);
-    for (std::size_t i = 0; i < width * height; i++) {
-        int red = file.get();
-        int green = file.get();
-        int blue = file.get();
+    texture_data.resize(ppm.width * ppm.height);
+    for (std::size_t i = 0; i < ppm.width * ppm.height; i++) {
+        int red = ppm.stream.get();
+        int green = ppm.stream.get();
+        int blue = ppm.stream.get();
         if (red == EOF || green == EOF || blue == EOF)
             throw std::runtime_error("Unexpected end of file while reading texture: " + path.string());
         texture_data[i] = Colour{
@@ -1144,42 +1124,20 @@ Texture World::load_texture(const std::filesystem::path& path) {
             .blue = static_cast<std::uint8_t>(blue)
         };
     }
-    return Texture(width, height, std::move(texture_data));
+    return Texture(ppm.width, ppm.height, std::move(texture_data));
 }
 
 NormalMap World::load_normal_map(const std::filesystem::path& path) {
-    std::ifstream file(path, std::ifstream::binary);
-    if (!file.is_open())
-        throw std::runtime_error("Could not open normal map file: " + path.string());
-
-    std::string magic_number;
-    std::getline(file, magic_number);
-    if (magic_number != "P6")
-        throw std::runtime_error("Invalid PPM format (expected P6): " + path.string());
-
-    std::string line;
-    std::getline(file, line);
-    while (!line.empty() && line[0] == '#')
-        std::getline(file, line);
-
-    std::istringstream size_stream(line);
-    std::size_t width, height;
-    if (!(size_stream >> width >> height))
-        throw std::runtime_error("Failed to parse normal map dimensions: " + path.string());
-
-    std::getline(file, line);
-
+    auto ppm = ReadPPM(path);
     std::vector<glm::vec3> normal_data;
-    normal_data.resize(width * height);
+    normal_data.resize(ppm.width * ppm.height);
     constexpr FloatType gamma = 2.2f;
-    for (std::size_t i = 0; i < width * height; i++) {
-        int red = file.get();
-        int green = file.get();
-        int blue = file.get();
+    for (std::size_t i = 0; i < ppm.width * ppm.height; i++) {
+        int red = ppm.stream.get();
+        int green = ppm.stream.get();
+        int blue = ppm.stream.get();
         if (red == EOF || green == EOF || blue == EOF)
-            throw std::runtime_error(
-                "Unexpected end of file while reading normal map: " + path.string()
-            );
+            throw std::runtime_error("Unexpected end of file while reading normal map: " + path.string());
 
         // Apply inverse gamma correction (sRGB to linear) before converting to tangent-space normal
         FloatType r_linear = std::pow(static_cast<FloatType>(red) / 255.0f, gamma);
@@ -1194,7 +1152,7 @@ NormalMap World::load_normal_map(const std::filesystem::path& path) {
         // OpenGL convention
         normal_data[i] = glm::normalize(glm::vec3(nx, ny, nz));
     }
-    return NormalMap(width, height, std::move(normal_data));
+    return NormalMap(ppm.width, ppm.height, std::move(normal_data));
 }
 
 void World::flatten_model_faces(Model& model) {

@@ -5,9 +5,11 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <numbers>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <utility>
@@ -15,7 +17,118 @@
 
 #include <glm/glm.hpp>
 
+/// @brief Floating-point type used throughout the renderer.
 using FloatType = decltype(std::declval<glm::vec3>().x);
+
+/**
+ * @brief Fixed-capacity, stack-allocated vector with inplace storage.
+ *
+ * Provides a minimal subset of `std::inplace_vector` semantics for C++20.
+ * Elements are constructed in a preallocated buffer and capacity is limited
+ * to `N`. Intended for hot paths where heap allocation is undesirable.
+ */
+template <typename T, std::size_t N>
+class InplaceVector {
+private:
+    alignas(T) std::byte data_[N * sizeof(T)];
+    std::size_t size_ = 0;
+
+public:
+    constexpr InplaceVector() noexcept = default;
+    constexpr InplaceVector(auto&&... args) noexcept {
+        assert((sizeof...(args)) <= N);
+        (emplace_back(std::forward<decltype(args)>(args)), ...);
+    }
+    constexpr std::size_t size() const noexcept { return size_; }
+    constexpr T& operator[](std::size_t index) noexcept {
+        return *reinterpret_cast<T*>(&data_[index * sizeof(T)]);
+    }
+    constexpr const T& operator[](std::size_t index) const noexcept {
+        return *reinterpret_cast<const T*>(&data_[index * sizeof(T)]);
+    }
+    constexpr void push_back(const T& value) noexcept {
+        assert(size_ < N);
+        new (&data_[size_ * sizeof(T)]) T(value);
+        size_++;
+    }
+    constexpr void emplace_back(T&& value) noexcept {
+        assert(size_ < N);
+        new (&data_[size_ * sizeof(T)]) T(std::move(value));
+        size_++;
+    }
+};
+
+/**
+ * @brief Read a PPM (P6 binary) image file header and return the stream positioned at pixel data.
+ * @param path Path to the PPM file.
+ * @return Anonymous struct containing width, height, and the file stream positioned at pixel data.
+ * @throws std::runtime_error if file cannot be opened or parsed.
+ */
+inline auto ReadPPM(const std::filesystem::path& path) {
+    struct PPMData {
+        std::size_t width;
+        std::size_t height;
+        std::size_t max;
+        std::ifstream stream;
+    };
+
+    std::ifstream file(path, std::ifstream::binary);
+    if (!file.is_open())
+        throw std::runtime_error("Could not open PPM file: " + path.string());
+
+    std::string magic_number;
+    std::getline(file, magic_number);
+    if (magic_number != "P6")
+        throw std::runtime_error("Invalid PPM format (expected P6): " + path.string());
+
+    std::string line;
+    std::getline(file, line);
+    while (!line.empty() && line[0] == '#') {
+        std::getline(file, line);
+    }
+
+    std::istringstream size_stream(line);
+    std::size_t width, height;
+    if (!(size_stream >> width >> height))
+        throw std::runtime_error("Failed to parse PPM dimensions: " + path.string());
+
+    std::getline(file, line);
+    std::istringstream max_stream(line);
+    std::size_t max;
+    if (!(max_stream >> max))
+        throw std::runtime_error("Failed to parse PPM max value: " + path.string());
+
+    return PPMData{width, height, max, std::move(file)};
+}
+
+/**
+ * @brief Write a PPM (P6 binary) image file.
+ * @param filename Output file path.
+ * @param width Image width in pixels.
+ * @param height Image height in pixels.
+ * @param pixels Pixel data as ARGB 32-bit values.
+ */
+inline void WritePPM(
+    const std::string& filename,
+    std::size_t width,
+    std::size_t height,
+    std::size_t max,
+    const std::vector<std::uint32_t>& pixels
+) {
+    std::ofstream output_stream(filename, std::ofstream::out);
+    output_stream << "P6\n";
+    output_stream << width << " " << height << "\n";
+    output_stream <<  max << "\n";
+
+    for (std::size_t i = 0; i < width * height; i++) {
+        std::array<char, 3> rgb{{
+            static_cast<char>((pixels[i] >> 16) & 0xFF),
+            static_cast<char>((pixels[i] >> 8) & 0xFF),
+            static_cast<char>((pixels[i] >> 0) & 0xFF)
+        }};
+        output_stream.write(rgb.data(), 3);
+    }
+}
 
 /**
  * @brief Computes inverse Z in NDC for a linear interpolation along an edge.
@@ -40,44 +153,6 @@ constexpr FloatType ComputeInvZndc(
 ) noexcept {
     return bary[0] / vertices_z_ndc[0] + bary[1] / vertices_z_ndc[1] + bary[2] / vertices_z_ndc[2];
 }
-
-/**
- * @brief Fixed-capacity, stack-allocated vector with inplace storage.
- *
- * Provides a minimal subset of `std::inplace_vector` semantics for C++20.
- * Elements are constructed in a preallocated buffer and capacity is limited
- * to `N`. Intended for hot paths where heap allocation is undesirable.
- */
-template <typename T, std::size_t N>
-class InplaceVector {
-private:
-    alignas(T) std::byte data_[N * sizeof(T)];
-    std::size_t size_ = 0;
-
-public:
-    constexpr InplaceVector() noexcept = default;
-    constexpr InplaceVector(auto&&... args) noexcept : InplaceVector() {
-        assert((sizeof...(args)) <= N);
-        (emplace_back(std::forward<decltype(args)>(args)), ...);
-    }
-    constexpr std::size_t size() const noexcept { return size_; }
-    constexpr T& operator[](std::size_t index) noexcept {
-        return *reinterpret_cast<T*>(&data_[index * sizeof(T)]);
-    }
-    constexpr const T& operator[](std::size_t index) const noexcept {
-        return *reinterpret_cast<const T*>(&data_[index * sizeof(T)]);
-    }
-    constexpr void push_back(const T& value) noexcept {
-        assert(size_ < N);
-        new (&data_[size_ * sizeof(T)]) T(value);
-        size_++;
-    }
-    constexpr void emplace_back(T&& value) noexcept {
-        assert(size_ < N);
-        new (&data_[size_ * sizeof(T)]) T(std::move(value));
-        size_++;
-    }
-};
 
 /**
  * @brief Computes a triangle face normal from three vertices.

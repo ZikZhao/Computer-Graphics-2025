@@ -44,7 +44,7 @@ int main(int argc, char* argv[]) {
          SDL_SCANCODE_D,
          SDL_SCANCODE_SPACE,
          SDL_SCANCODE_C},
-        Window::Trigger::ANY_PRESSED_NO_MODIFIER,
+        Window::Trigger::ANY_PRESSED,
         [&](const Window::KeyState& ks, float dt) {
             constexpr FloatType move_step = 3.0f;
             constexpr FloatType video_fixed_dt = 1.0f / 60.0f;  // Fixed step for video recording
@@ -65,7 +65,7 @@ int main(int argc, char* argv[]) {
 
     window.register_key(
         {SDL_SCANCODE_Q, SDL_SCANCODE_E},
-        Window::Trigger::ANY_PRESSED_NO_MODIFIER,
+        Window::Trigger::ANY_PRESSED,
         [&](const Window::KeyState& ks, float dt) {
             constexpr FloatType roll_speed = 0.5f;
             constexpr FloatType video_fixed_dt = 1.0f / 60.0f;  // Fixed step for video recording
@@ -143,7 +143,7 @@ int main(int argc, char* argv[]) {
     // Aperture control (+/-)
     window.register_key(
         {SDL_SCANCODE_EQUALS, SDL_SCANCODE_MINUS},
-        Window::Trigger::ANY_PRESSED_NO_MODIFIER,
+        Window::Trigger::ANY_PRESSED,
         [&](const Window::KeyState& ks, float) {
             constexpr FloatType step = 0.01f;
             FloatType& aperture = renderer.aperture_size_;
@@ -157,11 +157,11 @@ int main(int argc, char* argv[]) {
         }
     );
 
-    // Screenshot save (Ctrl+S)
+    // Screenshot save (R)
     window.register_key(
-        {SDL_SCANCODE_LCTRL, SDL_SCANCODE_S},
-        Window::Trigger::ALL_JUST_PRESSED,
-        [&](const Window::KeyState& ks, float) {
+        {SDL_SCANCODE_R},
+        Window::Trigger::ANY_JUST_PRESSED,
+        [&](const Window::KeyState&, float) {
             window.save_ppm("screenshot.ppm");
             window.save_bmp("screenshot.bmp");
             std::cout << "[Screenshot] Saved as screenshot.ppm and screenshot.bmp\n";
@@ -219,7 +219,7 @@ int main(int argc, char* argv[]) {
     // Keyboard look (arrow keys)
     window.register_key(
         {SDL_SCANCODE_UP, SDL_SCANCODE_DOWN, SDL_SCANCODE_LEFT, SDL_SCANCODE_RIGHT},
-        Window::Trigger::ANY_PRESSED_NO_MODIFIER,
+        Window::Trigger::ANY_PRESSED,
         [&](const Window::KeyState& ks, float dt) {
             constexpr FloatType ROTATE_SPEED = 0.2f;
             constexpr FloatType video_fixed_dt = 1.0f / 60.0f;  // Fixed step for video recording
