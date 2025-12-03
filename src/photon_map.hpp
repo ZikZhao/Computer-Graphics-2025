@@ -1,10 +1,7 @@
 #pragma once
 #include <atomic>
-#include <map>
-#include <mutex>
 #include <random>
 #include <thread>
-#include <unordered_map>
 #include <vector>
 
 #include "utils.hpp"
@@ -68,7 +65,6 @@ public:
 
 private:
     const World& world_;
-    std::map<const Face*, std::vector<Photon>> photon_map_;
     std::vector<std::vector<Photon>> grid_;
     int grid_width_ = 0;
     int grid_height_ = 0;
@@ -88,12 +84,6 @@ public:
     }
 
     /**
-     * @brief Returns total number of stored photons.
-     * @return Photon count across all faces and grid cells.
-     */
-    [[nodiscard]] std::size_t total_photons() const noexcept;
-
-    /**
      * @brief Retrieves photons within a radius of a point.
      * @param point Query point in world space.
      * @param radius Search radius.
@@ -108,8 +98,8 @@ public:
      */
     template <typename Func>
     void for_each_photon(Func func) const {
-        for (const auto& [face, photons] : photon_map_) {
-            for (const auto& p : photons) {
+        for (const auto& cell : grid_) {
+            for (const auto& p : cell) {
                 func(p);
             }
         }
@@ -127,17 +117,20 @@ public:
     ) const noexcept;
 
 private:
-    void trace_photons(std::stop_token st);
+    /**
+     * @brief Builds the photon map in a background thread.
+     * @param st Stop token to allow cooperative cancellation.
+     * 
+     * This function emits photons from emissive surfaces, traces them through the scene,
+     * and stores them in a spatial grid for later querying.
+     */
+    void build_photon_map(std::stop_token st);
 
     /**
      * @brief Emits a batch of photons from an area light.
-     * @param light_face The emissive face.
-     * @param target_center Center of the transparent objects AABB.
-     * @param target_radius Radius encompassing transparent objects.
-     * @param batch_start_index Starting index for Halton sequence.
-     * @param batch_size Number of photons to emit in this batch.
+     * @return Number of photons stored from this batch.
      */
-    void emit_photon_batch(
+    [[nodiscard]] std::size_t emit_photon_batch(
         const Face& light_face,
         const glm::vec3& target_center,
         FloatType target_radius,
@@ -151,7 +144,11 @@ private:
      */
     void normalize_photon_power(std::size_t total_emitted_count);
 
-    void trace_single_photon(
+    /**
+     * @brief Traces a single photon through the scene.
+     * @return true if a photon was stored, false otherwise.
+     */
+    [[nodiscard]] bool trace_single_photon(
         const glm::vec3& origin,
         const glm::vec3& direction,
         const glm::vec3& power,
