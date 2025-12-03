@@ -98,6 +98,7 @@ public:
 private:
     Window& window_;
     std::vector<FloatType> z_buffer_;
+    double aspect_ratio_;
 
 public:
     explicit Rasterizer(Window& window);
@@ -111,16 +112,14 @@ public:
     void wireframe(
         const Camera& camera,
         const std::vector<Face>& faces,
-        const std::vector<glm::vec3>& vertices,
-        double aspect_ratio
+        const std::vector<glm::vec3>& vertices
     ) noexcept;
 
     void rasterized(
         const Camera& camera,
         const std::vector<Face>& faces,
         const std::vector<glm::vec3>& vertices,
-        const std::vector<glm::vec2>& texcoords,
-        double aspect_ratio
+        const std::vector<glm::vec2>& texcoords
     ) noexcept;
 
 private:
@@ -128,16 +127,14 @@ private:
         const Camera& camera,
         const Face& face,
         const std::vector<glm::vec3>& vertices,
-        const std::vector<glm::vec2>& texcoords,
-        double aspect_ratio
+        const std::vector<glm::vec2>& texcoords
     ) noexcept;
 
     void face_rasterized(
         const Camera& camera,
         const Face& face,
         const std::vector<glm::vec3>& vertices,
-        const std::vector<glm::vec2>& texcoords,
-        double aspect_ratio
+        const std::vector<glm::vec2>& texcoords
     ) noexcept;
 
     /**
@@ -147,15 +144,13 @@ private:
      * @param face The face defining the triangle.
      * @param vertices The list of vertex positions.
      * @param texcoords The list of texture coordinates.
-     * @param aspect_ratio The aspect ratio of the viewport.
      * @return The resulting clipped polygon vertices
      */
     InplaceVector<ClipVertex, 9> clip_triangle(
         const Camera& camera,
         const Face& face,
         const std::vector<glm::vec3>& vertices,
-        const std::vector<glm::vec2>& texcoords,
-        double aspect_ratio
+        const std::vector<glm::vec2>& texcoords
     ) noexcept;
 
     /// NDC [-1,1] to pixel coordinates; store 1/w for downstream perspective correction

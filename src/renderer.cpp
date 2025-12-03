@@ -30,6 +30,7 @@ Colour Renderer::TonemapAndGammaCorrect(const ColourHDR& hdr, FloatType gamma) n
 Renderer::Renderer(const World& world, Window& window)
     : world_(world),
       window_(window),
+      aspect_ratio_(static_cast<double>(window.width_) / window.height_),
       hdr_buffer_(window.width_ * window.height_, ColourHDR{}),
       accumulation_buffer_(window.width_ * window.height_, ColourHDR{}),
       frame_barrier_(std::thread::hardware_concurrency() + 1) {
@@ -55,7 +56,6 @@ void Renderer::render() noexcept {
     if (offline_render_mode_) {
         reset_accumulation();
     }
-    aspect_ratio_ = static_cast<double>(window_.width_) / window_.height_;
 
     // Dispatch to selected rendering mode
     switch (mode_) {
@@ -107,7 +107,7 @@ void Renderer::clear() noexcept {
 }
 
 void Renderer::render_wireframe() noexcept {
-    rasterizer_->wireframe(world_.camera_, world_.all_faces_, world_.all_vertices_, aspect_ratio_);
+    rasterizer_->wireframe(world_.camera_, world_.all_faces_, world_.all_vertices_);
 }
 
 void Renderer::render_rasterized() noexcept {
@@ -115,8 +115,7 @@ void Renderer::render_rasterized() noexcept {
         world_.camera_,
         world_.all_faces_,
         world_.all_vertices_,
-        world_.all_texcoords_,
-        aspect_ratio_
+        world_.all_texcoords_
     );
 }
 
@@ -168,7 +167,8 @@ void Renderer::process_rows(int y0, int y1) noexcept {
             // Normal debug mode: simple single-sample rendering
             if (normal_debug_mode_) {
                 ColourHDR hdr = raytracer_->render_pixel_normal(camera, x, y, w, h);
-                std::size_t idx = static_cast<std::size_t>(y) * w + static_cast<std::size_t>(x);
+                std::size_t idx =
+                    static_cast<std::size_t>(y) * w + static_cast<std::size_t>(x);
                 accumulation_buffer_[idx] = hdr;
                 Colour c = TonemapAndGammaCorrect(hdr, gamma_);
                 window_[{x, y}] = c;
@@ -219,7 +219,8 @@ void Renderer::process_rows(int y0, int y1) noexcept {
                 pixel_accum.green / static_cast<FloatType>(samples_to_run),
                 pixel_accum.blue / static_cast<FloatType>(samples_to_run)
             };
-            std::size_t idx = static_cast<std::size_t>(y) * w + static_cast<std::size_t>(x);
+            std::size_t idx =
+                static_cast<std::size_t>(y) * w + static_cast<std::size_t>(x);
             // Update accumulation buffer
             if (offline_render_mode_) {
                 accumulation_buffer_[idx] = final_hdr_avg;
@@ -285,7 +286,7 @@ void Renderer::render_photon_cloud() noexcept {
     if (!pm.is_ready()) return;
 
     pm.for_each_photon([&](const Photon& photon) {
-        glm::vec4 clip = world_.camera_.world_to_clip(photon.position, aspect_ratio_);
+        glm::vec4 clip = world_.camera_.world_to_clip(photon.position);
         if (clip.w <= 0.0f) return;
         glm::vec3 ndc = world_.camera_.clip_to_ndc(clip);
         if (ndc.x < -1.0f || ndc.x > 1.0f || ndc.y < -1.0f || ndc.y > 1.0f || ndc.z < 0.0f ||

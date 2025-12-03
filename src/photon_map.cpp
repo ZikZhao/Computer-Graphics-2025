@@ -158,7 +158,7 @@ void PhotonMap::trace_photons() {
         glm::vec3 Le = lf->material.emission;
         // Luminance (ITU-R BT.709) used for energy-aware photon allocation.
         FloatType lum = 0.2126f * Le.x + 0.7152f * Le.y + 0.0722f * Le.z;
-        FloatType flux = area * lum;
+        FloatType flux = area * lum * std::numbers::pi_v<FloatType>;
         total_light_flux_ += flux;
         FloatType w = std::max<FloatType>(1e-6f, flux);
         weights[i] = w;
@@ -267,7 +267,7 @@ void PhotonMap::normalize_photon_power(std::size_t total_emitted_count) {
     // Only stored photons contribute their (attenuated) power to the final image.
 
     // Scaling factor for artistic control (adjust if too bright/dim)
-    constexpr FloatType ScalingFactor = 0.1f;
+    constexpr FloatType ScalingFactor = 1.0f;
     FloatType factor =
         (total_light_flux_ / static_cast<FloatType>(total_emitted_count)) * ScalingFactor;
 

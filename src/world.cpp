@@ -112,7 +112,7 @@ glm::vec3 Camera::up() const noexcept {
     return glm::normalize(o[1]);
 }
 
-glm::vec4 Camera::world_to_clip(const glm::vec3& vertex, double aspect_ratio) const noexcept {
+glm::vec4 Camera::world_to_clip(const glm::vec3& vertex) const noexcept {
     // Transform world-space vertex to camera view, then project to homogeneous clip
     glm::vec3 view_vector = vertex - position_;
     glm::mat3 view_rotation = glm::transpose(orientation());
@@ -120,7 +120,7 @@ glm::vec4 Camera::world_to_clip(const glm::vec3& vertex, double aspect_ratio) co
     FloatType w = view_space.z;
     double fov_rad = glm::radians(FOV);
     double tan_half_fov = std::tan(fov_rad / 2.0);
-    FloatType x_ndc = view_space.x / (view_space.z * tan_half_fov * aspect_ratio);
+    FloatType x_ndc = view_space.x / (view_space.z * tan_half_fov * aspect_ratio_);
     FloatType y_ndc = view_space.y / (view_space.z * tan_half_fov);
     FloatType z_ndc =
         (FarPlane * (view_space.z - NearPlane)) / ((view_space.z) * (FarPlane - NearPlane));
@@ -169,15 +169,15 @@ void Camera::move(
 }
 
 std::pair<glm::vec3, glm::vec3> Camera::generate_ray(
-    int pixel_x, int pixel_y, int screen_width, int screen_height, double aspect_ratio
+    int pixel_x, int pixel_y, int screen_width, int screen_height
 ) const noexcept {
     FloatType u = (static_cast<FloatType>(pixel_x) + 0.5f) / static_cast<FloatType>(screen_width);
     FloatType v = (static_cast<FloatType>(pixel_y) + 0.5f) / static_cast<FloatType>(screen_height);
-    return generate_ray_uv(u, v, screen_width, screen_height, aspect_ratio);
+    return generate_ray_uv(u, v, screen_width, screen_height);
 }
 
 std::pair<glm::vec3, glm::vec3> Camera::generate_ray_uv(
-    FloatType u, FloatType v, int screen_width, int screen_height, double aspect_ratio
+    FloatType u, FloatType v, int screen_width, int screen_height
 ) const noexcept {
     // Map pixel UV to view-space direction using pinhole; then rotate to world space
     FloatType ndc_x = u * 2.0f - 1.0f;
@@ -185,7 +185,7 @@ std::pair<glm::vec3, glm::vec3> Camera::generate_ray_uv(
     double fov_rad = glm::radians(FOV);
     double tan_half_fov = std::tan(fov_rad / 2.0);
     FloatType view_x =
-        ndc_x * static_cast<FloatType>(tan_half_fov) * static_cast<FloatType>(aspect_ratio);
+        ndc_x * static_cast<FloatType>(tan_half_fov) * static_cast<FloatType>(aspect_ratio_);
     FloatType view_y = ndc_y * static_cast<FloatType>(tan_half_fov);
     FloatType view_z = 1.0f;
     glm::vec3 ray_dir_view(view_x, view_y, view_z);

@@ -88,7 +88,9 @@ Colour Rasterizer::SampleTexture(
 }
 
 Rasterizer::Rasterizer(Window& window)
-    : window_(window), z_buffer_(window.width_ * window.height_, 0.0f) {}
+    : window_(window),
+      z_buffer_(window.width_ * window.height_, 0.0f),
+      aspect_ratio_(static_cast<double>(window.width_) / window.height_) {}
 
 void Rasterizer::clear() noexcept { z_buffer_.assign(window_.width_ * window_.height_, 0.0f); }
 
@@ -107,11 +109,10 @@ FloatType Rasterizer::get_depth(int x, int y) const noexcept {
 void Rasterizer::wireframe(
     const Camera& camera,
     const std::vector<Face>& faces,
-    const std::vector<glm::vec3>& vertices,
-    double aspect_ratio
+    const std::vector<glm::vec3>& vertices
 ) noexcept {
     for (const auto& face : faces) {
-        face_wireframe(camera, face, vertices, std::vector<glm::vec2>{}, aspect_ratio);
+        face_wireframe(camera, face, vertices, std::vector<glm::vec2>{});
     }
 }
 
@@ -119,11 +120,10 @@ void Rasterizer::rasterized(
     const Camera& camera,
     const std::vector<Face>& faces,
     const std::vector<glm::vec3>& vertices,
-    const std::vector<glm::vec2>& texcoords,
-    double aspect_ratio
+    const std::vector<glm::vec2>& texcoords
 ) noexcept {
     for (const auto& face : faces) {
-        face_rasterized(camera, face, vertices, texcoords, aspect_ratio);
+        face_rasterized(camera, face, vertices, texcoords);
     }
 }
 
@@ -131,11 +131,10 @@ void Rasterizer::face_wireframe(
     const Camera& camera,
     const Face& face,
     const std::vector<glm::vec3>& vertices,
-    const std::vector<glm::vec2>& texcoords,
-    double aspect_ratio
+    const std::vector<glm::vec2>& texcoords
 ) noexcept {
     // Clip triangle to the frustum (Sutherland–Hodgman in clip space)
-    auto clipped = clip_triangle(camera, face, vertices, texcoords, aspect_ratio);
+    auto clipped = clip_triangle(camera, face, vertices, texcoords);
     if (clipped.size() < 3) return;
 
     // Project clipped polygon to NDC and convert to screen; carry 1/w for depth
@@ -209,11 +208,10 @@ void Rasterizer::face_rasterized(
     const Camera& camera,
     const Face& face,
     const std::vector<glm::vec3>& vertices,
-    const std::vector<glm::vec2>& texcoords,
-    double aspect_ratio
+    const std::vector<glm::vec2>& texcoords
 ) noexcept {
     // Clip triangle against all frustum planes; early out if culled
-    auto clipped = clip_triangle(camera, face, vertices, texcoords, aspect_ratio);
+    auto clipped = clip_triangle(camera, face, vertices, texcoords);
     if (clipped.size() < 3) {
         return;
     }
@@ -317,8 +315,7 @@ InplaceVector<ClipVertex, 9> Rasterizer::clip_triangle(
     const Camera& camera,
     const Face& face,
     const std::vector<glm::vec3>& vertices,
-    const std::vector<glm::vec2>& texcoords,
-    double aspect_ratio
+    const std::vector<glm::vec2>& texcoords
 ) noexcept {
     Colour vertex_color{
         .red =
@@ -345,17 +342,17 @@ InplaceVector<ClipVertex, 9> Rasterizer::clip_triangle(
     // Transform to clip space (homogeneous); attributes travel with the polygon
     InplaceVector<ClipVertex, 9> polygon = {
         ClipVertex{
-            .position_clip = camera.world_to_clip(v0, aspect_ratio),
+            .position_clip = camera.world_to_clip(v0),
             .colour = vertex_color,
             .uv = uv0
         },
         ClipVertex{
-            .position_clip = camera.world_to_clip(v1, aspect_ratio),
+            .position_clip = camera.world_to_clip(v1),
             .colour = vertex_color,
             .uv = uv1
         },
         ClipVertex{
-            .position_clip = camera.world_to_clip(v2, aspect_ratio),
+            .position_clip = camera.world_to_clip(v2),
             .colour = vertex_color,
             .uv = uv2
         }

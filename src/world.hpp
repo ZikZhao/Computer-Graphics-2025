@@ -207,6 +207,11 @@ public:
     FloatType roll_ = 0.0f;
     bool is_orbiting_ = false;
     FloatType orbit_radius_ = 0.0f;
+    double aspect_ratio_ = 1.0;
+
+public:
+    void set_aspect_ratio(double aspect_ratio) noexcept { aspect_ratio_ = aspect_ratio; }
+    [[nodiscard]] double aspect_ratio() const noexcept { return aspect_ratio_; }
 
 public:
     [[nodiscard]] glm::mat3 orientation() const noexcept;
@@ -216,8 +221,7 @@ public:
 
 public:
     /// @brief Projects a world-space vertex to homogeneous clip space.
-    [[nodiscard]] glm::vec4 world_to_clip(const glm::vec3& vertex, double aspect_ratio)
-        const noexcept;
+    [[nodiscard]] glm::vec4 world_to_clip(const glm::vec3& vertex) const noexcept;
 
     /// @brief Converts clip coordinates to NDC by dividing by w.
     [[nodiscard]] glm::vec3 clip_to_ndc(const glm::vec4& clip) const noexcept;
@@ -234,12 +238,12 @@ public:
 
     /// @brief Generates a ray through a pixel center.
     [[nodiscard]] std::pair<glm::vec3, glm::vec3> generate_ray(
-        int pixel_x, int pixel_y, int screen_width, int screen_height, double aspect_ratio
+        int pixel_x, int pixel_y, int screen_width, int screen_height
     ) const noexcept;
 
     /// @brief Generates a ray from normalized UV.
     [[nodiscard]] std::pair<glm::vec3, glm::vec3> generate_ray_uv(
-        FloatType u, FloatType v, int screen_width, int screen_height, double aspect_ratio
+        FloatType u, FloatType v, int screen_width, int screen_height
     ) const noexcept;
 };
 

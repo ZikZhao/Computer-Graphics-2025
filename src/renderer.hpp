@@ -57,6 +57,7 @@ public:
 private:
     const World& world_;
     Window& window_;
+    double aspect_ratio_;
 
     Mode mode_ = Mode::RASTERIZED;
     FloatType gamma_ = 2.2f;
@@ -68,7 +69,6 @@ private:
     bool offline_render_mode_ = false;
     int frame_count_ = 0;
     int rendering_frame_count_ = 0;
-    double aspect_ratio_ = 1.0;
 
     std::unique_ptr<RayTracer> raytracer_;
     std::unique_ptr<Rasterizer> rasterizer_;

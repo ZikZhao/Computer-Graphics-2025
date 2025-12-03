@@ -28,8 +28,7 @@ ColourHDR RayTracer::render_pixel(
     FloatType u = (static_cast<FloatType>(x) + 0.5f + jitter_x) / static_cast<FloatType>(width);
     FloatType v = (static_cast<FloatType>(y) + 0.5f + jitter_y) / static_cast<FloatType>(height);
 
-    auto [ray_origin, ray_dir] =
-        cam.generate_ray_uv(u, v, width, height, static_cast<double>(width) / height);
+    auto [ray_origin, ray_dir] = cam.generate_ray_uv(u, v, width, height);
 
     return trace_ray(
         ray_origin, ray_dir, 0, MediumState{}, use_caustics, glm::vec3(1.0f), initial_seed
@@ -41,8 +40,7 @@ ColourHDR RayTracer::render_pixel_normal(const Camera& cam, int x, int y, int wi
     FloatType u = (static_cast<FloatType>(x) + 0.5f) / static_cast<FloatType>(width);
     FloatType v = (static_cast<FloatType>(y) + 0.5f) / static_cast<FloatType>(height);
 
-    auto [ray_origin, ray_dir] =
-        cam.generate_ray_uv(u, v, width, height, static_cast<double>(width) / height);
+    auto [ray_origin, ray_dir] = cam.generate_ray_uv(u, v, width, height);
 
     RayTriangleIntersection intersection = hit(ray_origin, ray_dir);
 
@@ -71,7 +69,6 @@ ColourHDR RayTracer::render_pixel_dof(
     bool use_caustics
 ) const noexcept {
     ColourHDR accumulated_color(0.0f, 0.0f, 0.0f);
-    double aspect_ratio = static_cast<double>(width) / height;
 
     for (int sample = 0; sample < samples; ++sample) {
         // Sample thin lens aperture (concentric disk)
@@ -90,7 +87,7 @@ ColourHDR RayTracer::render_pixel_dof(
             (static_cast<FloatType>(y) + RandFloat(jitter_seed)) / static_cast<FloatType>(height);
 
         // Primary ray through the pinhole
-        auto [center_origin, center_dir] = cam.generate_ray_uv(u0, v0, width, height, aspect_ratio);
+        auto [center_origin, center_dir] = cam.generate_ray_uv(u0, v0, width, height);
 
         // Focal plane target for the lens sample
         glm::vec3 focal_point = center_origin + center_dir * focal_distance;

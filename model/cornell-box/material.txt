@@ -42,6 +42,6 @@ Material mirror
 
 Material light_blue_glass
     Colour 0.7 0.95 0.98
-    AtDistance 0.1
+    AtDistance 1.0
     TransmissionWeight 0.9
     IOR 1.5

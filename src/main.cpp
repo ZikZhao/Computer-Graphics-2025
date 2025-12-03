@@ -29,6 +29,7 @@ int main(int argc, char* argv[]) {
 
     // Initialize output window and rendering engines
     Window window(WindowWidth, WindowHeight);
+    world.camera_.set_aspect_ratio(static_cast<double>(WindowWidth) / WindowHeight);
     Renderer renderer(world, window);
     VideoRecorder video_recorder(window.get_pixel_buffer(), WindowWidth, WindowHeight);
 

@@ -50,7 +50,7 @@ public:
     static constexpr std::size_t BatchSize = 5000;  // Photons emitted per batch iteration
     static constexpr int MaxPhotonBounces = 5;
     static constexpr FloatType MinPhotonPower = 0.01f;
-    static constexpr FloatType CausticSearchRadius = 0.4f;
+    static constexpr FloatType CausticSearchRadius = 0.1f;
     static constexpr FloatType GridCellSize = CausticSearchRadius;
 
     /// Check if material is transparent (refractive)
