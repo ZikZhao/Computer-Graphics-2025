@@ -93,14 +93,13 @@ public:
     [[nodiscard]] std::size_t total_photons() const noexcept;
 
     /**
-     * @brief Retrieves photons within a radius of a point on a given face.
-     * @param face Target surface (used to filter hits).
+     * @brief Retrieves photons within a radius of a point.
      * @param point Query point in world space.
      * @param radius Search radius.
-     * @return List of nearby photons satisfying the radial and face filter.
+     * @return List of nearby photons satisfying the radial filter.
      */
     [[nodiscard]] std::vector<Photon> query_photons(
-        const Face* face, const glm::vec3& point, FloatType radius
+        const glm::vec3& point, FloatType radius
     ) const;
 
     /**
@@ -119,14 +118,13 @@ public:
 
     /**
      * @brief Estimates caustic radiance at a surface point.
-     * @param face Surface being shaded.
      * @param point World-space hit position.
      * @param normal Shading normal at the hit.
      * @param search_radius Radius for photon gathering.
      * @return Estimated radiance in HDR space.
      */
     [[nodiscard]] ColourHDR estimate_caustic(
-        const Face* face, const glm::vec3& point, const glm::vec3& normal, FloatType search_radius
+        const glm::vec3& point, const glm::vec3& normal, FloatType search_radius
     ) const noexcept;
 
 private:
@@ -139,17 +137,13 @@ private:
      * @param target_radius Radius encompassing transparent objects.
      * @param batch_start_index Starting index for Halton sequence.
      * @param batch_size Number of photons to emit in this batch.
-     * @param weight Relative weight of this light source.
-     * @param weight_sum Total weight of all light sources.
      */
     void emit_photon_batch(
         const Face& light_face,
         const glm::vec3& target_center,
         FloatType target_radius,
         std::size_t batch_start_index,
-        std::size_t batch_size,
-        FloatType weight,
-        FloatType weight_sum
+        std::size_t batch_size
     );
 
     /**

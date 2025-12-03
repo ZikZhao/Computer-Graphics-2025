@@ -19,9 +19,7 @@ ColourHDR RayTracer::render_pixel(
     int y,
     int width,
     int height,
-    bool soft_shadows,
     bool use_caustics,
-    int sample_index,
     std::uint32_t initial_seed
 ) const noexcept {
     // Anti-aliasing: Jitter the pixel coordinate to sample within the pixel area
@@ -38,9 +36,7 @@ ColourHDR RayTracer::render_pixel(
         ray_dir,
         0,
         MediumState{},
-        soft_shadows,
         use_caustics,
-        sample_index,
         glm::vec3(1.0f),
         initial_seed
     );
@@ -83,7 +79,6 @@ ColourHDR RayTracer::render_pixel_dof(
     FloatType focal_distance,
     FloatType aperture_size,
     int samples,
-    bool soft_shadows,
     bool use_caustics
 ) const noexcept {
     ColourHDR accumulated_color(0.0f, 0.0f, 0.0f);
@@ -127,9 +122,7 @@ ColourHDR RayTracer::render_pixel_dof(
                                                     ray_dir,
                                                     0,
                                                     MediumState{},
-                                                    soft_shadows,
                                                     use_caustics,
-                                                    0,
                                                     glm::vec3(1.0f),
                                                     seed
                                                 );
@@ -147,9 +140,7 @@ ColourHDR RayTracer::trace_ray(
     const glm::vec3& ray_dir,
     int depth,
     const MediumState& medium,
-    bool soft_shadows,
     bool use_caustics,
-    int sample_index,
     const glm::vec3& throughput,
     std::uint32_t& rng
 ) const noexcept {
@@ -249,9 +240,7 @@ ColourHDR RayTracer::trace_ray(
                 reflected_dir,
                 depth + 1,
                 medium,
-                soft_shadows,
                 use_caustics,
-                sample_index,
                 next_tp,
                 rng
             );
@@ -282,9 +271,7 @@ ColourHDR RayTracer::trace_ray(
                 reflected_dir,
                 depth + 1,
                 medium,
-                soft_shadows,
                 use_caustics,
-                sample_index,
                 next_tp,
                 rng
             );
@@ -310,9 +297,7 @@ ColourHDR RayTracer::trace_ray(
                 refracted_dir,
                 depth + 1,
                 new_medium,
-                soft_shadows,
                 use_caustics,
-                sample_index,
                 next_tp,
                 rng
             );
@@ -474,9 +459,7 @@ ColourHDR RayTracer::trace_ray(
             reflected_dir,
             depth + 1,
             medium,
-            soft_shadows,
             use_caustics,
-            sample_index,
             compensated_tp,
             rng
         );
@@ -510,7 +493,6 @@ ColourHDR RayTracer::trace_ray(
     if (use_caustics && photon_map_ && photon_map_->is_ready()) {
         // Estimate caustic radiance at this point
         caustics_contribution = photon_map_->estimate_caustic(
-            &face,
             intersection.intersectionPoint,
             intersection.normal,
             PhotonMap::CausticSearchRadius

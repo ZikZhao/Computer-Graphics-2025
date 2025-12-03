@@ -194,7 +194,6 @@ void Renderer::process_rows(int y0, int y1) noexcept {
                         focal_distance_,
                         aperture_size_,
                         dof_samples_,
-                        true,
                         caustics_enabled_
                     );
                     pixel_accum = ColourHDR{
@@ -204,14 +203,13 @@ void Renderer::process_rows(int y0, int y1) noexcept {
                     };
                 } else {
                     // Path tracing — jittered sampling per frame for progressive refinement
-                    int sample_index = rendering_frame_count_ * (w * h) + pixel_index + s;
                     std::uint32_t base_seed =
                         static_cast<std::uint32_t>(pixel_index + rendering_frame_count_ * 123457u) |
                         1u;
                     std::uint32_t sub_seed =
                         base_seed ^ (static_cast<std::uint32_t>(s) * 0x9e3779b9u);
                     ColourHDR hdr = raytracer_->render_pixel(
-                        camera, x, y, w, h, true, caustics_enabled_, sample_index, sub_seed
+                        camera, x, y, w, h, caustics_enabled_, sub_seed
                     );
                     pixel_accum = ColourHDR{
                         .red = pixel_accum.red + hdr.red,

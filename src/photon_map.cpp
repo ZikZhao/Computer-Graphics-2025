@@ -23,7 +23,7 @@ std::size_t PhotonMap::total_photons() const noexcept {
 }
 
 std::vector<Photon> PhotonMap::query_photons(
-    const Face* face, const glm::vec3& point, FloatType radius
+    const glm::vec3& point, FloatType radius
 ) const {
     std::vector<Photon> result;
     GridCell center_cell = get_grid_cell(point);
@@ -57,10 +57,10 @@ std::vector<Photon> PhotonMap::query_photons(
 }
 
 ColourHDR PhotonMap::estimate_caustic(
-    const Face* face, const glm::vec3& point, const glm::vec3& normal, FloatType search_radius
+    const glm::vec3& point, const glm::vec3& normal, FloatType search_radius
 ) const noexcept {
     if (!is_ready()) return ColourHDR{.red = 0.0f, .green = 0.0f, .blue = 0.0f};
-    auto photons = query_photons(face, point, search_radius);
+    auto photons = query_photons(point, search_radius);
     if (photons.empty()) return ColourHDR{.red = 0.0f, .green = 0.0f, .blue = 0.0f};
     glm::vec3 accumulated_flux(0.0f);
     constexpr FloatType k = 1.1f;
@@ -184,9 +184,7 @@ void PhotonMap::trace_photons() {
                 target_center,
                 target_radius,
                 batch_index * BatchSize + total_emitted_count,  // Unique Halton index
-                photons_for_light,
-                weights[i],
-                weight_sum
+                photons_for_light
             );
             total_emitted_count += photons_for_light;
         }
@@ -223,9 +221,7 @@ void PhotonMap::emit_photon_batch(
     const glm::vec3& target_center,
     FloatType target_radius,
     std::size_t batch_start_index,
-    std::size_t batch_size,
-    FloatType weight,
-    FloatType weight_sum
+    std::size_t batch_size
 ) {
     glm::vec3 e0 = world_.all_vertices_[light_face.v_indices[1]] -
                    world_.all_vertices_[light_face.v_indices[0]];

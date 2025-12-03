@@ -76,9 +76,7 @@ public:
      * @param y Pixel y-coordinate.
      * @param width Image width.
      * @param height Image height.
-     * @param soft_shadows Enable area light sampling for soft shadows.
      * @param use_caustics Enable photon map lookup.
-     * @param sample_index Index of the current sample (for accumulation).
      * @param initial_seed Seed for RNG.
      * @return The computed color for this sample.
      */
@@ -88,9 +86,7 @@ public:
         int y,
         int width,
         int height,
-        bool soft_shadows,
         bool use_caustics = false,
-        int sample_index = 0,
         std::uint32_t initial_seed = 1u
     ) const noexcept;
 
@@ -117,7 +113,6 @@ public:
      * @param focal_distance Distance to the focal plane.
      * @param aperture_size Size of the lens aperture (radius).
      * @param samples Number of samples per pixel for DoF.
-     * @param soft_shadows Enable area light sampling.
      * @param use_caustics Enable photon map lookup.
      * @return The averaged color of the samples.
      */
@@ -130,7 +125,6 @@ public:
         FloatType focal_distance,
         FloatType aperture_size,
         int samples,
-        bool soft_shadows,
         bool use_caustics = false
     ) const noexcept;
 
@@ -142,9 +136,7 @@ private:
      * @param rd Ray direction (normalized).
      * @param depth Current recursion depth.
      * @param medium Current medium state (for absorption).
-     * @param soft_shadows Enable soft shadows.
      * @param use_caustics Enable caustics.
-     * @param sample_index Current sample index.
      * @param throughput Current path throughput (for Russian Roulette).
      * @param rng RNG state.
      * @return Radiance found along the ray.
@@ -154,9 +146,7 @@ private:
         const glm::vec3& rd,
         int depth,
         const MediumState& medium,
-        bool soft_shadows,
         bool use_caustics,
-        int sample_index,
         const glm::vec3& throughput,
         std::uint32_t& rng
     ) const noexcept;
