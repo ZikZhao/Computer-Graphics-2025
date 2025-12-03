@@ -1076,7 +1076,7 @@ void World::parse_mtl(Model& model, const std::filesystem::path& path) {
             texture_filename = (path.parent_path() / texture_filename).string();
             current_material->second.texture =
                 std::make_shared<Texture>(load_texture(texture_filename));
-        } else if (type == "map_Bump" || type == "bump" || type == "map_Kn" || type == "norm") {
+        } else if (type == "map_Bump") {
             assert(current_material != model.materials.end());
             std::string normal_filename;
             iss >> normal_filename;

@@ -50,26 +50,23 @@ Window::~Window() {
 void Window::register_key(
     const std::unordered_set<SDL_Scancode>& keys, Trigger trigger, KeyHandler handler
 ) noexcept {
-    auto now = std::chrono::steady_clock::now();
+    assert(!keys.empty());
     key_bindings_.push_back(KeyBinding{
         .keys = keys,
         .trigger = trigger,
         .handler = handler,
         .id = next_event_id_++,
-        .last_time = now,
-        .time_initialized = false
+        .last_time = std::nullopt
     });
 }
 
-void Window::register_mouse(Uint8 button, Trigger trigger, MouseHandler handler) noexcept {
-    auto now = std::chrono::steady_clock::now();
+void Window::register_mouse(std::uint8_t button, Trigger trigger, MouseHandler handler) noexcept {
     mouse_bindings_.push_back(MouseBinding{
         .button = button,
         .trigger = trigger,
         .handler = handler,
         .first_motion = true,
-        .last_time = now,
-        .time_initialized = false
+        .last_time = std::nullopt
     });
 }
 
@@ -80,7 +77,6 @@ void Window::register_scroll(ScrollHandler handler) noexcept {
 bool Window::process_events() noexcept {
     // Reset per-frame input state, then drain SDL event queue
     SDL_Event event;
-    keys_updated_this_frame_.clear();
     keys_pressed_this_frame_.clear();
     mouse_buttons_last_frame_ = mouse_buttons_this_frame_;
     mouse_buttons_updated_this_frame_.clear();
@@ -99,7 +95,6 @@ bool Window::process_events() noexcept {
             SDL_Scancode sc = event.key.keysym.scancode;
             if (sc >= 0 && sc < SDL_NUM_SCANCODES) {
                 keys_this_frame_[sc] = 1;
-                keys_updated_this_frame_.insert(sc);
                 keys_pressed_this_frame_.insert(sc);
             }
         }
@@ -107,7 +102,6 @@ bool Window::process_events() noexcept {
             SDL_Scancode sc = event.key.keysym.scancode;
             if (sc >= 0 && sc < SDL_NUM_SCANCODES) {
                 keys_this_frame_[sc] = 0;
-                keys_updated_this_frame_.insert(sc);
             }
         }
 
@@ -160,13 +154,13 @@ void Window::update() noexcept {
     clear();
 }
 
-std::uint32_t& Window::operator[](const std::pair<int, int>& xy) noexcept {
+std::uint32_t& Window::operator[](std::pair<int, int> xy) noexcept {
     std::size_t x = static_cast<std::size_t>(xy.first);
     std::size_t y = static_cast<std::size_t>(xy.second);
     return pixel_buffer_[y * width_ + x];
 }
 
-std::uint32_t Window::operator[](const std::pair<int, int>& xy) const noexcept {
+std::uint32_t Window::operator[](std::pair<int, int> xy) const noexcept {
     std::size_t x = static_cast<std::size_t>(xy.first);
     std::size_t y = static_cast<std::size_t>(xy.second);
     return pixel_buffer_[y * width_ + x];
@@ -197,30 +191,11 @@ void Window::save_bmp(const std::string& filename) const {
 void Window::process_key_bindings() noexcept {
     auto now = std::chrono::steady_clock::now();
     for (auto& binding : key_bindings_) {
-        if (binding.trigger == Trigger::ANY_PRESSED ||
-            binding.trigger == Trigger::ALL_PRESSED) {
-            // For ANY_PRESSED (non-modifier keys), block when any modifier is held
-            if (binding.trigger == Trigger::ANY_PRESSED && has_modifier_keys()) continue;
+        // Continuous trigger (ANY_PRESSED) needs delta time tracking
+        if (binding.trigger == Trigger::ANY_PRESSED) {
+            if (!check_key_trigger(binding)) continue;
 
-            bool any_down = true;
-            if (binding.trigger == Trigger::ANY_PRESSED) {
-                any_down = false;
-                for (auto k : binding.keys) {
-                    if (keys_this_frame_[k]) {
-                        any_down = true;
-                        break;
-                    }
-                }
-            } else if (binding.trigger == Trigger::ALL_PRESSED) {
-                any_down = true;
-                for (auto k : binding.keys) {
-                    if (!keys_this_frame_[k]) {
-                        any_down = false;
-                        break;
-                    }
-                }
-            }
-
+            // Check if any key was just pressed this frame
             bool just_pressed = false;
             for (auto k : binding.keys) {
                 if (keys_pressed_this_frame_.count(k)) {
@@ -228,34 +203,31 @@ void Window::process_key_bindings() noexcept {
                     break;
                 }
             }
-            if (any_down) {
-                if (just_pressed) {
-                    binding.last_time = now;
-                    binding.time_initialized = true;
-                    continue;  // do not call on initial press
-                }
-                if (!binding.time_initialized) {
-                    binding.last_time = now;
-                    binding.time_initialized = true;
-                }
-                float dt = std::chrono::duration<float>(now - binding.last_time).count();
-                binding.handler(keys_this_frame_, dt);
+
+            if (just_pressed) {
+                binding.last_time = now;
+                continue;  // do not call handler on initial press, no dt yet
+            }
+
+            if (!binding.last_time) {
                 binding.last_time = now;
             }
+
+            float dt = std::chrono::duration<float>(now - *binding.last_time).count();
+            binding.handler(keys_this_frame_, dt);
+            binding.last_time = now;
         } else {
-            if (check_key_trigger(binding)) {
-                // When handling JUST_PRESSED (or any non-continuous trigger), ensure the handler
-                // sees keys that were pressed this frame even if they are currently released (e.g.
-                // pressed and released quickly). This is critical for long render frames where
-                // input polling is sparse.
-                KeyState effective_keys = keys_this_frame_;
-                for (auto k : keys_pressed_this_frame_) {
-                    if (k >= 0 && k < SDL_NUM_SCANCODES) {
-                        effective_keys[k] = true;
-                    }
+            // One-shot triggers (ANY_JUST_PRESSED, ALL_JUST_PRESSED)
+            if (!check_key_trigger(binding)) continue;
+
+            // Ensure handler sees keys pressed this frame even if already released
+            KeyState effective_keys = keys_this_frame_;
+            for (auto k : keys_pressed_this_frame_) {
+                if (k >= 0 && k < SDL_NUM_SCANCODES) {
+                    effective_keys[k] = true;
                 }
-                binding.handler(effective_keys, 0.0f);
             }
+            binding.handler(effective_keys, 0.0f);
         }
     }
 }
@@ -274,14 +246,12 @@ void Window::process_mouse_bindings() noexcept {
             if (down) {
                 if (just_pressed) {
                     binding.last_time = now;
-                    binding.time_initialized = true;
                     binding.first_motion = false;
                 } else if (mouse_xrel_ != 0 || mouse_yrel_ != 0) {
-                    if (!binding.time_initialized) {
+                    if (!binding.last_time) {
                         binding.last_time = now;
-                        binding.time_initialized = true;
                     }
-                    float dt = std::chrono::duration<float>(now - binding.last_time).count();
+                    float dt = std::chrono::duration<float>(now - *binding.last_time).count();
                     binding.handler(mouse_xrel_, mouse_yrel_, dt);
                     binding.last_time = now;
                 }
@@ -296,33 +266,24 @@ void Window::process_mouse_bindings() noexcept {
     mouse_yrel_ = 0;
 }
 
-bool Window::has_modifier_keys() const noexcept {
+bool Window::is_modifier_key_pressed() const noexcept {
     return keys_this_frame_[SDL_SCANCODE_LCTRL] || keys_this_frame_[SDL_SCANCODE_RCTRL] ||
            keys_this_frame_[SDL_SCANCODE_LSHIFT] || keys_this_frame_[SDL_SCANCODE_RSHIFT] ||
            keys_this_frame_[SDL_SCANCODE_LALT] || keys_this_frame_[SDL_SCANCODE_RALT];
 }
 
 bool Window::check_key_trigger(const KeyBinding& binding) const noexcept {
-    if (binding.keys.empty()) return false;
-
     switch (binding.trigger) {
     case Trigger::ANY_PRESSED: {
+        if (is_modifier_key_pressed()) return false;
         for (auto key : binding.keys) {
-            if (keys_updated_this_frame_.count(key) && keys_this_frame_[key]) return true;
+            if (keys_this_frame_[key]) return true;
         }
         return false;
     }
 
-    case Trigger::ALL_PRESSED: {
-        for (auto key : binding.keys) {
-            if (!keys_this_frame_[key]) return false;
-        }
-        return true;
-    }
-
     case Trigger::ANY_JUST_PRESSED: {
-        // Block when any modifier is held (for non-modifier bindings)
-        if (has_modifier_keys()) return false;
+        if (is_modifier_key_pressed()) return false;
         for (auto key : binding.keys) {
             if (keys_pressed_this_frame_.count(key)) return true;
         }
@@ -330,8 +291,7 @@ bool Window::check_key_trigger(const KeyBinding& binding) const noexcept {
     }
 
     case Trigger::ALL_JUST_PRESSED: {
-        // For modifier combos: triggers when all keys held and at least one just pressed
-        bool exists_pressed_this_frame = false;
+        bool exists_pressed_this_frame = false; // at least one key must be just pressed
         for (auto key : binding.keys) {
             if (!(keys_this_frame_[key] || keys_pressed_this_frame_.count(key))) return false;
             if (keys_pressed_this_frame_.count(key)) exists_pressed_this_frame = true;

@@ -5,6 +5,7 @@
 #include <fstream>
 #include <functional>
 #include <iostream>
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -19,9 +20,8 @@ class Window {
 public:
     // Event trigger types
     enum class Trigger {
-        ANY_PRESSED,          // Non-modifier keys: blocked when modifiers held
-        ALL_PRESSED,          // Modifier combo: only triggers when ALL keys held (including modifiers)
-        ANY_JUST_PRESSED,     // Non-modifier keys: blocked when modifiers held
+        ANY_PRESSED,          // Non-modifier keys: blocked when modifiers pressed
+        ANY_JUST_PRESSED,     // Non-modifier keys: blocked when modifiers pressed
         ALL_JUST_PRESSED      // Modifier combo: triggers on just-pressed when ALL keys held
     };
 
@@ -36,8 +36,7 @@ private:
         Trigger trigger;
         KeyHandler handler;
         std::size_t id;
-        std::chrono::steady_clock::time_point last_time;
-        bool time_initialized = false;
+        std::optional<std::chrono::steady_clock::time_point> last_time;
     };
 
     struct MouseBinding {
@@ -45,8 +44,7 @@ private:
         Trigger trigger;
         MouseHandler handler;
         bool first_motion;
-        std::chrono::steady_clock::time_point last_time;
-        bool time_initialized = false;
+        std::optional<std::chrono::steady_clock::time_point> last_time;
     };
 
 public:
@@ -65,7 +63,6 @@ private:
 
     // Input management
     KeyState keys_this_frame_{};
-    std::unordered_set<SDL_Scancode> keys_updated_this_frame_;
     std::unordered_set<SDL_Scancode> keys_pressed_this_frame_;
     std::unordered_set<Uint8> mouse_buttons_this_frame_;
     std::unordered_set<Uint8> mouse_buttons_last_frame_;
@@ -85,8 +82,8 @@ public:
     ~Window();
 
 public:
-    [[nodiscard]] std::uint32_t& operator[](const std::pair<int, int>& xy) noexcept;
-    [[nodiscard]] std::uint32_t operator[](const std::pair<int, int>& xy) const noexcept;
+    [[nodiscard]] std::uint32_t& operator[](std::pair<int, int> xy) noexcept;
+    [[nodiscard]] std::uint32_t operator[](std::pair<int, int> xy) const noexcept;
     [[nodiscard]] const std::vector<std::uint32_t>& get_pixel_buffer() const noexcept {
         return pixel_buffer_;
     }
@@ -108,7 +105,7 @@ public:
      * @param trigger Trigger mode.
      * @param handler Callback receiving xrel, yrel, dt.
      */
-    void register_mouse(Uint8 button, Trigger trigger, MouseHandler handler) noexcept;
+    void register_mouse(std::uint8_t button, Trigger trigger, MouseHandler handler) noexcept;
 
     /**
      * @brief Registers a scroll handler.
@@ -129,6 +126,6 @@ public:
 private:
     void process_key_bindings() noexcept;
     void process_mouse_bindings() noexcept;
-    bool has_modifier_keys() const noexcept;
+    bool is_modifier_key_pressed() const noexcept;
     bool check_key_trigger(const KeyBinding& binding) const noexcept;
 };

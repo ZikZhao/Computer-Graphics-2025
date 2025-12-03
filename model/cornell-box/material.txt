@@ -1,6 +1,6 @@
 Material light
     Colour 1.000000 1.000000 1.000000
-    Emission 15 15 15
+    Emission 30 30 30
 
 Material white
     Colour 1.000000 1.000000 1.000000

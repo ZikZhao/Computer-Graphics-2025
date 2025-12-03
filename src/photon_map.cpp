@@ -303,10 +303,8 @@ void PhotonMap::normalize_photon_power(std::size_t total_emitted_count) {
     // Each photon carries: total_flux / total_emitted_count
     // Only stored photons contribute their (attenuated) power to the final image.
 
-    // Scaling factor for artistic control (adjust if too bright/dim)
-    constexpr FloatType ScalingFactor = 1.0f;
     FloatType factor =
-        (total_light_flux_ / static_cast<FloatType>(total_emitted_count)) * ScalingFactor;
+        total_light_flux_ / static_cast<FloatType>(total_emitted_count);
 
     std::cout << std::format(
         "[PhotonMap] Summary:\n"
