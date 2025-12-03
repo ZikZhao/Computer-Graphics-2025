@@ -76,7 +76,7 @@ int main(int argc, char* argv[]) {
         {SDL_SCANCODE_O},
         Window::Trigger::ANY_JUST_PRESSED,
         [&](const Window::KeyState&, float) {
-            if (!world.camera_.is_orbiting()) {
+            if (!world.camera_.is_orbiting_) {
                 world.camera_.start_orbiting();
             } else {
                 world.camera_.stop_orbiting();
@@ -220,7 +220,7 @@ int main(int argc, char* argv[]) {
             constexpr FloatType MOUSE_SENSITIVITY = 0.002f;
             FloatType dx0 = -static_cast<FloatType>(xrel) * MOUSE_SENSITIVITY;
             FloatType dy0 = static_cast<FloatType>(yrel) * MOUSE_SENSITIVITY;
-            FloatType roll = world.camera_.roll();
+            FloatType roll = world.camera_.roll_;
             FloatType c = std::cos(roll);
             FloatType s = std::sin(roll);
             FloatType d_yaw = dx0 * c + dy0 * s;
@@ -240,7 +240,7 @@ int main(int argc, char* argv[]) {
             FloatType dx0 = (ks[SDL_SCANCODE_RIGHT] ? 1.0f : 0.0f) - (ks[SDL_SCANCODE_LEFT] ? 1.0f : 0.0f);
             FloatType dy0 = (ks[SDL_SCANCODE_UP] ? 1.0f : 0.0f) - (ks[SDL_SCANCODE_DOWN] ? 1.0f : 0.0f);
             if (dx0 != 0.0f || dy0 != 0.0f) {
-                FloatType roll = world.camera_.roll();
+                FloatType roll = world.camera_.roll_;
                 FloatType c = std::cos(roll);
                 FloatType s = std::sin(roll);
                 FloatType effective_dt = video_recorder.is_recording() ? video_fixed_dt : dt;

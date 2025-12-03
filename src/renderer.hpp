@@ -78,10 +78,6 @@ private:
     std::barrier<> frame_barrier_;
     std::vector<std::jthread> workers_;
     std::atomic<int> tile_counter_ = 0;
-    const Camera* current_camera_ = nullptr;
-    glm::vec3 last_cam_pos_ = glm::vec3(0.0f);
-    FloatType last_cam_yaw_ = 0.0f;
-    FloatType last_cam_pitch_ = 0.0f;
 
 public:
     /**

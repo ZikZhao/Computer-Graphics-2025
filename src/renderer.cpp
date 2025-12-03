@@ -123,16 +123,16 @@ void Renderer::render_rasterized() noexcept {
 }
 
 void Renderer::render_raytraced() noexcept {
-    current_camera_ = &world_.camera_;
+    static glm::vec3 last_cam_pos = glm::vec3(0.0f);
+    static FloatType last_cam_yaw = 0.0f;
+    static FloatType last_cam_pitch = 0.0f;
+
     tile_counter_.store(0, std::memory_order_relaxed);
-    glm::vec3 cur_pos = current_camera_->position();
-    FloatType cur_yaw = current_camera_->yaw();
-    FloatType cur_pitch = current_camera_->pitch();
-    bool cam_changed = (glm::length(cur_pos - last_cam_pos_) > 1e-6f) ||
-                       (std::abs(cur_yaw - last_cam_yaw_) > 1e-6f) ||
-                       (std::abs(cur_pitch - last_cam_pitch_) > 1e-6f);
+    const Camera& cam = world_.camera_;
+    bool cam_changed = (glm::length(cam.position_ - last_cam_pos) > 1e-6f) ||
+                       (std::abs(cam.yaw_ - last_cam_yaw) > 1e-6f) ||
+                       (std::abs(cam.pitch_ - last_cam_pitch) > 1e-6f);
     if (cam_changed) {
-        // Camera moved — reset progressive accumulation to avoid ghosting
         reset_accumulation();
     }
     rendering_frame_count_ = frame_count_ + 1;
@@ -141,13 +141,12 @@ void Renderer::render_raytraced() noexcept {
     frame_barrier_.arrive_and_wait();  // Start signal
     frame_barrier_.arrive_and_wait();  // Completion wait
     frame_count_ = rendering_frame_count_;
-    last_cam_pos_ = cur_pos;
-    last_cam_yaw_ = cur_yaw;
-    last_cam_pitch_ = cur_pitch;
+    last_cam_pos = cam.position_;
+    last_cam_yaw = cam.yaw_;
+    last_cam_pitch = cam.pitch_;
 }
 
 void Renderer::render_dof() noexcept {
-    current_camera_ = &world_.camera_;
     tile_counter_.store(0, std::memory_order_relaxed);
     rendering_frame_count_ = frame_count_ + 1;
 
@@ -158,7 +157,7 @@ void Renderer::render_dof() noexcept {
 }
 
 void Renderer::process_rows(int y0, int y1) noexcept {
-    const Camera& camera = *current_camera_;
+    const Camera& camera = world_.camera_;
     const bool is_dof = mode_ == Mode::DEPTH_OF_FIELD;
 
     // Row-batched loop over pixels; sampling and accumulation

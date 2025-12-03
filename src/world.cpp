@@ -39,7 +39,7 @@ auto ParseIndexToken(const std::string& t) {
     return idx;
 }
 
-ColourHDR ColourHDR::from_srgb(const Colour& srgb, FloatType gamma) noexcept {
+ColourHDR ColourHDR::FromSRGB(const Colour& srgb, FloatType gamma) noexcept {
     auto to_linear = [gamma](std::uint8_t component) -> FloatType {
         FloatType normalized = component / 255.0f;
         if (gamma == 1.0f) return normalized;

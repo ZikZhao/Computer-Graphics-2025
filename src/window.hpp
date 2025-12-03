@@ -131,11 +131,11 @@ public:
      */
     void register_scroll(ScrollHandler handler) noexcept;
 
-    /** @brief Polls SDL events and dispatches registered handlers. */
+    /// @brief Polls SDL events and dispatches registered handlers. 
     bool process_events() noexcept;
-    /** @brief Uploads backbuffer to SDL texture, presents and clears buffer. */
+    /// @brief Uploads backbuffer to SDL texture, presents and clears buffer. 
     void update() noexcept;
-    /** @brief Clears the ARGB backbuffer to black. */
+    /// @brief Clears the ARGB backbuffer to black. 
     void clear() noexcept;
 
     void save_ppm(const std::string& filename) const;

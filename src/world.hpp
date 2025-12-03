@@ -49,10 +49,10 @@ struct ColourHDR {
     /**
      * @brief Converts 8-bit sRGB to linear HDR using gamma.
      * @param srgb Source colour.
-     * @param gamma Gamma exponent (1.0 = identity).
+     * @param gamma Gamma exponent (usually 2.2).
      * @return Linear HDR colour.
      */
-    static ColourHDR from_srgb(const Colour& srgb, FloatType gamma) noexcept;
+    static ColourHDR FromSRGB(const Colour& srgb, FloatType gamma) noexcept;
 
     constexpr ColourHDR operator*(FloatType scalar) const noexcept {
         return ColourHDR{.red = red * scalar, .green = green * scalar, .blue = blue * scalar};
@@ -68,10 +68,6 @@ struct ColourHDR {
         };
     }
 };
-
-struct Face;
-struct RayTriangleIntersection;
-class BVHAccelerator;  // forward declaration
 
 /**
  * @brief Lat-long HDR environment map with auto-exposure.
@@ -107,7 +103,7 @@ public:
     ) noexcept;
 
 public:
-    /** @brief Indicates whether a valid map is present. */
+    /// @brief Indicates whether a valid map is present. 
     [[nodiscard]] constexpr bool is_loaded() const noexcept { return width_ > 0 && height_ > 0; }
 
 public:
@@ -131,65 +127,38 @@ struct RayTriangleIntersection {
     FloatType v;  // Barycentric coordinate for vertex 2
 };
 
-class Texture {
+template<typename T>
+class ImageBuffer {
 private:
     std::size_t width_;
     std::size_t height_;
-    std::vector<Colour> data_;
-
+    std::vector<T> data_;
 public:
-    constexpr Texture(std::size_t w, std::size_t h, std::vector<Colour> data)
-        : width_(w), height_(h), data_(std::move(data)) {}
+    ImageBuffer(std::size_t width, std::size_t height, std::vector<T> data)
+        : width_(width), height_(height), data_(std::move(data)) {}
 
-public:
-    [[nodiscard]] constexpr Colour sample(FloatType u, FloatType v) const {
-        // Wrap UV coordinates for tiling (Repeat mode)
+    [[nodiscard]] T sample(FloatType u, FloatType v) const noexcept {
         u = u - std::floor(u);
         v = v - std::floor(v);
-        
         std::size_t ix = static_cast<std::size_t>(u * static_cast<FloatType>(width_ - 1));
         std::size_t iy = static_cast<std::size_t>(v * static_cast<FloatType>(height_ - 1));
-        // Safety check for floating point precision
         if (ix >= width_) ix = width_ - 1;
         if (iy >= height_) iy = height_ - 1;
-        
         return data_[iy * width_ + ix];
     }
+};
+
+class Texture : public ImageBuffer<Colour> {
+public:
+    using ImageBuffer<Colour>::ImageBuffer;
 };
 
 /**
  * @brief Normal map for tangent-space normal perturbation.
  */
-class NormalMap {
-private:
-    std::size_t width_;
-    std::size_t height_;
-    std::vector<glm::vec3> data_;  // Tangent-space normals (xyz remapped from [0,1] to [-1,1])
-
+class NormalMap : public ImageBuffer<glm::vec3> {
 public:
-    NormalMap(std::size_t w, std::size_t h, std::vector<glm::vec3> data)
-        : width_(w), height_(h), data_(std::move(data)) {}
-
-public:
-    /**
-     * @brief Sample the tangent-space normal at the given UV coordinates.
-     * @param u Horizontal texture coordinate [0,1].
-     * @param v Vertical texture coordinate [0,1].
-     * @return Tangent-space normal vector (normalized).
-     */
-    [[nodiscard]] glm::vec3 sample(FloatType u, FloatType v) const {
-        // Wrap UV coordinates for tiling (Repeat mode)
-        u = u - std::floor(u);
-        v = v - std::floor(v);
-        
-        std::size_t ix = static_cast<std::size_t>(u * static_cast<FloatType>(width_ - 1));
-        std::size_t iy = static_cast<std::size_t>(v * static_cast<FloatType>(height_ - 1));
-        // Safety check for floating point precision
-        if (ix >= width_) ix = width_ - 1;
-        if (iy >= height_) iy = height_ - 1;
-        
-        return data_[iy * width_ + ix];
-    }
+    using ImageBuffer<glm::vec3>::ImageBuffer;
 };
 
 struct Material {
@@ -234,7 +203,6 @@ public:
     static constexpr double NearPlane = 0.001;
     static constexpr double FarPlane = 100.0;
 
-private:
     glm::vec3 position_ = {0.0f, 0.0f, 12.0f};
     FloatType yaw_ = 0.0f;    // Horizontal rotation (around world Y axis)
     FloatType pitch_ = 0.0f;  // Vertical rotation (clamped to ±89 degrees)
@@ -248,26 +216,12 @@ public:
     [[nodiscard]] glm::vec3 right() const noexcept;
     [[nodiscard]] glm::vec3 up() const noexcept;
 
-    void set_position(const glm::vec3& pos) noexcept { position_ = pos; }
-    [[nodiscard]] glm::vec3 position() const noexcept { return position_; }
-
-    void set_yaw(FloatType y) noexcept { yaw_ = y; }
-    [[nodiscard]] FloatType yaw() const noexcept { return yaw_; }
-
-    void set_pitch(FloatType p) noexcept { pitch_ = p; }
-    [[nodiscard]] FloatType pitch() const noexcept { return pitch_; }
-
-    void set_roll(FloatType r) noexcept { roll_ = r; }
-    [[nodiscard]] FloatType roll() const noexcept { return roll_; }
-
-    [[nodiscard]] bool is_orbiting() const noexcept { return is_orbiting_; }
-
 public:
-    /** @brief Projects a world-space vertex to homogeneous clip space. */
+    /// @brief Projects a world-space vertex to homogeneous clip space. 
     [[nodiscard]] glm::vec4 world_to_clip(const glm::vec3& vertex, double aspect_ratio)
         const noexcept;
     
-    /** @brief Converts clip coordinates to NDC by dividing by w. */
+    /// @brief Converts clip coordinates to NDC by dividing by w. 
     [[nodiscard]] glm::vec3 clip_to_ndc(const glm::vec4& clip) const noexcept;
 
     void start_orbiting() noexcept;
@@ -280,12 +234,12 @@ public:
         FloatType forward_delta, FloatType right_delta, FloatType up_delta, FloatType dt
     ) noexcept;
 
-    /** @brief Generates a ray through a pixel center. */
+    /// @brief Generates a ray through a pixel center.
     [[nodiscard]] std::pair<glm::vec3, glm::vec3> generate_ray(
         int pixel_x, int pixel_y, int screen_width, int screen_height, double aspect_ratio
     ) const noexcept;
 
-    /** @brief Generates a ray from normalized UV. */
+    /// @brief Generates a ray from normalized UV.
     [[nodiscard]] std::pair<glm::vec3, glm::vec3> generate_ray_uv(
         FloatType u, FloatType v, int screen_width, int screen_height, double aspect_ratio
     ) const noexcept;
@@ -337,7 +291,7 @@ public:
     };
 
 public:
-    /// Builds a BVH from the given model data.
+    /// @brief Builds a BVH from the given model data.
     [[nodiscard]] static BVHAccelerator Build(
         const std::vector<Face>& faces,
         const std::vector<glm::vec3>& vertices,
@@ -346,7 +300,7 @@ public:
         const std::vector<glm::vec2>& texcoords
     );
 
-    /** @brief Ray–AABB test used by traversal. */
+    /// @brief Ray–AABB test used by traversal.
     [[nodiscard]] static bool IntersectAABB(
         const glm::vec3& ro, const glm::vec3& rd, const AABB& box, FloatType tmax
     ) noexcept;
