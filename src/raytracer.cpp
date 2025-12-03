@@ -124,12 +124,8 @@ ColourHDR RayTracer::trace_ray(
     const glm::vec3& throughput,
     std::uint32_t& rng
 ) const noexcept {
-    // Recursion limit: sample environment on termination
-    constexpr int ABS_MAX_DEPTH = 8;
+    constexpr int ABS_MAX_DEPTH = 64;
     if (depth >= ABS_MAX_DEPTH) {
-        if (world_.env_map_.is_loaded()) {
-            return world_.env_map_.sample(ray_dir);
-        }
         return ColourHDR{.red = 0.0f, .green = 0.0f, .blue = 0.0f};
     }
 
@@ -162,7 +158,7 @@ ColourHDR RayTracer::trace_ray(
         );
     }
 
-    // Environment mapping (miss)
+    // Environment mapping
     if (intersection.triangleIndex == static_cast<std::size_t>(-1)) {
         ColourHDR env_color;
         if (world_.env_map_.is_loaded()) {

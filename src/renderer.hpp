@@ -59,6 +59,17 @@ private:
     Window& window_;
     double aspect_ratio_;
 
+    std::unique_ptr<RayTracer> raytracer_;
+    std::unique_ptr<Rasterizer> rasterizer_;
+    std::vector<ColourHDR> hdr_buffer_;
+    std::vector<ColourHDR> accumulation_buffer_;
+
+    std::barrier<> frame_barrier_;
+    std::vector<std::jthread> workers_;
+    std::atomic<int> tile_counter_ = 0;
+    std::vector<std::pair<int, int>> hilbert_tile_order_;
+
+public:
     Mode mode_ = Mode::RASTERIZED;
     FloatType gamma_ = 2.2f;
     bool caustics_enabled_ = false;
@@ -69,15 +80,6 @@ private:
     bool offline_render_mode_ = false;
     int frame_count_ = 0;
     int rendering_frame_count_ = 0;
-
-    std::unique_ptr<RayTracer> raytracer_;
-    std::unique_ptr<Rasterizer> rasterizer_;
-    std::vector<ColourHDR> hdr_buffer_;
-    std::vector<ColourHDR> accumulation_buffer_;
-
-    std::barrier<> frame_barrier_;
-    std::vector<std::jthread> workers_;
-    std::atomic<int> tile_counter_ = 0;
 
 public:
     /**
@@ -92,31 +94,11 @@ public:
     ~Renderer();
 
 public:
-    void set_mode(Mode m) noexcept { mode_ = m; }
-
-    [[nodiscard]] FloatType gamma() const noexcept { return gamma_; }
-    void set_gamma(FloatType g) noexcept { gamma_ = g; }
-
-    [[nodiscard]] bool caustics_enabled() const noexcept { return caustics_enabled_; }
-    void set_caustics_enabled(bool e) noexcept { caustics_enabled_ = e; }
-
-    [[nodiscard]] bool normal_debug_mode() const noexcept { return normal_debug_mode_; }
-    void set_normal_debug_mode(bool e) noexcept { normal_debug_mode_ = e; }
+    void set_mode(Mode mode) noexcept { mode_ = mode; }
 
     [[nodiscard]] bool is_photon_map_ready() const noexcept {
         return raytracer_ && raytracer_->is_photon_map_ready();
     }
-
-    [[nodiscard]] const PhotonMap& photon_map() const noexcept { return raytracer_->photon_map(); }
-
-    [[nodiscard]] FloatType focal_distance() const noexcept { return focal_distance_; }
-    void set_focal_distance(FloatType d) noexcept { focal_distance_ = d; }
-
-    [[nodiscard]] FloatType aperture_size() const noexcept { return aperture_size_; }
-    void set_aperture_size(FloatType size) noexcept { aperture_size_ = size; }
-
-    [[nodiscard]] bool offline_render_mode() const noexcept { return offline_render_mode_; }
-    void toggle_offline_render_mode() noexcept { offline_render_mode_ = !offline_render_mode_; }
 
 public:
     void render() noexcept;
@@ -146,4 +128,11 @@ private:
      * @param tile_y Tile Y index.
      */
     void process_tile(int tile_x, int tile_y) noexcept;
+    
+    /**
+     * @brief Generates Hilbert curve tile ordering for cache-friendly traversal.
+     * @param tiles_x Number of tiles in X direction.
+     * @param tiles_y Number of tiles in Y direction.
+     */
+    void generate_hilbert_order(int tiles_x, int tiles_y) noexcept;
 };

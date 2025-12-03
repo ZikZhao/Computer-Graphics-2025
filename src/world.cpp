@@ -368,9 +368,7 @@ BVHAccelerator BVHAccelerator::Build(
             return node_index;
         }
         auto mid_iter = std::partition(
-            bvh.tri_indices_.begin() + start,
-            bvh.tri_indices_.begin() + end,
-            [&](int idx) {
+            bvh.tri_indices_.begin() + start, bvh.tri_indices_.begin() + end, [&](int idx) {
                 FloatType centroid = data[idx].c[best_axis];
                 int bucket_idx = static_cast<int>(
                     sah_buckets * ((centroid - cbox.min[best_axis]) / extent[best_axis])
@@ -629,34 +627,39 @@ World::World(const std::vector<std::string>& filenames) {
     // Scene ingestion: load HDR environment, OBJ models or text scenes; then merge into a single
     // geometry store
     for (const auto& filename : filenames) {
-        std::string ext = std::filesystem::path(filename).extension().string();
-        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        std::filesystem::path path(filename);
+        if (std::filesystem::is_directory(path)) {
+            throw std::runtime_error("File does not exist: " + filename);
+        }
+        std::string ext = path.extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) {
+            return std::tolower(c);
+        });
 
         if (ext == ".hdr") {
-            load_hdr_env_map(filename);
+            load_hdr_env_map(path);
         } else if (ext == ".txt") {
             // Text scene
-            Model group;
-            parse_txt(group, filename);
-            models_.emplace_back(std::move(group));
-        } else {
+            Model model;
+            parse_txt(model, path);
+            models_.emplace_back(std::move(model));
+        } else if (ext == ".obj") {
             // Standard OBJ model
-            Model group;
-            parse_obj(group, filename);
-            models_.emplace_back(std::move(group));
+            Model model;
+            parse_obj(model, path);
+            models_.emplace_back(std::move(model));
+        } else {
+            throw std::runtime_error("Unsupported file format: " + filename);
         }
     }
     merge_models();
 }
 
-void World::parse_obj(Model& model, const std::string& filename) {
-    // OBJ loader: parse geometry, materials and per-object settings
-    // Stream the file and dispatch each directive to update the Model
+void World::parse_obj(Model& model, const std::filesystem::path& path) {
     auto current_obj = model.objects.end();
-    std::ifstream file(filename);
-    if (!file.is_open()) {
-        throw std::runtime_error("Could not open file: " + filename);
-    }
+    std::ifstream file(path);
+    if (!file.is_open()) throw std::runtime_error("Could not open file: " + path.string());
+
     std::string line;
     while (std::getline(file, line)) {
         std::istringstream iss(line);
@@ -667,7 +670,7 @@ void World::parse_obj(Model& model, const std::string& filename) {
             std::string relative_path;
             iss >> relative_path;
             std::string material_filename =
-                (std::filesystem::path(filename).parent_path() / relative_path).string();
+                (std::filesystem::path(path).parent_path() / relative_path).string();
             parse_mtl(model, std::move(material_filename));
         } else if (type == "o") {
             // Object boundary — new mesh group with its own material/shading state
@@ -768,18 +771,16 @@ void World::parse_obj(Model& model, const std::string& filename) {
             current_obj->faces.emplace_back(std::move(new_face));
         }
     }
-    // Finalize — compute geometric face normals and cache faces per model
+
     compute_model_normals(model);
     flatten_model_faces(model);
 }
 
-void World::parse_txt(Model& model, const std::string& filename) {
-    // Text scene loader: environment directive, materials, object blocks and embedded geometry
+void World::parse_txt(Model& model, const std::filesystem::path& path) {
     auto current_obj = model.objects.end();
-    std::ifstream file(filename);
-    if (!file.is_open()) {
-        throw std::runtime_error("Could not open file: " + filename);
-    }
+    std::ifstream file(path);
+    if (!file.is_open()) throw std::runtime_error("Could not open file: " + path.string());
+
     std::string line;
     auto current_material = model.materials.end();
     int vertex_offset = 0;
@@ -790,18 +791,17 @@ void World::parse_txt(Model& model, const std::string& filename) {
         std::string type;
         iss >> type;
         if (type == "Environ") {
-            // Environment map hint (handled at World level)
+            // Environment map HDR file
             std::string hdr;
             iss >> hdr;
-            std::string hdr_path = (std::filesystem::path(filename).parent_path() / hdr).string();
+            std::string hdr_path = (std::filesystem::path(path).parent_path() / hdr).string();
             load_hdr_env_map(hdr_path);
         } else if (type == "Include") {
-            // Include another scene file (relative path)
+            // Include another scene file
             std::string rel;
             iss >> rel;
             if (!rel.empty()) {
-                std::string inc_path =
-                    (std::filesystem::path(filename).parent_path() / rel).string();
+                std::string inc_path = (std::filesystem::path(path).parent_path() / rel).string();
                 parse_txt(model, inc_path);
             }
         } else if (type == "Material") {
@@ -817,14 +817,14 @@ void World::parse_txt(Model& model, const std::string& filename) {
                 current_material->second.base_color = glm::vec3(r, g, b);
             }
         } else if (type == "Metallic") {
-            // Metallic factor for specular reflection weighting
+            // Metallic factor for specular reflection weighting [0,1]
             if (current_material != model.materials.end()) {
                 FloatType m;
                 iss >> m;
                 current_material->second.metallic = std::clamp(m, 0.0f, 1.0f);
             }
         } else if (type == "IOR") {
-            // Index of refraction for dielectrics
+            // Index of refraction for dielectrics (>= 1.0)
             if (current_material != model.materials.end()) {
                 FloatType i;
                 iss >> i;
@@ -838,14 +838,14 @@ void World::parse_txt(Model& model, const std::string& filename) {
                 current_material->second.td = std::max(0.0f, td);
             }
         } else if (type == "TransmissionWeight") {
-            // Transmission weight tw for mixing reflection/refraction
+            // Transmission weight for mixing reflection/refraction
             if (current_material != model.materials.end()) {
                 FloatType tw;
                 iss >> tw;
                 current_material->second.tw = std::clamp(tw, 0.0f, 1.0f);
             }
         } else if (type == "Emission") {
-            // Emissive color (area lights)
+            // Emissive colour
             if (current_material != model.materials.end()) {
                 FloatType r, g, b;
                 iss >> r >> g >> b;
@@ -858,7 +858,7 @@ void World::parse_txt(Model& model, const std::string& filename) {
                 std::string tex_name;
                 iss >> tex_name;
                 std::string texture_filename =
-                    (std::filesystem::path(filename).parent_path() / tex_name).string();
+                    (std::filesystem::path(path).parent_path() / tex_name).string();
                 current_material->second.texture =
                     std::make_shared<Texture>(load_texture(texture_filename));
             }
@@ -868,7 +868,7 @@ void World::parse_txt(Model& model, const std::string& filename) {
                 std::string normal_name;
                 iss >> normal_name;
                 std::string normal_filename =
-                    (std::filesystem::path(filename).parent_path() / normal_name).string();
+                    (std::filesystem::path(path).parent_path() / normal_name).string();
                 current_material->second.normal_map =
                     std::make_shared<NormalMap>(load_normal_map(normal_filename));
             }
@@ -887,7 +887,7 @@ void World::parse_txt(Model& model, const std::string& filename) {
             tex_offset = static_cast<int>(model.texture_coords.size());
             normal_offset = static_cast<int>(model.vertex_normals.size());
         } else if (type == "Use") {
-            // Assign current material to the object (preserving shading)
+            // Assign current material to the object
             if (current_obj != model.objects.end()) {
                 std::string mat_name;
                 iss >> mat_name;
@@ -899,7 +899,7 @@ void World::parse_txt(Model& model, const std::string& filename) {
                 }
             }
         } else if (type == "Shading") {
-            // Select shading model
+            // Select shading method (Flat/Gouraud/Phong)
             if (current_obj != model.objects.end()) {
                 std::string mode;
                 iss >> mode;
@@ -941,7 +941,7 @@ void World::parse_txt(Model& model, const std::string& filename) {
             iss >> x >> y >> z;
             model.vertex_normals.emplace_back(glm::normalize(glm::vec3(x, y, z)));
         } else if (type == "Face") {
-            // Triangle face — parse tokenized indices allowing local offsets, build a Face
+            // Triangle face — parse indices (v/vt/vn) and create Face with material
             if (current_obj == model.objects.end()) continue;
             std::string tok[3];
             iss >> tok[0] >> tok[1] >> tok[2];
@@ -1012,14 +1012,11 @@ void World::parse_txt(Model& model, const std::string& filename) {
     flatten_model_faces(model);
 }
 
-void World::parse_mtl(Model& model, const std::string& filename) {
-    // MTL loader: populate material table (albedo, shininess, metallic, IOR, transmission,
-    // absorption, emission, textures)
+void World::parse_mtl(Model& model, const std::filesystem::path& path) {
     auto current_material = model.materials.end();
-    std::ifstream file(filename);
-    if (!file.is_open()) {
-        throw std::runtime_error("Could not open material file: " + filename);
-    }
+    std::ifstream file(path);
+    if (!file.is_open()) throw std::runtime_error("Could not open material file: " + path.string());
+
     std::string line;
     while (std::getline(file, line)) {
         std::istringstream iss(line);
@@ -1076,31 +1073,23 @@ void World::parse_mtl(Model& model, const std::string& filename) {
             assert(current_material != model.materials.end());
             std::string texture_filename;
             iss >> texture_filename;
-            texture_filename =
-                (std::filesystem::path(filename).parent_path() / texture_filename).string();
+            texture_filename = (path.parent_path() / texture_filename).string();
             current_material->second.texture =
                 std::make_shared<Texture>(load_texture(texture_filename));
         } else if (type == "map_Bump" || type == "bump" || type == "map_Kn" || type == "norm") {
-            // Normal map: supports map_Bump, bump, map_Kn (custom), and norm keywords
             assert(current_material != model.materials.end());
             std::string normal_filename;
             iss >> normal_filename;
-            // Handle optional -bm flag for bump multiplier (ignored for now)
-            if (normal_filename == "-bm") {
-                FloatType bm;
-                iss >> bm >> normal_filename;  // Skip multiplier, get actual filename
-            }
-            normal_filename =
-                (std::filesystem::path(filename).parent_path() / normal_filename).string();
+            normal_filename = (path.parent_path() / normal_filename).string();
             current_material->second.normal_map =
                 std::make_shared<NormalMap>(load_normal_map(normal_filename));
         }
     }
 }
 
-void World::load_hdr_env_map(const std::string& filename) {
+void World::load_hdr_env_map(const std::filesystem::path& path) {
     int width, height, channels;
-    float* data = stbi_loadf(filename.c_str(), &width, &height, &channels, 3);
+    float* data = stbi_loadf(path.string().c_str(), &width, &height, &channels, 3);
 
     if (data) {
         std::vector<ColourHDR> hdr_data;
@@ -1115,22 +1104,18 @@ void World::load_hdr_env_map(const std::string& filename) {
         FloatType auto_intensity = EnvironmentMap::ComputeAutoExposure(hdr_data);
         env_map_ = EnvironmentMap(width, height, std::move(hdr_data), auto_intensity);
     } else {
-        throw std::runtime_error("Failed to load HDR environment map: " + filename);
+        throw std::runtime_error("Failed to load HDR environment map: " + path.string());
     }
 }
 
-Texture World::load_texture(const std::string& filename) {
-    // PPM (P6) loader: parse header, dimensions and raw RGB data into a Texture
-    std::ifstream file(filename, std::ifstream::binary);
-    if (!file.is_open()) {
-        throw std::runtime_error("Could not open texture file: " + filename);
-    }
+Texture World::load_texture(const std::filesystem::path& path) {
+    std::ifstream file(path, std::ifstream::binary);
+    if (!file.is_open()) throw std::runtime_error("Could not open texture file: " + path.string());
 
     std::string magic_number;
     std::getline(file, magic_number);
-    if (magic_number != "P6") {
-        throw std::runtime_error("Invalid PPM format (expected P6): " + filename);
-    }
+    if (magic_number != "P6")
+        throw std::runtime_error("Invalid PPM format (expected P6): " + path.string());
 
     std::string line;
     std::getline(file, line);
@@ -1140,9 +1125,8 @@ Texture World::load_texture(const std::string& filename) {
 
     std::istringstream size_stream(line);
     std::size_t width, height;
-    if (!(size_stream >> width >> height)) {
-        throw std::runtime_error("Failed to parse texture dimensions: " + filename);
-    }
+    if (!(size_stream >> width >> height))
+        throw std::runtime_error("Failed to parse texture dimensions: " + path.string());
 
     std::getline(file, line);
 
@@ -1152,9 +1136,8 @@ Texture World::load_texture(const std::string& filename) {
         int red = file.get();
         int green = file.get();
         int blue = file.get();
-        if (red == EOF || green == EOF || blue == EOF) {
-            throw std::runtime_error("Unexpected end of file while reading texture: " + filename);
-        }
+        if (red == EOF || green == EOF || blue == EOF)
+            throw std::runtime_error("Unexpected end of file while reading texture: " + path.string());
         texture_data[i] = Colour{
             .red = static_cast<std::uint8_t>(red),
             .green = static_cast<std::uint8_t>(green),
@@ -1164,31 +1147,25 @@ Texture World::load_texture(const std::string& filename) {
     return Texture(width, height, std::move(texture_data));
 }
 
-NormalMap World::load_normal_map(const std::string& filename) {
-    // PPM (P6) loader for normal maps: parse header, dimensions and convert RGB to tangent-space
-    // normals
-    std::ifstream file(filename, std::ifstream::binary);
-    if (!file.is_open()) {
-        throw std::runtime_error("Could not open normal map file: " + filename);
-    }
+NormalMap World::load_normal_map(const std::filesystem::path& path) {
+    std::ifstream file(path, std::ifstream::binary);
+    if (!file.is_open())
+        throw std::runtime_error("Could not open normal map file: " + path.string());
 
     std::string magic_number;
     std::getline(file, magic_number);
-    if (magic_number != "P6") {
-        throw std::runtime_error("Invalid PPM format (expected P6): " + filename);
-    }
+    if (magic_number != "P6")
+        throw std::runtime_error("Invalid PPM format (expected P6): " + path.string());
 
     std::string line;
     std::getline(file, line);
-    while (!line.empty() && line[0] == '#') {
+    while (!line.empty() && line[0] == '#')
         std::getline(file, line);
-    }
 
     std::istringstream size_stream(line);
     std::size_t width, height;
-    if (!(size_stream >> width >> height)) {
-        throw std::runtime_error("Failed to parse normal map dimensions: " + filename);
-    }
+    if (!(size_stream >> width >> height))
+        throw std::runtime_error("Failed to parse normal map dimensions: " + path.string());
 
     std::getline(file, line);
 
@@ -1199,21 +1176,22 @@ NormalMap World::load_normal_map(const std::string& filename) {
         int red = file.get();
         int green = file.get();
         int blue = file.get();
-        if (red == EOF || green == EOF || blue == EOF) {
+        if (red == EOF || green == EOF || blue == EOF)
             throw std::runtime_error(
-                "Unexpected end of file while reading normal map: " + filename
+                "Unexpected end of file while reading normal map: " + path.string()
             );
-        }
+
         // Apply inverse gamma correction (sRGB to linear) before converting to tangent-space normal
-        // Normal maps are often stored in sRGB, so we need to convert back to linear space
         FloatType r_linear = std::pow(static_cast<FloatType>(red) / 255.0f, gamma);
         FloatType g_linear = std::pow(static_cast<FloatType>(green) / 255.0f, gamma);
         FloatType b_linear = std::pow(static_cast<FloatType>(blue) / 255.0f, gamma);
+
         // Convert from [0, 1] to [-1, 1] for tangent-space normal
         FloatType nx = r_linear * 2.0f - 1.0f;
         FloatType ny = g_linear * 2.0f - 1.0f;
         FloatType nz = b_linear * 2.0f - 1.0f;
-        // Note: No Y-flip needed if TBN is constructed correctly for OpenGL convention
+
+        // OpenGL convention
         normal_data[i] = glm::normalize(glm::vec3(nx, ny, nz));
     }
     return NormalMap(width, height, std::move(normal_data));
@@ -1222,12 +1200,14 @@ NormalMap World::load_normal_map(const std::string& filename) {
 void World::flatten_model_faces(Model& model) {
     // Flatten per-object faces into a contiguous array for fast traversal and BVH build
     model.all_faces.clear();
-    model.all_faces.reserve(std::accumulate(
-        model.objects.begin(),
-        model.objects.end(),
-        std::size_t(0),
-        [](std::size_t sum, const Object& obj) { return sum + obj.faces.size(); }
-    ));
+    model.all_faces.reserve(
+        std::accumulate(
+            model.objects.begin(),
+            model.objects.end(),
+            std::size_t(0),
+            [](std::size_t sum, const Object& obj) { return sum + obj.faces.size(); }
+        )
+    );
 
     for (const auto& object : model.objects) {
         model.all_faces.insert(model.all_faces.end(), object.faces.begin(), object.faces.end());

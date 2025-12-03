@@ -370,14 +370,22 @@ public:
     World(const std::vector<std::string>& filenames);
 
 private:
-    void parse_obj(Model& model, const std::string& filename);
-    void parse_mtl(Model& model, const std::string& filename);
-    void parse_txt(Model& model, const std::string& filename);
+    void parse_obj(Model& model, const std::filesystem::path& path);
+    void parse_mtl(Model& model, const std::filesystem::path& path);
 
-    void load_hdr_env_map(const std::string& filename);
-    Texture load_texture(const std::string& filename);
-    NormalMap load_normal_map(const std::string& filename);
+    /**
+     * @brief Parses a text scene description file.
+     * @param model Model to populate.
+     * @param filename Path to the text file.
+     * 
+     * @note The text file can reference other files using relative paths.
+     */
+    void parse_txt(Model& model, const std::filesystem::path& path);
 
+    void load_hdr_env_map(const std::filesystem::path& path);
+    Texture load_texture(const std::filesystem::path& path);
+    NormalMap load_normal_map(const std::filesystem::path& path);
+    
     void compute_model_normals(Model& model);
     void flatten_model_faces(Model& model);
 

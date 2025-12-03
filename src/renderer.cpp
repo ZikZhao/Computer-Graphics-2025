@@ -1,6 +1,7 @@
 #include "renderer.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <iostream>
 
 Colour Renderer::TonemapAndGammaCorrect(const ColourHDR& hdr, FloatType gamma) noexcept {
@@ -38,6 +39,11 @@ Renderer::Renderer(const World& world, Window& window)
     raytracer_ = std::make_unique<RayTracer>(world);
     rasterizer_ = std::make_unique<Rasterizer>(window);
 
+    // Pre-generate Hilbert curve tile ordering for cache-friendly traversal
+    const int tiles_x = (static_cast<int>(window.width_) + TileSize - 1) / TileSize;
+    const int tiles_y = (static_cast<int>(window.height_) + TileSize - 1) / TileSize;
+    generate_hilbert_order(tiles_x, tiles_y);
+
     // Launch worker threads for tiled rendering; barrier synchronizes frame boundaries
     for (unsigned int i = 0; i < std::thread::hardware_concurrency(); ++i) {
         workers_.emplace_back([this](std::stop_token st) { this->worker_thread(st); });
@@ -57,7 +63,6 @@ void Renderer::render() noexcept {
         reset_accumulation();
     }
 
-    // Dispatch to selected rendering mode
     switch (mode_) {
     case Mode::WIREFRAME:
         clear();
@@ -77,23 +82,6 @@ void Renderer::render() noexcept {
         render_photon_cloud();
         break;
     }
-
-    // FPS counter
-    static std::uint32_t fps = 0;
-    static auto last_print = std::chrono::steady_clock::now();
-
-    fps++;
-    auto now = std::chrono::steady_clock::now();
-    std::chrono::duration<double> elapsed = now - last_print;
-    if (elapsed >= std::chrono::seconds(1)) {
-        std::cout << std::format(
-            "[Renderer] FPS: {:#.3g} | Avg Frame Time: {:#.4g} ms\n",
-            static_cast<double>(fps) / elapsed.count(),
-            elapsed.count() / static_cast<double>(fps) * 1000.0
-        );
-        fps = 0;
-        last_print = now;
-    }
 }
 
 void Renderer::reset_accumulation() noexcept {
@@ -112,10 +100,7 @@ void Renderer::render_wireframe() noexcept {
 
 void Renderer::render_rasterized() noexcept {
     rasterizer_->rasterized(
-        world_.camera_,
-        world_.all_faces_,
-        world_.all_vertices_,
-        world_.all_texcoords_
+        world_.camera_, world_.all_faces_, world_.all_vertices_, world_.all_texcoords_
     );
 }
 
@@ -160,12 +145,12 @@ void Renderer::process_tile(int tile_x, int tile_y) noexcept {
     // 32x32 block scheduling for better cache locality
     const int w = static_cast<int>(window_.width_);
     const int h = static_cast<int>(window_.height_);
-    
+
     int x0 = tile_x * TileSize;
     int y0 = tile_y * TileSize;
     int x1 = std::min(x0 + TileSize, w);
     int y1 = std::min(y0 + TileSize, h);
-    
+
     for (int y = y0; y < y1; ++y) {
         for (int x = x0; x < x1; ++x) {
             int pixel_index = y * w + x;
@@ -173,8 +158,7 @@ void Renderer::process_tile(int tile_x, int tile_y) noexcept {
             // Normal debug mode: simple single-sample rendering
             if (normal_debug_mode_) {
                 ColourHDR hdr = raytracer_->render_pixel_normal(camera, x, y, w, h);
-                std::size_t idx =
-                    static_cast<std::size_t>(y) * w + static_cast<std::size_t>(x);
+                std::size_t idx = static_cast<std::size_t>(y) * w + static_cast<std::size_t>(x);
                 accumulation_buffer_[idx] = hdr;
                 Colour c = TonemapAndGammaCorrect(hdr, gamma_);
                 window_[{x, y}] = c;
@@ -225,8 +209,7 @@ void Renderer::process_tile(int tile_x, int tile_y) noexcept {
                 pixel_accum.green / static_cast<FloatType>(samples_to_run),
                 pixel_accum.blue / static_cast<FloatType>(samples_to_run)
             };
-            std::size_t idx =
-                static_cast<std::size_t>(y) * w + static_cast<std::size_t>(x);
+            std::size_t idx = static_cast<std::size_t>(y) * w + static_cast<std::size_t>(x);
             // Update accumulation buffer
             if (offline_render_mode_) {
                 accumulation_buffer_[idx] = final_hdr_avg;
@@ -260,20 +243,14 @@ void Renderer::worker_thread(std::stop_token st) noexcept {
         frame_barrier_.arrive_and_wait();
         if (st.stop_requested()) break;
 
-        // Process tiles until all are done (32x32 block scheduling for cache locality)
-        const int width = static_cast<int>(window_.width_);
-        const int height = static_cast<int>(window_.height_);
-        const int tiles_x = (width + TileSize - 1) / TileSize;
-        const int tiles_y = (height + TileSize - 1) / TileSize;
-        const int num_tiles = tiles_x * tiles_y;
+        // Process tiles using Hilbert curve ordering for better cache locality
+        const int num_tiles = static_cast<int>(hilbert_tile_order_.size());
         while (true) {
             int tile_idx = tile_counter_.fetch_add(1, std::memory_order_relaxed);
             if (tile_idx >= num_tiles) break;
 
-            int tile_x = tile_idx % tiles_x;
-            int tile_y = tile_idx / tiles_x;
+            auto [tile_x, tile_y] = hilbert_tile_order_[tile_idx];
             process_tile(tile_x, tile_y);
-            if (st.stop_requested()) break;
         }
 
         // Signal frame completion
@@ -291,7 +268,7 @@ void Renderer::render_photon_cloud() noexcept {
         }
     }
 
-    const PhotonMap& pm = photon_map();
+    const PhotonMap& pm = raytracer_->photon_map();
     if (!pm.is_ready()) return;
 
     pm.for_each_photon([&](const Photon& photon) {
@@ -299,15 +276,12 @@ void Renderer::render_photon_cloud() noexcept {
         if (clip.w <= 0.0f) return;
         glm::vec3 ndc = world_.camera_.clip_to_ndc(clip);
         if (ndc.x < -1.0f || ndc.x > 1.0f || ndc.y < -1.0f || ndc.y > 1.0f || ndc.z < 0.0f ||
-            ndc.z > 1.0f) {
+            ndc.z > 1.0f)
             return;
-        }
 
         int screen_x = static_cast<int>((ndc.x + 1.0f) * 0.5f * static_cast<FloatType>(width));
         int screen_y = static_cast<int>((1.0f - ndc.y) * 0.5f * static_cast<FloatType>(height));
-        if (screen_x < 0 || screen_x >= width || screen_y < 0 || screen_y >= height) {
-            return;
-        }
+        if (screen_x < 0 || screen_x >= width || screen_y < 0 || screen_y >= height) return;
 
         // Compute brightness from photon power (with exposure boost for visibility)
         constexpr FloatType exposure = 10000.0f;  // Boost to make photons visible
@@ -328,8 +302,8 @@ void Renderer::render_photon_cloud() noexcept {
         };
 
         // Draw a 2x2 block for better visibility
-        for (int dy = 0; dy < 2; ++dy) {
-            for (int dx = 0; dx < 2; ++dx) {
+        for (int dy = 0; dy < 2; dy++) {
+            for (int dx = 0; dx < 2; dx++) {
                 int px = screen_x + dx;
                 int py = screen_y + dy;
                 if (px >= 0 && px < width && py >= 0 && py < height) {
@@ -338,4 +312,43 @@ void Renderer::render_photon_cloud() noexcept {
             }
         }
     });
+}
+
+[[nodiscard]] glm::ivec2 hilbert_index_to_coord(int n, int d) noexcept {
+    glm::ivec2 pos(0);
+
+    for (int s = 1; s < n; s *= 2) {
+        const int rx = 1 & (d / 2);
+        const int ry = 1 & (d ^ rx);
+
+        if (ry == 0) {
+            if (rx == 1) {
+                pos = glm::ivec2(s - 1) - pos;
+            }
+            std::swap(pos.x, pos.y);
+        }
+
+        pos += glm::ivec2(rx, ry) * s;
+        d /= 4;
+    }
+    return pos;
+}
+
+void Renderer::generate_hilbert_order(int tiles_x, int tiles_y) noexcept {
+    assert(hilbert_tile_order_.empty());
+    hilbert_tile_order_.reserve(tiles_x * tiles_y);
+
+    const int max_dim = std::max(tiles_x, tiles_y);
+    const int n = static_cast<int>(std::bit_ceil(static_cast<unsigned int>(max_dim)));
+
+    const int total_cells = n * n;
+
+    for (int d = 0; d < total_cells; ++d) {
+        const glm::ivec2 pos = hilbert_index_to_coord(n, d);
+        if (pos.x < tiles_x && pos.y < tiles_y) {
+            hilbert_tile_order_.emplace_back(pos.x, pos.y);
+        }
+    }
+
+    hilbert_tile_order_.shrink_to_fit();
 }

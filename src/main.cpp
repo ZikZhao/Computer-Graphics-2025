@@ -33,6 +33,9 @@ int main(int argc, char* argv[]) {
     Renderer renderer(world, window);
     VideoRecorder video_recorder(window.get_pixel_buffer(), WindowWidth, WindowHeight);
 
+    std::uint32_t fps = 0;
+    auto last_print = std::chrono::steady_clock::now();
+
     // Centralized input callbacks: movement and UI toggles
     window.register_key(
         {SDL_SCANCODE_W,
@@ -76,9 +79,7 @@ int main(int argc, char* argv[]) {
     );
 
     window.register_key(
-        {SDL_SCANCODE_O},
-        Window::Trigger::ANY_JUST_PRESSED,
-        [&](const Window::KeyState&, float) {
+        {SDL_SCANCODE_O}, Window::Trigger::ANY_JUST_PRESSED, [&](const Window::KeyState&, float) {
             if (!world.camera_.is_orbiting_) {
                 world.camera_.start_orbiting();
             } else {
@@ -92,44 +93,45 @@ int main(int argc, char* argv[]) {
         {SDL_SCANCODE_1, SDL_SCANCODE_2, SDL_SCANCODE_3, SDL_SCANCODE_4, SDL_SCANCODE_0},
         Window::Trigger::ANY_JUST_PRESSED,
         [&](const Window::KeyState& ks, float) {
+            using enum Renderer::Mode;
             std::string_view mode_name;
+            bool switched = false;
             if (ks[SDL_SCANCODE_1]) {
-                renderer.set_mode(Renderer::Mode::WIREFRAME);
+                switched = WIREFRAME != std::exchange(renderer.mode_, WIREFRAME);
                 mode_name = "WIREFRAME";
             } else if (ks[SDL_SCANCODE_2]) {
-                renderer.set_mode(Renderer::Mode::RASTERIZED);
+                switched = RASTERIZED != std::exchange(renderer.mode_, RASTERIZED);
                 mode_name = "RASTERIZED";
             } else if (ks[SDL_SCANCODE_3]) {
-                renderer.set_mode(Renderer::Mode::RAYTRACED);
+                switched = RAYTRACED != std::exchange(renderer.mode_, RAYTRACED);
                 mode_name = "RAYTRACED";
             } else if (ks[SDL_SCANCODE_4]) {
-                renderer.set_mode(Renderer::Mode::DEPTH_OF_FIELD);
+                switched = DEPTH_OF_FIELD != std::exchange(renderer.mode_, DEPTH_OF_FIELD);
                 mode_name = "DEPTH_OF_FIELD";
             } else if (ks[SDL_SCANCODE_0]) {
-                renderer.set_mode(Renderer::Mode::PHOTON_VISUALIZATION);
+                switched =
+                    PHOTON_VISUALIZATION != std::exchange(renderer.mode_, PHOTON_VISUALIZATION);
                 mode_name = "PHOTON_VISUALIZATION";
             }
+            if (!switched) return;
             renderer.reset_accumulation();
+            fps = 0;
+            last_print = std::chrono::steady_clock::now();
             std::cout << std::format("[Renderer] Mode set to {}\n", mode_name);
         }
     );
 
     window.register_key(
-        {SDL_SCANCODE_G},
-        Window::Trigger::ANY_JUST_PRESSED,
-        [&](const Window::KeyState&, float) {
-            renderer.set_gamma((renderer.gamma() == 2.2f) ? 1.0f : 2.2f);
+        {SDL_SCANCODE_G}, Window::Trigger::ANY_JUST_PRESSED, [&](const Window::KeyState&, float) {
+            renderer.gamma_ = (renderer.gamma_ == 2.2f) ? 1.0f : 2.2f;
         }
     );
     window.register_key(
-        {SDL_SCANCODE_P},
-        Window::Trigger::ANY_JUST_PRESSED,
-        [&](const Window::KeyState&, float) {
+        {SDL_SCANCODE_P}, Window::Trigger::ANY_JUST_PRESSED, [&](const Window::KeyState&, float) {
             if (renderer.is_photon_map_ready()) {
-                renderer.set_caustics_enabled(!renderer.caustics_enabled());
+                renderer.caustics_enabled_ = !renderer.caustics_enabled_;
                 std::cout << std::format(
-                    "[PhotonMap] Caustics {}\n",
-                    (renderer.caustics_enabled() ? "ENABLED" : "DISABLED")
+                    "[PhotonMap] Caustics Enabled: {}\n", renderer.caustics_enabled_
                 );
                 renderer.reset_accumulation();
             } else {
@@ -143,26 +145,15 @@ int main(int argc, char* argv[]) {
         {SDL_SCANCODE_EQUALS, SDL_SCANCODE_MINUS},
         Window::Trigger::ANY_PRESSED_NO_MODIFIER,
         [&](const Window::KeyState& ks, float) {
-            FloatType current_aperture = renderer.aperture_size();
             constexpr FloatType step = 0.01f;
-            FloatType new_aperture = current_aperture;
+            FloatType& aperture = renderer.aperture_size_;
 
-            if (ks[SDL_SCANCODE_EQUALS]) {
-                new_aperture += step;
-            }
-            if (ks[SDL_SCANCODE_MINUS]) {
-                new_aperture -= step;
-            }
+            if (ks[SDL_SCANCODE_EQUALS]) aperture += step;
+            if (ks[SDL_SCANCODE_MINUS]) aperture -= step;
+            aperture = std::clamp(aperture, 0.0f, 2.0f);
 
-            // Clamp values
-            if (new_aperture < 0.0f) new_aperture = 0.0f;
-            if (new_aperture > 2.0f) new_aperture = 2.0f;
-
-            if (std::abs(new_aperture - current_aperture) > 0.0001f) {
-                renderer.set_aperture_size(new_aperture);
-                std::cout << std::format("[DepthOfField] Aperture Size: {:.2f}\n", new_aperture);
-                renderer.reset_accumulation();
-            }
+            std::cout << std::format("[DepthOfField] Aperture Size: {:.2f}\n", aperture);
+            renderer.reset_accumulation();
         }
     );
 
@@ -186,14 +177,12 @@ int main(int argc, char* argv[]) {
 
     // Offline/Realtime render mode toggle (H)
     window.register_key(
-        {SDL_SCANCODE_H},
-        Window::Trigger::ANY_JUST_PRESSED,
-        [&](const Window::KeyState&, float) {
-            renderer.toggle_offline_render_mode();
+        {SDL_SCANCODE_H}, Window::Trigger::ANY_JUST_PRESSED, [&](const Window::KeyState&, float) {
+            renderer.offline_render_mode_ = !renderer.offline_render_mode_;
             std::cout << std::format(
                 "[Renderer] Render mode: {}\n",
-                renderer.offline_render_mode() ? "OFFLINE (64 samples/frame)"
-                                               : "REALTIME (progressive)"
+                renderer.offline_render_mode_ ? "OFFLINE (64 samples/frame)"
+                                              : "REALTIME (progressive)"
             );
             renderer.reset_accumulation();
         }
@@ -201,12 +190,10 @@ int main(int argc, char* argv[]) {
 
     // Normal debug mode toggle (N) - only for raytracing modes
     window.register_key(
-        {SDL_SCANCODE_N},
-        Window::Trigger::ANY_JUST_PRESSED,
-        [&](const Window::KeyState&, float) {
-            renderer.set_normal_debug_mode(!renderer.normal_debug_mode());
+        {SDL_SCANCODE_N}, Window::Trigger::ANY_JUST_PRESSED, [&](const Window::KeyState&, float) {
+            renderer.normal_debug_mode_ = !renderer.normal_debug_mode_;
             std::cout << std::format(
-                "[Renderer] Normal debug mode: {}\n", renderer.normal_debug_mode() ? "ON" : "OFF"
+                "[Renderer] Normal debug mode: {}\n", renderer.normal_debug_mode_
             );
             renderer.reset_accumulation();
         }
@@ -214,9 +201,7 @@ int main(int argc, char* argv[]) {
 
     // Mouse look (left button drag)
     window.register_mouse(
-        SDL_BUTTON_LEFT,
-        Window::Trigger::ANY_PRESSED,
-        [&](int xrel, int yrel, float dt) {
+        SDL_BUTTON_LEFT, Window::Trigger::ANY_PRESSED, [&](int xrel, int yrel, float dt) {
             if (xrel == 0 && yrel == 0) return;
             constexpr FloatType MOUSE_SENSITIVITY = 0.002f;
             FloatType dx0 = -static_cast<FloatType>(xrel) * MOUSE_SENSITIVITY;
@@ -257,50 +242,47 @@ int main(int argc, char* argv[]) {
 
     // Focal distance control via scroll
     window.register_scroll([&](int y_offset) {
-        if (y_offset == 0) return;
-        FloatType current_fd = renderer.focal_distance();
-
-        // Handle 0 or very small case by forcing a base value
-        if (current_fd < 1.0f) current_fd = 1.0f;
-
-        // Logarithmic adjustment: multiply/divide by factor
         constexpr FloatType factor = 1.1f;
-        FloatType new_fd = current_fd * std::pow(factor, static_cast<FloatType>(y_offset));
 
-        // Boundary safety
-        if (new_fd < 1.0f) new_fd = 1.0f;
-
-        if (std::abs(new_fd - current_fd) > 0.0001f) {
-            renderer.set_focal_distance(new_fd);
-            std::cout << std::format("[DepthOfField] Focal Distance: {:.2f}\n", new_fd);
-            renderer.reset_accumulation();
-        }
+        FloatType& fd = renderer.focal_distance_;
+        fd *= std::pow(factor, static_cast<FloatType>(y_offset));
+        fd = std::max(fd, 1.0f);
+        std::cout << std::format("[DepthOfField] Focal Distance: {:.2f}\n", fd);
+        renderer.reset_accumulation();
     });
 
     while (true) {
         auto frame_start = std::chrono::steady_clock::now();
 
-        // Advance any orbit animation and render the frame
         world.camera_.orbiting();
         renderer.render();
-
-        // Process input; exit on window close or ESC
-        if (!window.process_events()) break;
-
-        // Capture a frame if recording
         if (video_recorder.is_recording()) video_recorder.capture_frame();
 
-        // Present backbuffer
+        if (!window.process_events()) break;
         window.update();
+
+        // FPS counter
+        fps++;
+        auto now = std::chrono::steady_clock::now();
+        std::chrono::duration<double> elapsed = now - last_print;
+        if (elapsed >= std::chrono::seconds(1)) {
+            std::cout << std::format(
+                "[Renderer] FPS: {:#.3g} | Avg Frame Time: {:#.4g} ms\n",
+                static_cast<double>(fps) / elapsed.count(),
+                std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() /
+                    static_cast<double>(fps)
+            );
+            fps = 0;
+            last_print = now;
+        }
 
         // Soft frame rate limit for video recording mode (target ~60fps)
         if (video_recorder.is_recording()) {
             auto frame_end = std::chrono::steady_clock::now();
             auto frame_duration =
                 std::chrono::duration_cast<std::chrono::microseconds>(frame_end - frame_start);
-            // Target ~16.67ms per frame (60fps), but use slightly shorter sleep to stay above 60fps
-            constexpr auto target_frame_time =
-                std::chrono::microseconds(14000);  // ~71fps target for sleep
+            // Target 60fps (16.67ms), but use slightly shorter sleep to stay above 60fps
+            constexpr auto target_frame_time = std::chrono::microseconds(15000);
             if (frame_duration < target_frame_time) {
                 std::this_thread::sleep_for(target_frame_time - frame_duration);
             }

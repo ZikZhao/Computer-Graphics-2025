@@ -15,7 +15,7 @@ Material floor_matte
     Metallic 0.0
 
 Material mirror_surface
-    Colour 1.0 1.0 1.0
+    Colour 0.9 0.9 0.9
     Metallic 1.0
     Shininess 2048
 
