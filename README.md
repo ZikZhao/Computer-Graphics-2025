@@ -35,7 +35,7 @@ Optimized for maximum CPU throughput using modern C++ techniques.
 - **Photon Tracing**: Multithreaded photon emission allows for rapid caustic map generation without blocking the main UI thread.
 - **Memory Optimization:**
   - **Data-Oriented Design:** Geometry is stored in flat global buffers (`World`-centric) with `Face` structs storing indices rather than pointers, significantly improving CPU cache locality.
-  - **Custom Containers:** Utilized a custom `InplaceVector` (stack-allocated) to eliminate heap allocation overhead during hot-path polygon clipping, see [std::inplace_vector - cppreference.com](https://en.cppreference.com/w/cpp/container/inplace_vector.html) if you're using C++26 standard.
+  - **Custom Containers:** Utilized a custom `InplaceVector` to simulate C++26 `std::inplace_vector` behavior, ensuring stack-based storage to eliminate heap allocation overhead during hot-path polygon clipping.
 
 ### 4. Advanced Global Illumination
 
@@ -214,7 +214,7 @@ The `model` directory contains several pre-configured scenes demonstrating diffe
 
 ### 💡 Light Gallery
 
-**Simple scene for testing area light, soft shadows and gradual fading into nothingness created by the multiple reflections of mirrors placed opposite each other**
+**A minimalist scene designed to showcase area lighting, soft shadows, and the infinite recursive reflections (infinity mirror effect) between opposing mirrors.**
 
 ```bash
 ./build/CG-CW ./model/light-gallery/scene.txt
@@ -259,7 +259,7 @@ Normal maps are expected in tangent-space format. Since the original EXR normal 
 
 ### Photon Map Performance
 
-The photon map is built asynchronously on a background thread. Progress is displayed in the console. Typical build time is 0.1-0.5 seconds for 50,000 stored photons. It may goes up to 10 seconds if there are multiple refractive objects placed on the scene which significantly enlarge the bounding box of them. The renderer remains interactive during photon tracing.
+The photon map is built asynchronously on a background thread. Progress is displayed in the console. Build times are typically 0.1-0.5 seconds but may **extend** to ~10 seconds for scenes with complex refractive geometry that expands the photon emission bounding box.
 
 ### Video Recording
 
