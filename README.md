@@ -69,7 +69,7 @@ This renderer implements **ALL** features required for the highest marking band 
 | **Core**          | OBJ/MTL Loading / Multi-model / Camera Control        | ✅ Implemented |
 | **Rasterization** | Wireframe / Flat / Texture Mapping / Z-Buffer         | ✅ Implemented |
 | **Shading**       | Flat / Gouraud / Phong / Interpolated Normals         | ✅ Implemented |
-| **Texturing**     | Diffuse Texture / **Normal Mapping (Tangent-Space)**  | ✅ Implemented |
+| **Texturing**     | Diffuse Texture / **Normal Mapping** / Texture Tiling  | ✅ Implemented |
 | **Shadows**       | Hard Shadows / **Soft Shadows (Area Light)**          | ✅ Implemented |
 | **Materials**     | Mirror Reflection / **Refraction (Glass)** / Metallic | ✅ Implemented |
 | **Advanced**      | **Photon Mapping (Caustics)**                         | ✅ Implemented |
@@ -79,29 +79,9 @@ This renderer implements **ALL** features required for the highest marking band 
 
 ---
 
-## 📸 Gallery
+## 🎬 Demo Video
 
-### Physically Based Path Tracing
-
-![PBR-Tracer](./assets/pbr-tracer.png)
-
-### Depth of Field & Bokeh
-
-> Demonstrating Thin-Lens Simulation with adjustable Aperture and Focal Distance.
->
-> (Place your DoF image here)
-
-### Caustics via Photon Mapping
-
-> Demonstrating light focusing through dielectric spheres.
->
-> (Place an image showing caustics here)
-
-### Normal Mapping
-
-> High-frequency surface detail on a textured floor using tangent-space normal maps.
->
-> (Place a normal mapping comparison image here)
+<video src="./assets/ident.mp4" controls width="100%"></video>
 
 ---
 
@@ -175,6 +155,8 @@ The `model` directory contains several pre-configured scenes demonstrating diffe
 
 ### 🎯 Cornell Box with Textured Floor & Normal Mapping
 
+![Cornell Box](./assets/cornell-box.png)
+
 **Recommended for testing Normal Mapping and Caustics.**
 
 ```bash
@@ -191,6 +173,8 @@ The `model` directory contains several pre-configured scenes demonstrating diffe
 
 ### 🔩 Metal Gallery
 
+![Metal Gallery](./assets/metal-gallery.png)
+
 **Demonstrates various metallic materials (gold, copper, chrome, iron).**
 
 ```bash
@@ -201,6 +185,8 @@ The `model` directory contains several pre-configured scenes demonstrating diffe
 - Environment map reflections visible on metallic surfaces
 
 ### 💎 Transparency Gallery
+
+![Transparency Gallery](./assets/transparency-gallery.png)
 
 **Demonstrates glass, diamond, and clear dielectric materials with refraction.**
 
@@ -213,6 +199,8 @@ The `model` directory contains several pre-configured scenes demonstrating diffe
 - Observe light focusing patterns on the floor and on the ceiling
 
 ### 💡 Light Gallery
+
+![Light Gallery](./assets/light-gallery.png)
 
 **A minimalist scene designed to showcase area lighting, soft shadows, and the infinite recursive reflections (infinity mirror effect) between opposing mirrors.**
 
@@ -324,6 +312,14 @@ Material glass
 | `Emission r g b` | Emission (area lights) | `Emission 10 10 10` |
 | `Texture file` | Diffuse texture (PPM) | `Texture floor.ppm` |
 | `NormalMap file` | Normal map (HDR) | `NormalMap normal.hdr` |
+
+### Sphere Generator
+
+The `model/sphere_generator.py` script generates triangle-approximated spheres in TXT format. With Phong shading enabled (`Shading Phong`), even low-polygon spheres appear perfectly smooth due to per-pixel normal interpolation.
+
+### Asset Resources
+
+High-quality textures and HDR environment maps can be found at [Poly Haven](https://polyhaven.com/) — all assets are CC0 (public domain).
 
 ---
 

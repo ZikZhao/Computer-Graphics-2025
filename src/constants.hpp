@@ -9,8 +9,8 @@
 namespace Constant {
 
 // Window / Display
-inline constexpr std::size_t WindowWidth = 640;
-inline constexpr std::size_t WindowHeight = 480;
+inline constexpr std::size_t WindowWidth = 1920;
+inline constexpr std::size_t WindowHeight = 1080;
 inline constexpr auto TargetFrameTime = std::chrono::microseconds(15000);  // ~66 FPS cap
 
 // Camera

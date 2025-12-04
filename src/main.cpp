@@ -165,10 +165,10 @@ int main(int argc, char* argv[]) {
         }
     );
 
-    // Screenshot save (R)
+    // Screenshot save (Ctrl+S)
     window.register_key(
-        {SDL_SCANCODE_R},
-        Window::Trigger::ANY_JUST_PRESSED,
+        {SDL_SCANCODE_LCTRL, SDL_SCANCODE_S},
+        Window::Trigger::ALL_JUST_PRESSED,
         [&](const Window::KeyState&, float) {
             window.save_ppm("screenshot.ppm");
             window.save_bmp("screenshot.bmp");
