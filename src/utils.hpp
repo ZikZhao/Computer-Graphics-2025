@@ -15,6 +15,7 @@
 #include <thread>
 #include <utility>
 #include <vector>
+#include <memory>
 
 #include <glm/glm.hpp>
 
@@ -29,6 +30,7 @@ using FloatType = decltype(std::declval<glm::vec3>().x);
  * to `N`. Intended for hot paths where heap allocation is undesirable.
  */
 template <typename T, std::size_t N>
+requires std::is_trivially_copyable_v<T>
 class InplaceVector {
 private:
     alignas(T) std::byte data_[N * sizeof(T)];
@@ -36,9 +38,10 @@ private:
 
 public:
     constexpr InplaceVector() noexcept = default;
-    constexpr InplaceVector(auto&&... args) noexcept {
-        assert((sizeof...(args)) <= N);
-        (emplace_back(std::forward<decltype(args)>(args)), ...);
+    constexpr InplaceVector(std::initializer_list<T> init) noexcept {
+        for (const T& item : init) {
+            push_back(item);
+        }
     }
     constexpr std::size_t size() const noexcept { return size_; }
     constexpr T& operator[](std::size_t index) noexcept {
@@ -49,12 +52,12 @@ public:
     }
     constexpr void push_back(const T& value) noexcept {
         assert(size_ < N);
-        new (&data_[size_ * sizeof(T)]) T(value);
+        std::construct_at(std::next(reinterpret_cast<T*>(data_), size_), value);
         size_++;
     }
-    constexpr void emplace_back(T&& value) noexcept {
+    constexpr void emplace_back(auto&&... args) noexcept {
         assert(size_ < N);
-        new (&data_[size_ * sizeof(T)]) T(std::move(value));
+        std::construct_at(std::next(reinterpret_cast<T*>(data_), size_), std::forward<decltype(args)>(args)...);
         size_++;
     }
 };
