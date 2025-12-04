@@ -291,7 +291,7 @@ bool Window::check_key_trigger(const KeyBinding& binding) const noexcept {
     }
 
     case Trigger::ALL_JUST_PRESSED: {
-        bool exists_pressed_this_frame = false; // at least one key must be just pressed
+        bool exists_pressed_this_frame = false;  // at least one key must be just pressed
         for (auto key : binding.keys) {
             if (!(keys_this_frame_[key] || keys_pressed_this_frame_.count(key))) return false;
             if (keys_pressed_this_frame_.count(key)) exists_pressed_this_frame = true;

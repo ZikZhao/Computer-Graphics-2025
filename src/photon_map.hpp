@@ -1,6 +1,5 @@
 #pragma once
 #include <atomic>
-#include <random>
 #include <thread>
 #include <vector>
 
@@ -30,6 +29,7 @@ struct GridCellHash {
 };
 
 /**
+ * @class PhotonMap
  * @brief Photon mapping accelerator for estimating caustic radiance.
  *
  * Builds a spatial index of photons traced from emissive surfaces and supports
@@ -40,28 +40,10 @@ public:
     using GridCell = std::tuple<int, int, int>;
 
 public:
-    static constexpr std::size_t TargetStoredPhotons =
-        50000;  // Target number of stored caustic photons
-    static constexpr std::size_t MaxEmittedPhotons =
-        10000000;                                   // Safety bailout to prevent infinite loops
-    static constexpr std::size_t BatchSize = 5000;  // Photons emitted per batch iteration
-    static constexpr int MaxPhotonBounces = 5;
-    static constexpr FloatType MinPhotonPower = 0.01f;
-    static constexpr FloatType CausticSearchRadius = 0.4f;
-    static constexpr FloatType GridCellSize = CausticSearchRadius;
-
-    /// Check if material is transparent (refractive)
+    /// @brief Checks if material is transparent (refractive)
     static constexpr bool IsTransparent(const Material& mat) noexcept {
         return mat.tw > 0.0f && mat.ior != 1.0f;
     }
-
-    /**
-     * @brief Random float helper for stochastic decisions.
-     * @param min Inclusive lower bound.
-     * @param max Exclusive upper bound.
-     * @return Random value in [min, max).
-     */
-    static FloatType RandomFloat(FloatType min = 0.0f, FloatType max = 1.0f) noexcept;
 
 private:
     const World& world_;
@@ -83,6 +65,8 @@ public:
         return is_ready_.load(std::memory_order_acquire);
     }
 
+    [[nodiscard]] const std::vector<std::vector<Photon>>& grid() const noexcept { return grid_; }
+
     /**
      * @brief Retrieves photons within a radius of a point.
      * @param point Query point in world space.
@@ -90,20 +74,6 @@ public:
      * @return List of nearby photons satisfying the radial filter.
      */
     [[nodiscard]] std::vector<Photon> query_photons(const glm::vec3& point, FloatType radius) const;
-
-    /**
-     * @brief Helper to iterate all photons for debug visualization.
-     * @tparam Func Callable taking a const Photon& parameter.
-     * @param func Function to call for each stored photon.
-     */
-    template <typename Func>
-    void for_each_photon(Func func) const {
-        for (const auto& cell : grid_) {
-            for (const auto& p : cell) {
-                func(p);
-            }
-        }
-    }
 
     /**
      * @brief Estimates caustic radiance at a surface point.
@@ -120,7 +90,7 @@ private:
     /**
      * @brief Builds the photon map in a background thread.
      * @param st Stop token to allow cooperative cancellation.
-     * 
+     *
      * This function emits photons from emissive surfaces, traces them through the scene,
      * and stores them in a spatial grid for later querying.
      */

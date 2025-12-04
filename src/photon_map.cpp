@@ -6,11 +6,7 @@
 #include <format>
 #include <iostream>
 
-FloatType PhotonMap::RandomFloat(FloatType min, FloatType max) noexcept {
-    thread_local std::mt19937 rng(std::random_device{}());
-    std::uniform_real_distribution<FloatType> dist(min, max);
-    return dist(rng);
-}
+#include "constants.hpp"
 
 PhotonMap::PhotonMap(const World& world) : world_(world) {
     worker_thread_ = std::jthread([this](std::stop_token st) { build_photon_map(st); });
@@ -20,7 +16,7 @@ std::vector<Photon> PhotonMap::query_photons(const glm::vec3& point, FloatType r
     std::vector<Photon> result;
     GridCell center_cell = get_grid_cell(point);
     auto [cx, cy, cz] = center_cell;
-    int cell_range = static_cast<int>(std::ceil(radius / GridCellSize)) + 1;
+    int cell_range = static_cast<int>(std::ceil(radius / Constant::PhotonGridCellSize)) + 1;
     FloatType radius_sq = radius * radius;
     for (int dx = -cell_range; dx <= cell_range; ++dx) {
         for (int dy = -cell_range; dy <= cell_range; ++dy) {
@@ -53,13 +49,12 @@ ColourHDR PhotonMap::estimate_caustic(
     auto photons = query_photons(point, search_radius);
     if (photons.empty()) return ColourHDR{.red = 0.0f, .green = 0.0f, .blue = 0.0f};
     glm::vec3 accumulated_flux(0.0f);
-    constexpr FloatType k = 1.1f;
     for (const auto& photon : photons) {
         FloatType alignment = glm::dot(photon.direction, normal);
         if (alignment > 0.0f) continue;
         glm::vec3 diff = photon.position - point;
         FloatType dist = glm::length(diff);
-        FloatType weight = std::max(0.0f, 1.0f - (dist / (k * search_radius)));
+        FloatType weight = std::max(0.0f, 1.0f - (dist / (Constant::ConeFilterK * search_radius)));
         FloatType cos_theta = std::max(0.0f, -alignment);
         accumulated_flux += photon.power * (cos_theta * weight);
     }
@@ -121,11 +116,13 @@ void PhotonMap::build_photon_map(std::stop_token st) {
 
     // Spatial indexing: use entire scene bounds for grid
     // This ensures photons landing on floors/walls are properly stored
-    grid_origin_ = scene_aabb_min - glm::vec3(GridCellSize);  // Add padding
-    glm::vec3 extent = (scene_aabb_max - scene_aabb_min) + glm::vec3(2.0f * GridCellSize);
-    grid_width_ = std::max(1, static_cast<int>(std::ceil(extent.x / GridCellSize)));
-    grid_height_ = std::max(1, static_cast<int>(std::ceil(extent.y / GridCellSize)));
-    grid_depth_ = std::max(1, static_cast<int>(std::ceil(extent.z / GridCellSize)));
+    grid_origin_ = scene_aabb_min - glm::vec3(Constant::PhotonGridCellSize);  // Add padding
+    glm::vec3 extent =
+        (scene_aabb_max - scene_aabb_min) + glm::vec3(2.0f * Constant::PhotonGridCellSize);
+    grid_width_ = std::max(1, static_cast<int>(std::ceil(extent.x / Constant::PhotonGridCellSize)));
+    grid_height_ =
+        std::max(1, static_cast<int>(std::ceil(extent.y / Constant::PhotonGridCellSize)));
+    grid_depth_ = std::max(1, static_cast<int>(std::ceil(extent.z / Constant::PhotonGridCellSize)));
     std::size_t grid_size = static_cast<std::size_t>(grid_width_) *
                             static_cast<std::size_t>(grid_height_) *
                             static_cast<std::size_t>(grid_depth_);
@@ -145,9 +142,7 @@ void PhotonMap::build_photon_map(std::stop_token st) {
             world_.all_vertices_[lf->v_indices[2]] - world_.all_vertices_[lf->v_indices[0]];
         FloatType area = 0.5f * glm::length(glm::cross(e0, e1));
         glm::vec3 Le = lf->material.emission;
-        // Luminance (formula from ITU-R BT.709) used for energy-aware photon allocation.
-        FloatType lum = 0.2126f * Le.x + 0.7152f * Le.y + 0.0722f * Le.z;
-        FloatType flux = area * lum * std::numbers::pi_v<FloatType>;
+        FloatType flux = area * Luminance(Le) * std::numbers::pi_v<FloatType>;
         total_light_flux_ += flux;
         FloatType w = std::max<FloatType>(1e-6f, flux);
         weights[i] = w;
@@ -159,11 +154,12 @@ void PhotonMap::build_photon_map(std::stop_token st) {
     std::size_t total_stored_count = 0;
     std::size_t batch_index = 0;
 
-    while (total_stored_count < TargetStoredPhotons && total_emitted_count < MaxEmittedPhotons) {
+    while (total_stored_count < Constant::TargetStoredPhotons &&
+           total_emitted_count < Constant::MaxEmittedPhotons) {
         // Emit a batch distributed across all light sources
         for (std::size_t i = 0; i < emissive_faces.size(); ++i) {
             std::size_t photons_for_light = static_cast<std::size_t>(
-                static_cast<FloatType>(BatchSize) * (weights[i] / weight_sum)
+                static_cast<FloatType>(Constant::PhotonBatchSize) * (weights[i] / weight_sum)
             );
             if (photons_for_light == 0) photons_for_light = 1;
 
@@ -171,7 +167,7 @@ void PhotonMap::build_photon_map(std::stop_token st) {
                 *emissive_faces[i],
                 target_center,
                 target_radius,
-                batch_index * BatchSize + total_emitted_count,
+                batch_index * Constant::PhotonBatchSize + total_emitted_count,
                 photons_for_light
             );
             total_emitted_count += photons_for_light;
@@ -182,7 +178,7 @@ void PhotonMap::build_photon_map(std::stop_token st) {
             std::cout << std::format(
                 "[PhotonMap] Progress: Stored {} / {} target | Emitted: {}\n",
                 total_stored_count,
-                TargetStoredPhotons,
+                Constant::TargetStoredPhotons,
                 total_emitted_count
             );
         }
@@ -198,9 +194,13 @@ void PhotonMap::build_photon_map(std::stop_token st) {
 
     auto end_time = std::chrono::steady_clock::now();
     std::chrono::duration<double> elapsed = end_time - start_time;
-    std::cout << std::format("[PhotonMap] Completed in {:#.3g}s | Stored {} / {} ({:.1f}%)\n",
-        elapsed.count(), total_stored_count, total_emitted_count, 
-        100.0 * static_cast<double>(total_stored_count) / static_cast<double>(total_emitted_count));
+    std::cout << std::format(
+        "[PhotonMap] Completed in {:#.3g}s | Stored {} / {} ({:.1f}%)\n",
+        elapsed.count(),
+        total_stored_count,
+        total_emitted_count,
+        100.0 * static_cast<double>(total_stored_count) / static_cast<double>(total_emitted_count)
+    );
     is_ready_.store(true, std::memory_order_release);
 }
 
@@ -219,8 +219,8 @@ std::size_t PhotonMap::emit_photon_batch(
     glm::vec3 n_light = glm::normalize(light_face.face_normal);
 
     // Compute the light center for cone angle calculation (average of all sample points)
-    glm::vec3 light_center = world_.all_vertices_[light_face.v_indices[0]] +
-                             (e0 + e1) / 3.0f;  // Triangle centroid
+    glm::vec3 light_center =
+        world_.all_vertices_[light_face.v_indices[0]] + (e0 + e1) / 3.0f;  // Triangle centroid
     FloatType avg_dist = glm::length(target_center - light_center);
     FloatType raw_cone_angle =
         std::atan(target_radius / std::max<FloatType>(avg_dist, 1e-4f)) * 1.5f;
@@ -241,9 +241,8 @@ std::size_t PhotonMap::emit_photon_batch(
     // so using Le directly here would cause photon power to scale as Le².
     // Instead, we use the normalized color "tint" so that energy is controlled solely
     // by the global flux normalization in normalize_photon_power().
-    FloatType luminance = 0.2126f * Le.x + 0.7152f * Le.y + 0.0722f * Le.z;
-    glm::vec3 normalized_tint =
-        (luminance > 1e-6f) ? (Le / luminance) : glm::vec3(1.0f);  // Handle black lights
+    FloatType lum = Luminance(Le);
+    glm::vec3 normalized_tint = (lum > 1e-6f) ? (Le / lum) : glm::vec3(1.0f);
 
     // photon_base_color = normalized color tint * cone fraction
     // Actual power will be normalized later using:
@@ -274,8 +273,7 @@ std::size_t PhotonMap::emit_photon_batch(
 void PhotonMap::normalize_photon_power(std::size_t total_emitted_count) {
     if (total_emitted_count == 0) return;
 
-    FloatType factor =
-        total_light_flux_ / static_cast<FloatType>(total_emitted_count);
+    FloatType factor = total_light_flux_ / static_cast<FloatType>(total_emitted_count);
 
     for (auto& cell : grid_) {
         for (auto& p : cell) {
@@ -292,7 +290,7 @@ bool PhotonMap::trace_single_photon(
     const glm::vec3& medium_entry_point,
     bool interacted_with_transparent
 ) {
-    if (depth >= MaxPhotonBounces) return false;
+    if (depth >= Constant::MaxPhotonBounces) return false;
 
     auto hit_opt = find_intersection(origin, direction);
     if (!hit_opt.has_value()) return false;
@@ -327,33 +325,16 @@ bool PhotonMap::trace_single_photon(
             FloatType travel_dist = glm::length(hit.intersectionPoint - medium_entry_point);
 
             if (travel_dist > 0.0f && mat.td > 0.0f) {
-                glm::vec3 effective_sigma_a;
-
-                if (glm::length(mat.sigma_a) > 0.0f) {
-                    effective_sigma_a = mat.sigma_a;
-                } else {
-                    // Derive absorption from base color and thickness
-                    effective_sigma_a = glm::vec3(
-                        -std::log(std::max(mat.base_color.r, 0.001f)) / mat.td,
-                        -std::log(std::max(mat.base_color.g, 0.001f)) / mat.td,
-                        -std::log(std::max(mat.base_color.b, 0.001f)) / mat.td
-                    );
-                }
-
-                new_power = glm::vec3(
-                    power.x * std::exp(-effective_sigma_a.x * travel_dist),
-                    power.y * std::exp(-effective_sigma_a.y * travel_dist),
-                    power.z * std::exp(-effective_sigma_a.z * travel_dist)
-                );
+                glm::vec3 sigma_a = EffectiveSigmaA(mat.sigma_a, mat.base_color, mat.td);
+                new_power = power * BeerLambert(sigma_a, travel_dist);
             }
         }
 
         // Russian Roulette: probabilistically terminate photons with significant absorption
         if (depth >= 1) {
-            constexpr FloatType rr_threshold = 0.5f;
             FloatType survival_ratio = glm::length(new_power) / glm::length(power);
-            if (survival_ratio < rr_threshold) {
-                if (RandomFloat() > survival_ratio / rr_threshold) {
+            if (survival_ratio < Constant::RussianRouletteThreshold) {
+                if (Rand() > survival_ratio / Constant::RussianRouletteThreshold) {
                     return false;
                 }
             }
@@ -362,7 +343,7 @@ bool PhotonMap::trace_single_photon(
         if (cannot_refract) {
             new_direction = glm::reflect(direction, normal);
             new_entry_point = hit.intersectionPoint;
-        } else if (RandomFloat() < reflectance * 0.5f) {
+        } else if (Rand() < reflectance * 0.5f) {
             new_direction = glm::reflect(direction, normal);
             if (currently_inside) {
                 new_entry_point = hit.intersectionPoint;
@@ -405,17 +386,8 @@ bool PhotonMap::trace_single_photon(
 
             if (last_transparent_face) {
                 const Material& mat = last_transparent_face->material;
-                glm::vec3 effective_sigma_a = glm::vec3(
-                    -std::log(std::max(mat.base_color.r, 0.001f)) / mat.td,
-                    -std::log(std::max(mat.base_color.g, 0.001f)) / mat.td,
-                    -std::log(std::max(mat.base_color.b, 0.001f)) / mat.td
-                );
-
-                final_power = glm::vec3(
-                    power.x * std::exp(-effective_sigma_a.x * travel_dist),
-                    power.y * std::exp(-effective_sigma_a.y * travel_dist),
-                    power.z * std::exp(-effective_sigma_a.z * travel_dist)
-                );
+                glm::vec3 sigma_a = EffectiveSigmaA(mat.sigma_a, mat.base_color, mat.td);
+                final_power = power * BeerLambert(sigma_a, travel_dist);
             }
         }
 
@@ -436,9 +408,9 @@ void PhotonMap::store_photon(const Photon& photon) {
 
 PhotonMap::GridCell PhotonMap::get_grid_cell(const glm::vec3& position) const noexcept {
     glm::vec3 local = position - grid_origin_;
-    int x = static_cast<int>(std::floor(local.x / GridCellSize));
-    int y = static_cast<int>(std::floor(local.y / GridCellSize));
-    int z = static_cast<int>(std::floor(local.z / GridCellSize));
+    int x = static_cast<int>(std::floor(local.x / Constant::PhotonGridCellSize));
+    int y = static_cast<int>(std::floor(local.y / Constant::PhotonGridCellSize));
+    int z = static_cast<int>(std::floor(local.z / Constant::PhotonGridCellSize));
     return PhotonMap::GridCell(x, y, z);
 }
 

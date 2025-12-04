@@ -6,6 +6,7 @@
 #include <thread>
 #include <vector>
 
+#include "constants.hpp"
 #include "rasterizer.hpp"
 #include "raytracer.hpp"
 #include "window.hpp"
@@ -25,9 +26,6 @@ public:
     };
 
 public:
-    static constexpr int TileSize = 32;  // 32x32 block scheduling
-    static constexpr int VideoSamples = 64;
-
     /**
      * @brief ACES filmic tone mapping curve (approximation).
      * @param hdr_value Input HDR component.
@@ -128,7 +126,7 @@ private:
      * @param tile_y Tile Y index.
      */
     void process_tile(int tile_x, int tile_y) noexcept;
-    
+
     /**
      * @brief Generates Hilbert curve tile ordering for cache-friendly traversal.
      * @param tiles_x Number of tiles in X direction.

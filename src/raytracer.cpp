@@ -7,6 +7,7 @@
 #include <numbers>
 #include <numeric>
 
+#include "constants.hpp"
 #include "photon_map.hpp"
 
 RayTracer::RayTracer(const World& world) : world_(world) {
@@ -23,8 +24,8 @@ ColourHDR RayTracer::render_pixel(
     std::uint32_t initial_seed
 ) const noexcept {
     // Anti-aliasing: Jitter the pixel coordinate to sample within the pixel area
-    FloatType jitter_x = RandFloat(initial_seed) - 0.5f;
-    FloatType jitter_y = RandFloat(initial_seed) - 0.5f;
+    FloatType jitter_x = PCGRandomFloat(initial_seed) - 0.5f;
+    FloatType jitter_y = PCGRandomFloat(initial_seed) - 0.5f;
     FloatType u = (static_cast<FloatType>(x) + 0.5f + jitter_x) / static_cast<FloatType>(width);
     FloatType v = (static_cast<FloatType>(y) + 0.5f + jitter_y) / static_cast<FloatType>(height);
 
@@ -50,7 +51,6 @@ ColourHDR RayTracer::render_pixel_normal(const Camera& cam, int x, int y, int wi
         return ColourHDR{n.x, n.y, n.z};
     }
 
-    // Miss: return environment or black
     if (world_.env_map_.is_loaded()) {
         return world_.env_map_.sample(ray_dir);
     }
@@ -74,17 +74,17 @@ ColourHDR RayTracer::render_pixel_dof(
         // Sample thin lens aperture (concentric disk)
         std::uint32_t lens_seed =
             static_cast<std::uint32_t>((y * width + x) + sample * 747796405u) | 1u;
-        FloatType u1 = RandFloat(lens_seed);
-        FloatType u2 = RandFloat(lens_seed);
+        FloatType u1 = PCGRandomFloat(lens_seed);
+        FloatType u2 = PCGRandomFloat(lens_seed);
         glm::vec2 lens_sample = SampleDiskConcentric(u1, u2) * aperture_size;
 
         // Jitter within the pixel for anti-aliasing
         std::uint32_t jitter_seed =
             static_cast<std::uint32_t>((y * width + x) + sample * 1597334677u) | 1u;
-        FloatType u0 =
-            (static_cast<FloatType>(x) + RandFloat(jitter_seed)) / static_cast<FloatType>(width);
-        FloatType v0 =
-            (static_cast<FloatType>(y) + RandFloat(jitter_seed)) / static_cast<FloatType>(height);
+        FloatType u0 = (static_cast<FloatType>(x) + PCGRandomFloat(jitter_seed)) /
+                       static_cast<FloatType>(width);
+        FloatType v0 = (static_cast<FloatType>(y) + PCGRandomFloat(jitter_seed)) /
+                       static_cast<FloatType>(height);
 
         // Primary ray through the pinhole
         auto [center_origin, center_dir] = cam.generate_ray_uv(u0, v0, width, height);
@@ -124,38 +124,20 @@ ColourHDR RayTracer::trace_ray(
     const glm::vec3& throughput,
     std::uint32_t& rng
 ) const noexcept {
-    constexpr int ABS_MAX_DEPTH = 64;
-    if (depth >= ABS_MAX_DEPTH) {
+    if (depth >= Constant::MaxRayDepth) {
         return ColourHDR{.red = 0.0f, .green = 0.0f, .blue = 0.0f};
     }
 
-    // Scene intersection
     RayTriangleIntersection intersection = hit(ray_origin, ray_dir);
 
-    // Medium absorption (Beer's Law): attenuate radiance by traveled distance
+    // Medium absorption -- attenuate radiance by traveled distance
     ColourHDR medium_absorption{1.0f, 1.0f, 1.0f};
     if (medium.material != nullptr && intersection.triangleIndex != static_cast<std::size_t>(-1)) {
-        FloatType distance_in_medium = intersection.distanceFromCamera;
-        glm::vec3 effective_sigma_a;
-
-        if (glm::length(medium.material->sigma_a) > 0.0f) {
-            effective_sigma_a = medium.material->sigma_a;
-        } else if (medium.material->td > 0.0f) {
-            // Derive absorption from transmission distance (td) and base color
-            effective_sigma_a = glm::vec3(
-                -std::log(std::max(medium.material->base_color.r, 0.001f)) / medium.material->td,
-                -std::log(std::max(medium.material->base_color.g, 0.001f)) / medium.material->td,
-                -std::log(std::max(medium.material->base_color.b, 0.001f)) / medium.material->td
-            );
-        } else {
-            effective_sigma_a = glm::vec3(0.0f);
-        }
-
-        medium_absorption = ColourHDR(
-            std::exp(-effective_sigma_a.r * distance_in_medium),
-            std::exp(-effective_sigma_a.g * distance_in_medium),
-            std::exp(-effective_sigma_a.b * distance_in_medium)
+        glm::vec3 sigma_a = EffectiveSigmaA(
+            medium.material->sigma_a, medium.material->base_color, medium.material->td
         );
+        glm::vec3 absorption = BeerLambert(sigma_a, intersection.distanceFromCamera);
+        medium_absorption = ColourHDR(absorption.r, absorption.g, absorption.b);
     }
 
     // Environment mapping
@@ -185,7 +167,6 @@ ColourHDR RayTracer::trace_ray(
 
     // Dielectric surface: refraction/reflection with Fresnel (Schlick)
     if (face.material.tw > 0.0f) {
-        constexpr FloatType epsilon = 0.001f;
         glm::vec3 normal = intersection.normal;
         if (glm::length(normal) < 0.001f) normal = face.face_normal;
 
@@ -209,7 +190,8 @@ ColourHDR RayTracer::trace_ray(
         if (total_internal_reflection) {
             // Total internal reflection: 100% reflective branch
             glm::vec3 reflected_dir = glm::reflect(ray_dir, normal);
-            glm::vec3 offset_origin = intersection.intersectionPoint + normal * epsilon;
+            glm::vec3 offset_origin =
+                intersection.intersectionPoint + normal * Constant::RayEpsilon;
             glm::vec3 next_tp = throughput;
             ColourHDR reflected = trace_ray(
                 offset_origin, reflected_dir, depth + 1, medium, use_caustics, next_tp, rng
@@ -234,7 +216,8 @@ ColourHDR RayTracer::trace_ray(
         // Recursive reflection branch
         if (reflect_weight > 0.01f) {
             glm::vec3 reflected_dir = glm::reflect(ray_dir, normal);
-            glm::vec3 offset_origin = intersection.intersectionPoint + normal * epsilon;
+            glm::vec3 offset_origin =
+                intersection.intersectionPoint + normal * Constant::RayEpsilon;
             glm::vec3 next_tp = throughput;
             ColourHDR reflected_color = trace_ray(
                 offset_origin, reflected_dir, depth + 1, medium, use_caustics, next_tp, rng
@@ -244,7 +227,8 @@ ColourHDR RayTracer::trace_ray(
 
         // Recursive refraction branch
         if (refract_weight > 0.01f) {
-            glm::vec3 offset_origin = intersection.intersectionPoint - normal * epsilon;
+            glm::vec3 offset_origin =
+                intersection.intersectionPoint - normal * Constant::RayEpsilon;
             MediumState new_medium;
             if (entering) {
                 new_medium.material = &face.material;
@@ -295,8 +279,8 @@ ColourHDR RayTracer::trace_ray(
     FloatType w = 1.0f - intersection.u - intersection.v;
     if (!backface_view_gate) {
         // Use the normal from intersection which already includes:
-        // 1. Interpolated vertex normals (for smooth surfaces)
-        // 2. Normal mapping perturbation (if normal map is present)
+        // - Interpolated vertex normals (for smooth surfaces)
+        // - Normal mapping perturbation (if normal map is present)
         // This applies regardless of shading mode when a normal map exists
         glm::vec3 n_shade = intersection.normal;
 
@@ -313,8 +297,8 @@ ColourHDR RayTracer::trace_ray(
                 FloatType area = 0.5f * glm::length(glm::cross(e0, e1));
                 if (area < 1e-6f) continue;
 
-                FloatType u1 = RandFloat(rng);
-                FloatType u2 = RandFloat(rng);
+                FloatType u1 = PCGRandomFloat(rng);
+                FloatType u2 = PCGRandomFloat(rng);
                 FloatType su = std::sqrt(u1);
                 FloatType b0 = 1.0f - su;
                 FloatType b1 = su * (1.0f - u2);
@@ -356,10 +340,8 @@ ColourHDR RayTracer::trace_ray(
                 // Specular accumulation (Blinn-Phong)
                 glm::vec3 halfway = glm::normalize(L + to_camera_hit);
                 FloatType cos_alpha = std::max(0.0f, glm::dot(n_shade, halfway));
-                FloatType le_lum = 0.2126f * Le.r + 0.7152f * Le.g + 0.0722f * Le.b;
-                FloatType vis_lum = 0.2126f * vis.r + 0.7152f * vis.g + 0.0722f * vis.b;
-                specular += le_lum * std::pow(cos_alpha, face.material.shininess) * area * vis_lum /
-                            (dist * dist + 1e-6f);
+                specular += Luminance(Le) * std::pow(cos_alpha, face.material.shininess) * area *
+                            Luminance(vis) / (dist * dist + 1e-6f);
             }
             diffuse_component = ColourHDR{
                 .red = diffuse_rgb_accum.r,
@@ -401,10 +383,10 @@ ColourHDR RayTracer::trace_ray(
             use_normal = -use_normal;
         }
         glm::vec3 reflected_dir = glm::reflect(ray_dir, use_normal);
-        constexpr FloatType epsilon = 0.001f;
 
         // Epsilon origin shift: avoid self-hit on the same triangle
-        glm::vec3 offset_origin = intersection.intersectionPoint + use_normal * epsilon;
+        glm::vec3 offset_origin =
+            intersection.intersectionPoint + use_normal * Constant::RayEpsilon;
         glm::vec3 next_tp =
             throughput * glm::vec3(hdr_colour.red, hdr_colour.green, hdr_colour.blue);
 
@@ -418,7 +400,7 @@ ColourHDR RayTracer::trace_ray(
         );
 
         // Schlick's Approximation for Metallic Fresnel
-        // F(θ) = F0 + (1.0 - F0)(1.0 - cosθ)^5
+        // F(theta) = F0 + (1.0 - F0)(1.0 - cos theta)^5
         // For metals, F0 is the surface albedo (hdr_colour)
         FloatType cos_theta = std::max(0.0f, glm::dot(-ray_dir, use_normal));
         ColourHDR F0 = hdr_colour;
@@ -446,7 +428,7 @@ ColourHDR RayTracer::trace_ray(
     if (use_caustics && photon_map_ && photon_map_->is_ready()) {
         // Estimate caustic radiance at this point
         caustics_contribution = photon_map_->estimate_caustic(
-            intersection.intersectionPoint, intersection.normal, PhotonMap::CausticSearchRadius
+            intersection.intersectionPoint, intersection.normal, Constant::CausticSearchRadius
         );
 
         // Modulate caustics by surface albedo (diffuse color)
@@ -455,9 +437,6 @@ ColourHDR RayTracer::trace_ray(
             .green = caustics_contribution.green * hdr_colour.green,
             .blue = caustics_contribution.blue * hdr_colour.blue
         };
-
-        // Tame intensity for stability
-        // caustics_contribution = caustics_contribution * 0.25f;
     }
 
     ColourHDR out = (direct_lighting + caustics_contribution) * medium_absorption;

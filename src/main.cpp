@@ -8,15 +8,13 @@
 #include <thread>
 #include <vector>
 
+#include "constants.hpp"
 #include "raytracer.hpp"
 #include "renderer.hpp"
 #include "utils.hpp"
 #include "video_recorder.hpp"
 #include "window.hpp"
 #include "world.hpp"
-
-constexpr std::size_t WindowWidth = 640;
-constexpr std::size_t WindowHeight = 480;
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
@@ -28,10 +26,14 @@ int main(int argc, char* argv[]) {
     World world = {std::vector<std::string>(argv + 1, argv + argc)};
 
     // Initialize output window and rendering engines
-    Window window(WindowWidth, WindowHeight);
-    world.camera_.set_aspect_ratio(static_cast<double>(WindowWidth) / WindowHeight);
+    Window window(Constant::WindowWidth, Constant::WindowHeight);
+    world.camera_.set_aspect_ratio(
+        static_cast<double>(Constant::WindowWidth) / Constant::WindowHeight
+    );
     Renderer renderer(world, window);
-    VideoRecorder video_recorder(window.get_pixel_buffer(), WindowWidth, WindowHeight);
+    VideoRecorder video_recorder(
+        window.get_pixel_buffer(), Constant::WindowWidth, Constant::WindowHeight
+    );
 
     std::uint32_t fps = 0;
     auto last_print = std::chrono::steady_clock::now();
@@ -46,8 +48,7 @@ int main(int argc, char* argv[]) {
          SDL_SCANCODE_C},
         Window::Trigger::ANY_PRESSED,
         [&](const Window::KeyState& ks, float dt) {
-            constexpr FloatType move_step = 3.0f;
-            constexpr FloatType video_fixed_dt = 1.0f / 60.0f;  // Fixed step for video recording
+            FloatType video_fixed_dt = 1.0f / Constant::TargetFPS;
             FloatType fwd = (ks[SDL_SCANCODE_W] ? 1.0f : 0.0f) - (ks[SDL_SCANCODE_S] ? 1.0f : 0.0f);
             FloatType right =
                 (ks[SDL_SCANCODE_D] ? 1.0f : 0.0f) - (ks[SDL_SCANCODE_A] ? 1.0f : 0.0f);
@@ -56,7 +57,10 @@ int main(int argc, char* argv[]) {
             if (fwd != 0.0f || right != 0.0f || up != 0.0f) {
                 FloatType effective_dt = video_recorder.is_recording() ? video_fixed_dt : dt;
                 world.camera_.move(
-                    fwd * move_step, right * move_step, up * move_step, effective_dt
+                    fwd * Constant::MoveSpeed,
+                    right * Constant::MoveSpeed,
+                    up * Constant::MoveSpeed,
+                    effective_dt
                 );
                 renderer.reset_accumulation();
             }
@@ -67,19 +71,20 @@ int main(int argc, char* argv[]) {
         {SDL_SCANCODE_Q, SDL_SCANCODE_E},
         Window::Trigger::ANY_PRESSED,
         [&](const Window::KeyState& ks, float dt) {
-            constexpr FloatType roll_speed = 0.5f;
-            constexpr FloatType video_fixed_dt = 1.0f / 60.0f;  // Fixed step for video recording
+            FloatType video_fixed_dt = 1.0f / Constant::TargetFPS;
             FloatType r = (ks[SDL_SCANCODE_E] ? 1.0f : 0.0f) - (ks[SDL_SCANCODE_Q] ? 1.0f : 0.0f);
             if (r != 0.0f) {
                 FloatType effective_dt = video_recorder.is_recording() ? video_fixed_dt : dt;
-                world.camera_.roll(r * roll_speed * effective_dt);
+                world.camera_.roll(r * Constant::RollSpeed * effective_dt);
                 renderer.reset_accumulation();
             }
         }
     );
 
     window.register_key(
-        {SDL_SCANCODE_O}, Window::Trigger::ANY_JUST_PRESSED, [&](const Window::KeyState&, float) {
+        {SDL_SCANCODE_O},
+        Window::Trigger::ANY_JUST_PRESSED,
+        [&](const Window::KeyState&, float) {
             if (!world.camera_.is_orbiting_) {
                 world.camera_.start_orbiting();
             } else {
@@ -122,12 +127,16 @@ int main(int argc, char* argv[]) {
     );
 
     window.register_key(
-        {SDL_SCANCODE_G}, Window::Trigger::ANY_JUST_PRESSED, [&](const Window::KeyState&, float) {
+        {SDL_SCANCODE_G},
+        Window::Trigger::ANY_JUST_PRESSED,
+        [&](const Window::KeyState&, float) {
             renderer.gamma_ = (renderer.gamma_ == 2.2f) ? 1.0f : 2.2f;
         }
     );
     window.register_key(
-        {SDL_SCANCODE_P}, Window::Trigger::ANY_JUST_PRESSED, [&](const Window::KeyState&, float) {
+        {SDL_SCANCODE_P},
+        Window::Trigger::ANY_JUST_PRESSED,
+        [&](const Window::KeyState&, float) {
             if (renderer.is_photon_map_ready()) {
                 renderer.caustics_enabled_ = !renderer.caustics_enabled_;
                 std::cout << std::format(
@@ -145,11 +154,10 @@ int main(int argc, char* argv[]) {
         {SDL_SCANCODE_EQUALS, SDL_SCANCODE_MINUS},
         Window::Trigger::ANY_PRESSED,
         [&](const Window::KeyState& ks, float) {
-            constexpr FloatType step = 0.01f;
             FloatType& aperture = renderer.aperture_size_;
 
-            if (ks[SDL_SCANCODE_EQUALS]) aperture += step;
-            if (ks[SDL_SCANCODE_MINUS]) aperture -= step;
+            if (ks[SDL_SCANCODE_EQUALS]) aperture += Constant::GammaStep;
+            if (ks[SDL_SCANCODE_MINUS]) aperture -= Constant::GammaStep;
             aperture = std::clamp(aperture, 0.0f, 2.0f);
 
             std::cout << std::format("[DepthOfField] Aperture Size: {:.2f}\n", aperture);
@@ -177,7 +185,9 @@ int main(int argc, char* argv[]) {
 
     // Offline/Realtime render mode toggle (H)
     window.register_key(
-        {SDL_SCANCODE_H}, Window::Trigger::ANY_JUST_PRESSED, [&](const Window::KeyState&, float) {
+        {SDL_SCANCODE_H},
+        Window::Trigger::ANY_JUST_PRESSED,
+        [&](const Window::KeyState&, float) {
             renderer.offline_render_mode_ = !renderer.offline_render_mode_;
             std::cout << std::format(
                 "[Renderer] Render mode: {}\n",
@@ -190,7 +200,9 @@ int main(int argc, char* argv[]) {
 
     // Normal debug mode toggle (N) - only for raytracing modes
     window.register_key(
-        {SDL_SCANCODE_N}, Window::Trigger::ANY_JUST_PRESSED, [&](const Window::KeyState&, float) {
+        {SDL_SCANCODE_N},
+        Window::Trigger::ANY_JUST_PRESSED,
+        [&](const Window::KeyState&, float) {
             renderer.normal_debug_mode_ = !renderer.normal_debug_mode_;
             std::cout << std::format(
                 "[Renderer] Normal debug mode: {}\n", renderer.normal_debug_mode_
@@ -201,11 +213,12 @@ int main(int argc, char* argv[]) {
 
     // Mouse look (left button drag)
     window.register_mouse(
-        SDL_BUTTON_LEFT, Window::Trigger::ANY_PRESSED, [&](int xrel, int yrel, float dt) {
+        SDL_BUTTON_LEFT,
+        Window::Trigger::ANY_PRESSED,
+        [&](int xrel, int yrel, float dt) {
             if (xrel == 0 && yrel == 0) return;
-            constexpr FloatType MOUSE_SENSITIVITY = 0.002f;
-            FloatType dx0 = -static_cast<FloatType>(xrel) * MOUSE_SENSITIVITY;
-            FloatType dy0 = static_cast<FloatType>(yrel) * MOUSE_SENSITIVITY;
+            FloatType dx0 = -static_cast<FloatType>(xrel) * Constant::MouseSensitivity;
+            FloatType dy0 = static_cast<FloatType>(yrel) * Constant::MouseSensitivity;
             FloatType roll = world.camera_.roll_;
             FloatType c = std::cos(roll);
             FloatType s = std::sin(roll);
@@ -221,8 +234,7 @@ int main(int argc, char* argv[]) {
         {SDL_SCANCODE_UP, SDL_SCANCODE_DOWN, SDL_SCANCODE_LEFT, SDL_SCANCODE_RIGHT},
         Window::Trigger::ANY_PRESSED,
         [&](const Window::KeyState& ks, float dt) {
-            constexpr FloatType ROTATE_SPEED = 0.2f;
-            constexpr FloatType video_fixed_dt = 1.0f / 60.0f;  // Fixed step for video recording
+            FloatType video_fixed_dt = 1.0f / Constant::TargetFPS;
             FloatType dx0 =
                 (ks[SDL_SCANCODE_RIGHT] ? 1.0f : 0.0f) - (ks[SDL_SCANCODE_LEFT] ? 1.0f : 0.0f);
             FloatType dy0 =
@@ -232,8 +244,8 @@ int main(int argc, char* argv[]) {
                 FloatType c = std::cos(roll);
                 FloatType s = std::sin(roll);
                 FloatType effective_dt = video_recorder.is_recording() ? video_fixed_dt : dt;
-                FloatType d_yaw = (dx0 * c + dy0 * s) * ROTATE_SPEED * effective_dt;
-                FloatType d_pitch = (-dx0 * s + dy0 * c) * ROTATE_SPEED * effective_dt;
+                FloatType d_yaw = (dx0 * c + dy0 * s) * Constant::RotateSpeed * effective_dt;
+                FloatType d_pitch = (-dx0 * s + dy0 * c) * Constant::RotateSpeed * effective_dt;
                 world.camera_.rotate(d_yaw, d_pitch);
                 renderer.reset_accumulation();
             }
@@ -242,10 +254,8 @@ int main(int argc, char* argv[]) {
 
     // Focal distance control via scroll
     window.register_scroll([&](int y_offset) {
-        constexpr FloatType factor = 1.1f;
-
         FloatType& fd = renderer.focal_distance_;
-        fd *= std::pow(factor, static_cast<FloatType>(y_offset));
+        fd *= std::pow(Constant::ZoomFactor, static_cast<FloatType>(y_offset));
         fd = std::max(fd, 1.0f);
         std::cout << std::format("[DepthOfField] Focal Distance: {:.2f}\n", fd);
         renderer.reset_accumulation();
@@ -281,10 +291,8 @@ int main(int argc, char* argv[]) {
             auto frame_end = std::chrono::steady_clock::now();
             auto frame_duration =
                 std::chrono::duration_cast<std::chrono::microseconds>(frame_end - frame_start);
-            // Target 60fps (16.67ms), but use slightly shorter sleep to stay above 60fps
-            constexpr auto target_frame_time = std::chrono::microseconds(15000);
-            if (frame_duration < target_frame_time) {
-                std::this_thread::sleep_for(target_frame_time - frame_duration);
+            if (frame_duration < Constant::TargetFrameTime) {
+                std::this_thread::sleep_for(Constant::TargetFrameTime - frame_duration);
             }
         }
     }

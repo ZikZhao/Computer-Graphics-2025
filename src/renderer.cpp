@@ -40,8 +40,10 @@ Renderer::Renderer(const World& world, Window& window)
     rasterizer_ = std::make_unique<Rasterizer>(window);
 
     // Pre-generate Hilbert curve tile ordering for cache-friendly traversal
-    const int tiles_x = (static_cast<int>(window.width_) + TileSize - 1) / TileSize;
-    const int tiles_y = (static_cast<int>(window.height_) + TileSize - 1) / TileSize;
+    const int tiles_x =
+        (static_cast<int>(window.width_) + Constant::TileSize - 1) / Constant::TileSize;
+    const int tiles_y =
+        (static_cast<int>(window.height_) + Constant::TileSize - 1) / Constant::TileSize;
     generate_hilbert_order(tiles_x, tiles_y);
 
     // Launch worker threads for tiled rendering; barrier synchronizes frame boundaries
@@ -146,10 +148,10 @@ void Renderer::process_tile(int tile_x, int tile_y) noexcept {
     const int w = static_cast<int>(window_.width_);
     const int h = static_cast<int>(window_.height_);
 
-    int x0 = tile_x * TileSize;
-    int y0 = tile_y * TileSize;
-    int x1 = std::min(x0 + TileSize, w);
-    int y1 = std::min(y0 + TileSize, h);
+    int x0 = tile_x * Constant::TileSize;
+    int y0 = tile_y * Constant::TileSize;
+    int x1 = std::min(x0 + Constant::TileSize, w);
+    int y1 = std::min(y0 + Constant::TileSize, h);
 
     for (int y = y0; y < y1; ++y) {
         for (int x = x0; x < x1; ++x) {
@@ -166,7 +168,7 @@ void Renderer::process_tile(int tile_x, int tile_y) noexcept {
             }
 
             // Use high sample count in offline mode
-            int samples_to_run = offline_render_mode_ ? VideoSamples : 1;
+            int samples_to_run = offline_render_mode_ ? Constant::VideoSamples : 1;
             ColourHDR pixel_accum{0.0f, 0.0f, 0.0f};
             for (int s = 0; s < samples_to_run; ++s) {
                 if (is_dof) {
@@ -188,7 +190,7 @@ void Renderer::process_tile(int tile_x, int tile_y) noexcept {
                         .blue = pixel_accum.blue + hdr.blue
                     };
                 } else {
-                    // Path tracing — jittered sampling per frame for progressive refinement
+                    // Normal Path tracing -- jittered sampling per frame for progressive refinement
                     std::uint32_t base_seed =
                         static_cast<std::uint32_t>(pixel_index + rendering_frame_count_ * 123457u) |
                         1u;
@@ -203,6 +205,7 @@ void Renderer::process_tile(int tile_x, int tile_y) noexcept {
                     };
                 }
             }
+
             // Average samples for current pixel
             ColourHDR final_hdr_avg{
                 pixel_accum.red / static_cast<FloatType>(samples_to_run),
@@ -210,6 +213,7 @@ void Renderer::process_tile(int tile_x, int tile_y) noexcept {
                 pixel_accum.blue / static_cast<FloatType>(samples_to_run)
             };
             std::size_t idx = static_cast<std::size_t>(y) * w + static_cast<std::size_t>(x);
+
             // Update accumulation buffer
             if (offline_render_mode_) {
                 accumulation_buffer_[idx] = final_hdr_avg;
@@ -271,7 +275,7 @@ void Renderer::render_photon_cloud() noexcept {
     const PhotonMap& pm = raytracer_->photon_map();
     if (!pm.is_ready()) return;
 
-    pm.for_each_photon([&](const Photon& photon) {
+    const auto render = [&](const Photon& photon) {
         glm::vec4 clip = world_.camera_.world_to_clip(photon.position);
         if (clip.w <= 0.0f) return;
         glm::vec3 ndc = world_.camera_.clip_to_ndc(clip);
@@ -284,21 +288,21 @@ void Renderer::render_photon_cloud() noexcept {
         if (screen_x < 0 || screen_x >= width || screen_y < 0 || screen_y >= height) return;
 
         // Compute brightness from photon power (with exposure boost for visibility)
-        constexpr FloatType exposure = 10000.0f;  // Boost to make photons visible
-        FloatType lum = (photon.power.r + photon.power.g + photon.power.b) / 3.0f * exposure;
+        FloatType lum = (photon.power.r + photon.power.g + photon.power.b) / 3.0f *
+                        Constant::PhotonVisualizationExposure;
         lum = std::clamp(lum, 0.0f, 1.0f);
 
         // Use white dots for visibility, or tint by photon power
         Colour dot_color = Colour{
-            .red = static_cast<std::uint8_t>(
-                std::clamp(photon.power.r * exposure * 255.0f, 0.0f, 255.0f)
-            ),
-            .green = static_cast<std::uint8_t>(
-                std::clamp(photon.power.g * exposure * 255.0f, 0.0f, 255.0f)
-            ),
-            .blue = static_cast<std::uint8_t>(
-                std::clamp(photon.power.b * exposure * 255.0f, 0.0f, 255.0f)
-            )
+            .red = static_cast<std::uint8_t>(std::clamp(
+                photon.power.r * Constant::PhotonVisualizationExposure * 255.0f, 0.0f, 255.0f
+            )),
+            .green = static_cast<std::uint8_t>(std::clamp(
+                photon.power.g * Constant::PhotonVisualizationExposure * 255.0f, 0.0f, 255.0f
+            )),
+            .blue = static_cast<std::uint8_t>(std::clamp(
+                photon.power.b * Constant::PhotonVisualizationExposure * 255.0f, 0.0f, 255.0f
+            ))
         };
 
         // Draw a 2x2 block for better visibility
@@ -311,7 +315,13 @@ void Renderer::render_photon_cloud() noexcept {
                 }
             }
         }
-    });
+    };
+
+    for (const auto& cell : pm.grid()) {
+        for (const auto& p : cell) {
+            render(p);
+        }
+    }
 }
 
 [[nodiscard]] glm::ivec2 hilbert_index_to_coord(int n, int d) noexcept {
@@ -339,7 +349,8 @@ void Renderer::generate_hilbert_order(int tiles_x, int tiles_y) noexcept {
     hilbert_tile_order_.reserve(tiles_x * tiles_y);
 
     const int max_dim = std::max(tiles_x, tiles_y);
-    const int n = static_cast<int>(std::bit_ceil(static_cast<unsigned int>(max_dim)));
+    const int n =
+        static_cast<int>(std::bit_ceil(static_cast<unsigned int>(max_dim)));  // Next power of two
 
     const int total_cells = n * n;
 

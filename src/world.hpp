@@ -196,11 +196,6 @@ class Camera {
     friend class World;
 
 public:
-    static constexpr auto OrbitInterval = std::chrono::seconds(1) / 60;
-    static constexpr double FOV = 45.0;
-    static constexpr double NearPlane = 0.001;
-    static constexpr double FarPlane = 100.0;
-
     glm::vec3 position_ = {0.0f, 0.0f, 12.0f};
     FloatType yaw_ = 0.0f;    // Horizontal rotation (around world Y axis)
     FloatType pitch_ = 0.0f;  // Vertical rotation (clamped to ±89 degrees)
@@ -377,7 +372,7 @@ private:
      * @brief Parses a text scene description file.
      * @param model Model to populate.
      * @param filename Path to the text file.
-     * 
+     *
      * @note The text file can reference other files using relative paths.
      */
     void parse_txt(Model& model, const std::filesystem::path& path);
@@ -385,7 +380,7 @@ private:
     void load_hdr_env_map(const std::filesystem::path& path);
     Texture load_texture(const std::filesystem::path& path);
     NormalMap load_normal_map(const std::filesystem::path& path);
-    
+
     void compute_all_face_normals(Model& model);
     void flatten_model_faces(Model& model);
 

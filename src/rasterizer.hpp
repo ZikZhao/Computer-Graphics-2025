@@ -110,9 +110,7 @@ public:
     void resize() noexcept;
 
     void wireframe(
-        const Camera& camera,
-        const std::vector<Face>& faces,
-        const std::vector<glm::vec3>& vertices
+        const Camera& camera, const std::vector<Face>& faces, const std::vector<glm::vec3>& vertices
     ) noexcept;
 
     void rasterized(

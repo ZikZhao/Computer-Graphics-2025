@@ -20,9 +20,9 @@ class Window {
 public:
     // Event trigger types
     enum class Trigger {
-        ANY_PRESSED,          // Non-modifier keys: blocked when modifiers pressed
-        ANY_JUST_PRESSED,     // Non-modifier keys: blocked when modifiers pressed
-        ALL_JUST_PRESSED      // Modifier combo: triggers on just-pressed when ALL keys held
+        ANY_PRESSED,       // Non-modifier keys: blocked when modifiers pressed
+        ANY_JUST_PRESSED,  // Non-modifier keys: blocked when modifiers pressed
+        ALL_JUST_PRESSED   // Modifier combo: triggers on just-pressed when ALL keys held
     };
 
     using KeyState = std::array<bool, SDL_NUM_SCANCODES>;

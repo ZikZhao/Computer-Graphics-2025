@@ -9,6 +9,7 @@
 #include <fstream>
 #include <iostream>
 #include <numbers>
+#include <random>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -73,8 +74,7 @@ inline auto ReadPPM(const std::filesystem::path& path) {
     };
 
     std::ifstream file(path, std::ifstream::binary);
-    if (!file.is_open())
-        throw std::runtime_error("Could not open PPM file: " + path.string());
+    if (!file.is_open()) throw std::runtime_error("Could not open PPM file: " + path.string());
 
     std::string magic_number;
     std::getline(file, magic_number);
@@ -118,14 +118,14 @@ inline void WritePPM(
     std::ofstream output_stream(filename, std::ofstream::out);
     output_stream << "P6\n";
     output_stream << width << " " << height << "\n";
-    output_stream <<  max << "\n";
+    output_stream << max << "\n";
 
     for (std::size_t i = 0; i < width * height; i++) {
-        std::array<char, 3> rgb{{
-            static_cast<char>((pixels[i] >> 16) & 0xFF),
-            static_cast<char>((pixels[i] >> 8) & 0xFF),
-            static_cast<char>((pixels[i] >> 0) & 0xFF)
-        }};
+        std::array<char, 3> rgb{
+            {static_cast<char>((pixels[i] >> 16) & 0xFF),
+             static_cast<char>((pixels[i] >> 8) & 0xFF),
+             static_cast<char>((pixels[i] >> 0) & 0xFF)}
+        };
         output_stream.write(rgb.data(), 3);
     }
 }
@@ -136,9 +136,7 @@ inline void WritePPM(
  * @param vertices_z_ndc Z components (NDC) for the two edge endpoints.
  * @return 1/z value suitable for depth comparison and perspective-correct interpolation.
  */
-constexpr FloatType InvZndc(
-    FloatType progress, std::array<FloatType, 2> vertices_z_ndc
-) noexcept {
+constexpr FloatType InvZndc(FloatType progress, std::array<FloatType, 2> vertices_z_ndc) noexcept {
     return (1.0f - progress) / vertices_z_ndc[0] + progress / vertices_z_ndc[1];
 }
 
@@ -232,24 +230,74 @@ inline glm::vec3 Barycentric(glm::vec2 v0, glm::vec2 v1, glm::vec2 v2, glm::vec2
 }
 
 /**
- * @brief Permuted Congruential Generator hash for 32-bit values.
- * @param v Input value.
- * @return Pseudorandomly permuted integer.
+ * @brief Generates a uniform random float in [0,1) using thread-local RNG.
+ * @return Random float in [0,1).
  */
-constexpr std::uint32_t PCGHash(std::uint32_t v) noexcept {
-    std::uint32_t state = v * 747796405u + 2891336453u;
-    std::uint32_t word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
-    return word ^ (word >> 22u);
+inline FloatType Rand() noexcept {
+    thread_local std::mt19937 rng(std::random_device{}());
+    return std::uniform_real_distribution<FloatType>(0.0f, 1.0f)(rng);
 }
 
 /**
- * @brief Generates a uniform random float in [0,1).
+ * @brief Generates a uniform random float in [0,1) using PCG hash.
  * @param seed RNG state (updated in-place).
  * @return Random float in [0,1).
  */
-constexpr FloatType RandFloat(std::uint32_t& seed) noexcept {
-    seed = PCGHash(seed);
+constexpr FloatType PCGRandomFloat(std::uint32_t& seed) noexcept {
+    seed = seed * 747796405u + 2891336453u;
+    std::uint32_t word = ((seed >> ((seed >> 28u) + 4u)) ^ seed) * 277803737u;
+    seed = word ^ (word >> 22u);
     return static_cast<FloatType>((seed >> 8) & 0x00FFFFFFu) / 16777216.0f;
+}
+
+/**
+ * @brief Computes luminance from RGB using ITU-R BT.709 coefficients.
+ * @param rgb RGB color (either glm::vec3 or ColourHDR-like with .red/.green/.blue).
+ * @return Luminance value.
+ */
+constexpr FloatType Luminance(const glm::vec3& rgb) noexcept {
+    return 0.2126f * rgb.x + 0.7152f * rgb.y + 0.0722f * rgb.z;
+}
+
+/**
+ * @brief Computes effective absorption coefficient for volumetric media.
+ *
+ * If sigma_a is non-zero, uses it directly. Otherwise derives from base_color and td
+ * (transmission distance) using Beer-Lambert law inversion.
+ *
+ * @param sigma_a Explicit absorption coefficient (use if length > 0).
+ * @param base_color Base color of the medium (used to derive absorption).
+ * @param td Transmission distance at which base_color is achieved.
+ * @return Effective absorption coefficient (sigma_a).
+ */
+inline glm::vec3 EffectiveSigmaA(
+    const glm::vec3& sigma_a, const glm::vec3& base_color, FloatType td
+) noexcept {
+    if (glm::length(sigma_a) > 0.0f) {
+        return sigma_a;
+    }
+    if (td > 0.0f) {
+        return glm::vec3(
+            -std::log(std::max(base_color.r, 0.001f)) / td,
+            -std::log(std::max(base_color.g, 0.001f)) / td,
+            -std::log(std::max(base_color.b, 0.001f)) / td
+        );
+    }
+    return glm::vec3(0.0f);
+}
+
+/**
+ * @brief Applies Beer-Lambert absorption over a given distance.
+ * @param sigma_a Absorption coefficient per unit distance.
+ * @param distance Distance traveled through the medium.
+ * @return Transmittance factor (multiply with incoming radiance).
+ */
+inline glm::vec3 BeerLambert(const glm::vec3& sigma_a, FloatType distance) noexcept {
+    return glm::vec3(
+        std::exp(-sigma_a.r * distance),
+        std::exp(-sigma_a.g * distance),
+        std::exp(-sigma_a.b * distance)
+    );
 }
 
 /**
@@ -336,6 +384,7 @@ inline glm::vec3 SampleConeHalton(
 
 /**
  * @brief Maps a point from the unit square [0,1]x[0,1] to a unit disk.
+ *
  * Uses Concentric Mapping to preserve area and adjacency, avoiding the
  * distortion at the center that simple polar mapping causes.
  */

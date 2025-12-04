@@ -107,9 +107,7 @@ FloatType Rasterizer::get_depth(int x, int y) const noexcept {
 }
 
 void Rasterizer::wireframe(
-    const Camera& camera,
-    const std::vector<Face>& faces,
-    const std::vector<glm::vec3>& vertices
+    const Camera& camera, const std::vector<Face>& faces, const std::vector<glm::vec3>& vertices
 ) noexcept {
     for (const auto& face : faces) {
         face_wireframe(camera, face, vertices, std::vector<glm::vec2>{});
@@ -167,8 +165,7 @@ void Rasterizer::face_wireframe(
                 FloatType progress = (to.x == from.x) ? 0.0f
                                                       : static_cast<FloatType>(x - from.x) /
                                                             static_cast<FloatType>(to.x - from.x);
-                FloatType inv_z =
-                    InvZndc(progress, std::array<FloatType, 2>{from.z_ndc, to.z_ndc});
+                FloatType inv_z = InvZndc(progress, std::array<FloatType, 2>{from.z_ndc, to.z_ndc});
                 FloatType& depth = z_buffer_[y * width + x];
                 if (inv_z >= depth) {
                     depth = inv_z;
@@ -192,8 +189,7 @@ void Rasterizer::face_wireframe(
                 FloatType progress = (to.y == from.y) ? 0.0f
                                                       : static_cast<FloatType>(y - from.y) /
                                                             static_cast<FloatType>(to.y - from.y);
-                FloatType inv_z =
-                    InvZndc(progress, std::array<FloatType, 2>{from.z_ndc, to.z_ndc});
+                FloatType inv_z = InvZndc(progress, std::array<FloatType, 2>{from.z_ndc, to.z_ndc});
                 FloatType& depth = z_buffer_[y * width + x];
                 if (inv_z >= depth) {
                     depth = inv_z;
@@ -341,21 +337,9 @@ InplaceVector<ClipVertex, 9> Rasterizer::clip_triangle(
 
     // Transform to clip space (homogeneous); attributes travel with the polygon
     InplaceVector<ClipVertex, 9> polygon = {
-        ClipVertex{
-            .position_clip = camera.world_to_clip(v0),
-            .colour = vertex_color,
-            .uv = uv0
-        },
-        ClipVertex{
-            .position_clip = camera.world_to_clip(v1),
-            .colour = vertex_color,
-            .uv = uv1
-        },
-        ClipVertex{
-            .position_clip = camera.world_to_clip(v2),
-            .colour = vertex_color,
-            .uv = uv2
-        }
+        ClipVertex{.position_clip = camera.world_to_clip(v0), .colour = vertex_color, .uv = uv0},
+        ClipVertex{.position_clip = camera.world_to_clip(v1), .colour = vertex_color, .uv = uv1},
+        ClipVertex{.position_clip = camera.world_to_clip(v2), .colour = vertex_color, .uv = uv2}
     };
 
     // Sequentially clip against each frustum plane; bail out if polygon fully disappears
