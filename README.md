@@ -136,7 +136,7 @@ cmake -Bbuild -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=/opt/gcc/13.4.0/bi
 Then compile to the build directory:
 
 ```bash
-cmake --build build -j$(nproc) --clean-first
+cmake --build build -j --clean-first
 ```
 
 ### 🚀 Running the Renderer
@@ -200,7 +200,9 @@ The `model` directory contains several pre-configured scenes demonstrating diffe
 
 ### 💡 Light Gallery
 
-![Light Gallery](./assets/light-gallery.png)
+![Light Gallery 1](./assets/light-gallery1.png)
+
+![Light Gallery 2](./assets/light-gallery2.png)
 
 **A minimalist scene designed to showcase area lighting, soft shadows, and the infinite recursive reflections (infinity mirror effect) between opposing mirrors.**
 
