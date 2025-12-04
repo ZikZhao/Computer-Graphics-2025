@@ -224,9 +224,79 @@ The `model` directory contains several pre-configured scenes demonstrating diffe
 
 ## 🔧 Scene File Format
 
-The renderer supports a custom `.txt` scene format in addition to standard OBJ/MTL.
+The renderer supports both standard **OBJ/MTL** and a custom **TXT** format designed for better readability.
 
-### Material Properties (in `.txt` or `.mtl`)
+### Custom TXT Format vs OBJ
+
+The TXT format uses indentation and human-readable keywords instead of cryptic prefixes:
+
+| Feature | OBJ Format | TXT Format |
+|---------|------------|------------|
+| Object declaration | `o object_name` | `Object object_name` (or `Object # comment`) |
+| Vertex | `v x y z` | `Vertex x y z` |
+| Vertex with normal | `v x y z` + `vn nx ny nz` | `Vertex x y z / nx ny nz` |
+| Texture coord | `vt u v` | `TextureCoord u v` |
+| Face | `f v1/vt1/vn1 v2/vt2/vn2 ...` | `Face v1/vt1/vn1 v2/vt2/vn2 ...` |
+| Material reference | `usemtl material_name` | `Use material_name` |
+| Material library | `mtllib file.mtl` | `Include file.txt` |
+| Shading mode | `s Flat/Gouraud/Phong` | `Shading Flat/Gouraud/Phong` |
+| Environment map | N/A | `Environ file.hdr` |
+
+**Key differences from OBJ:**
+
+- **0-based indexing**: TXT uses 0-based vertex indices (like C/C++), while OBJ uses 1-based indexing.
+- **Local scope**: Vertex and texture coordinate indices are local to each `Object` block, resetting to 0 for each new object. This eliminates the need to track global vertex counts.
+- **Inline normals**: Vertex normals can be defined directly on the vertex line (`Vertex x y z / nx ny nz`), automatically binding to that vertex. This removes the need to reference normal indices in face definitions.
+
+**Example TXT scene:**
+
+```
+Environ ../environment.hdr
+Include material.txt
+
+Object # floor
+    Use cobbles
+    Vertex -2.0 -1.0 2.0
+    Vertex 2.0 -1.0 2.0
+    Vertex 2.0 -1.0 -2.0
+    Vertex -2.0 -1.0 -2.0
+    TextureCoord 0 0
+    TextureCoord 0 2
+    TextureCoord 2 2
+    TextureCoord 2 0
+    Face 1/1 3/3 0/0
+    Face 1/1 2/2 3/3
+
+Object sphere
+    Use brass
+    Shading Phong
+    Vertex 0.0 0.5 0.0 / 0.0 1.0 0.0
+    ...
+```
+
+**Example TXT material:**
+
+```
+Material brass
+    Metallic 1.0
+    Colour 0.91 0.78 0.34
+    Shininess 512
+
+Material cobbles
+    Colour 1.0 1.0 1.0
+    Texture granite_tile_diff_4k.ppm
+    NormalMap granite_tile_nor_gl_4k.hdr
+
+Material glass
+    Colour 0.9 0.95 0.98
+    TransmissionWeight 0.95
+    IOR 1.5
+    AtDistance 2.0
+```
+
+### Material Properties
+
+**OBJ/MTL format:**
 
 | Property | Description | Example |
 |----------|-------------|---------|
@@ -238,24 +308,36 @@ The renderer supports a custom `.txt` scene format in addition to standard OBJ/M
 | `Ni value` | Index of Refraction | `Ni 1.5` |
 | `Td value` | Transmission depth | `Td 2.0` |
 | `Ke r g b` | Emission (for area lights) | `Ke 10 10 10` |
-| `map_Kd file` | Diffuse texture | `map_Kd texture.ppm` |
-| `map_Bump file` | Normal map | `map_Bump normal.ppm` |
+| `map_Kd file` | Diffuse texture (PPM) | `map_Kd texture.ppm` |
+| `map_Bump file` | Normal map (HDR) | `map_Bump normal.hdr` |
 
-### Shading Mode (in OBJ files)
+**TXT format (more readable):**
 
-```
-s Flat      # Flat shading (faceted)
-s Gouraud   # Gouraud shading (vertex color interpolation)
-s Phong     # Phong shading (normal interpolation)
-```
+| Property | Description | Example |
+|----------|-------------|---------|
+| `Colour r g b` | Diffuse color | `Colour 0.8 0.2 0.2` |
+| `Shininess value` | Phong exponent | `Shininess 512` |
+| `Metallic value` | Metallic factor (0-1) | `Metallic 1.0` |
+| `TransmissionWeight value` | Transparency (0-1) | `TransmissionWeight 0.95` |
+| `IOR value` | Index of Refraction | `IOR 1.5` |
+| `AtDistance value` | Transmission depth | `AtDistance 2.0` |
+| `Emission r g b` | Emission (area lights) | `Emission 10 10 10` |
+| `Texture file` | Diffuse texture (PPM) | `Texture floor.ppm` |
+| `NormalMap file` | Normal map (HDR) | `NormalMap normal.hdr` |
 
 ---
 
 ## 📋 Technical Notes
 
-### Normal Map Loading
+### Supported Formats
 
-Normal maps are expected in tangent-space format. Since the original EXR normal maps were converted to PPM using online tools (lacking proper EXR library support), gamma correction was inadvertently applied. The loader automatically applies inverse gamma (2.2) to recover linear normal values.
+| Type | Format | Notes |
+|------|--------|-------|
+| Scene | `.txt`, `.obj` | Custom text format or standard Wavefront OBJ |
+| Material | `.txt`, `.mtl` | Custom or standard MTL format |
+| Diffuse Texture | `.ppm` | P6 binary format |
+| Normal Map | `.hdr` | HDR format (linear data, loaded via stb_image) |
+| Environment Map | `.hdr` | HDR equirectangular panorama |
 
 ### Photon Map Performance
 

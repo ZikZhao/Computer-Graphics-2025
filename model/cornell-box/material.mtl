@@ -33,7 +33,7 @@ Kd 0.000000 1.000000 1.000000
 newmtl Cobbles
 Kd 1.000000 1.000000 1.000000
 map_Kd granite_tile_diff_4k.ppm
-map_Bump granite_tile_nor_gl_4k.ppm
+map_Bump granite_tile_nor_gl_4k.hdr
 
 newmtl Mirror
 Kd 1.000000 1.000000 1.000000

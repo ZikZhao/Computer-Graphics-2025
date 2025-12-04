@@ -1144,43 +1144,23 @@ Texture World::load_texture(const std::filesystem::path& path) {
 }
 
 NormalMap World::load_normal_map(const std::filesystem::path& path) {
-    auto ppm = ReadPPM(path);
-    std::vector<glm::vec3> normal_data;
-    normal_data.resize(ppm.width * ppm.height);
-    for (std::size_t i = 0; i < ppm.width * ppm.height; i++) {
-        int red = ppm.stream.get();
-        int green = ppm.stream.get();
-        int blue = ppm.stream.get();
-        if (red == EOF || green == EOF || blue == EOF)
-            throw std::runtime_error(
-                "Unexpected end of file while reading normal map: " + path.string()
-            );
+    int width, height, channels;
+    float* data = stbi_loadf(path.string().c_str(), &width, &height, &channels, 3);
+    if (!data) throw std::runtime_error("Failed to load HDR normal map: " + path.string());
 
-        // Apply inverse gamma correction (sRGB to linear) before converting to tangent-space
-        // normal. This is necessary because the original EXR normal maps were converted to PPM
-        // using online tools because we lack proper EXR library support, which inadvertently
-        // applied gamma encoding to the linear normal data. We undo this here to recover correct
-        // normals.
-        FloatType r_linear = std::pow(static_cast<FloatType>(red) / 255.0f, Constant::DefaultGamma);
-        FloatType g_linear =
-            std::pow(static_cast<FloatType>(green) / 255.0f, Constant::DefaultGamma);
-        FloatType b_linear =
-            std::pow(static_cast<FloatType>(blue) / 255.0f, Constant::DefaultGamma);
-
-        // Convert from [0, 1] to [-1, 1] for tangent-space normal
-        FloatType nx = r_linear * 2.0f - 1.0f;
-        FloatType ny = g_linear * 2.0f - 1.0f;
-        FloatType nz = b_linear * 2.0f - 1.0f;
-
-        // OpenGL convention
+    std::vector<glm::vec3> normal_data(width * height);
+    for (int i = 0; i < width * height; ++i) {
+        FloatType nx = data[i * 3 + 0] * 2.0f - 1.0f;
+        FloatType ny = data[i * 3 + 1] * 2.0f - 1.0f;
+        FloatType nz = data[i * 3 + 2] * 2.0f - 1.0f;
         normal_data[i] = glm::normalize(glm::vec3(nx, ny, nz));
     }
-    return NormalMap(ppm.width, ppm.height, std::move(normal_data));
+    stbi_image_free(data);
+
+    return NormalMap(width, height, std::move(normal_data));
 }
 
 void World::compute_all_face_normals(Model& model) {
-    // Compute geometric normals per face from vertex positions;
-    // used for flat shading and backface tests
     for (auto& obj : model.objects) {
         for (auto& f : obj.faces) {
             const glm::vec3& v0 = model.vertices[f.v_indices[0]];

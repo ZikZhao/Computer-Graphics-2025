@@ -34,7 +34,7 @@ Material cyan
 Material cobbles
     Colour 1.000000 1.000000 1.000000
     Texture granite_tile_diff_4k.ppm
-    NormalMap granite_tile_nor_gl_4k.ppm
+    NormalMap granite_tile_nor_gl_4k.hdr
 
 Material mirror
     Metallic 1.0
