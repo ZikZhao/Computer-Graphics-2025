@@ -42,10 +42,10 @@ public:
     }
     constexpr std::size_t size() const noexcept { return size_; }
     constexpr T& operator[](std::size_t index) noexcept {
-        return *reinterpret_cast<T*>(&data_[index * sizeof(T)]);
+        return *std::launder(reinterpret_cast<T*>(&data_[index * sizeof(T)]));
     }
     constexpr const T& operator[](std::size_t index) const noexcept {
-        return *reinterpret_cast<const T*>(&data_[index * sizeof(T)]);
+        return *std::launder(reinterpret_cast<const T*>(&data_[index * sizeof(T)]));
     }
     constexpr void push_back(const T& value) noexcept {
         assert(size_ < N);

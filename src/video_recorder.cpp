@@ -58,10 +58,13 @@ void VideoRecorder::write_header() {
 
 void VideoRecorder::append_frame() {
     // Convert ARGB backbuffer to 4:2:0 planar YUV and write a frame chunk
+    // Uses BT.601 limited range conversion with 2x2 box filter for chroma subsampling
     file_stream_ << "FRAME\n";
     std::vector<std::uint8_t> y_plane(width_ * height_);
     std::vector<std::uint8_t> u_plane((width_ / 2) * (height_ / 2));
     std::vector<std::uint8_t> v_plane((width_ / 2) * (height_ / 2));
+
+    // First pass: compute Y plane for all pixels
     for (std::size_t i = 0; i < height_; i++) {
         for (std::size_t j = 0; j < width_; j++) {
             std::uint32_t pixel = pixel_buffer_[i * width_ + j];
@@ -69,19 +72,35 @@ void VideoRecorder::append_frame() {
             std::uint8_t g = (pixel >> 8) & 0xFF;
             std::uint8_t b = (pixel >> 0) & 0xFF;
             int y = ((66 * r + 129 * g + 25 * b + 128) >> 8) + 16;
-            int u = ((-38 * r - 74 * g + 112 * b + 128) >> 8) + 128;
-            int v = ((112 * r - 94 * g - 18 * b + 128) >> 8) + 128;
-            y = std::max(0, std::min(255, y));
-            u = std::max(0, std::min(255, u));
-            v = std::max(0, std::min(255, v));
-            y_plane[i * width_ + j] = static_cast<std::uint8_t>(y);
-            if (i % 2 == 0 && j % 2 == 0) {
-                std::size_t uv_index = (i / 2) * (width_ / 2) + (j / 2);
-                u_plane[uv_index] = static_cast<std::uint8_t>(u);
-                v_plane[uv_index] = static_cast<std::uint8_t>(v);
-            }
+            y_plane[i * width_ + j] = static_cast<std::uint8_t>(std::clamp(y, 0, 255));
         }
     }
+
+    // Second pass: compute U and V planes with 2x2 box filter averaging
+    for (std::size_t i = 0; i < height_; i += 2) {
+        for (std::size_t j = 0; j < width_; j += 2) {
+            int u_sum = 0, v_sum = 0;
+            // Average over 2x2 block
+            for (int di = 0; di < 2; di++) {
+                for (int dj = 0; dj < 2; dj++) {
+                    std::size_t pi = i + di;
+                    std::size_t pj = j + dj;
+                    if (pi < height_ && pj < width_) {
+                        std::uint32_t pixel = pixel_buffer_[pi * width_ + pj];
+                        std::uint8_t r = (pixel >> 16) & 0xFF;
+                        std::uint8_t g = (pixel >> 8) & 0xFF;
+                        std::uint8_t b = (pixel >> 0) & 0xFF;
+                        u_sum += ((-38 * r - 74 * g + 112 * b + 128) >> 8) + 128;
+                        v_sum += ((112 * r - 94 * g - 18 * b + 128) >> 8) + 128;
+                    }
+                }
+            }
+            std::size_t uv_index = (i / 2) * (width_ / 2) + (j / 2);
+            u_plane[uv_index] = static_cast<std::uint8_t>(std::clamp(u_sum / 4, 0, 255));
+            v_plane[uv_index] = static_cast<std::uint8_t>(std::clamp(v_sum / 4, 0, 255));
+        }
+    }
+
     file_stream_.write(reinterpret_cast<const char*>(y_plane.data()), y_plane.size());
     file_stream_.write(reinterpret_cast<const char*>(u_plane.data()), u_plane.size());
     file_stream_.write(reinterpret_cast<const char*>(v_plane.data()), v_plane.size());

@@ -16,27 +16,48 @@
 #include "constants.hpp"
 #include "window.hpp"
 
-auto ParseIndexToken(const std::string& t) {
+/**
+ * @brief Parse an OBJ/TXT face index token (e.g., "1/2/3", "1//3", "1").
+ * @param token The token string without spaces.
+ * @return Tuple of (vertex_index, texcoord_index, normal_index).
+ *         Returns -1 for missing components. Values are as-is from the file.
+ */
+auto ParseIndexToken(const std::string& token) {
     struct IndexTriple {
-        int v;
-        int vt;
-        int vn;
+        int v = -1;
+        int vt = -1;
+        int vn = -1;
     };
-    IndexTriple idx{-1, -1, -1};
-    if (t.find('/') != std::string::npos) {
-        std::vector<std::string> parts;
-        std::stringstream ss(t);
-        std::string p;
-        while (std::getline(ss, p, '/')) parts.push_back(p);
-        if (!parts.empty() && !parts[0].empty()) idx.v = std::stoi(parts[0]);
-        if (parts.size() >= 2 && !parts[1].empty()) idx.vt = std::stoi(parts[1]);
-        if (parts.size() >= 3 && !parts[2].empty()) idx.vn = std::stoi(parts[2]);
-    } else {
-        bool digits_only = !t.empty() && std::all_of(t.begin(), t.end(), [](char c) {
-            return c >= '0' && c <= '9';
-        });
-        if (digits_only) idx.v = std::stoi(t);
+    IndexTriple idx;
+
+    std::size_t first_slash = token.find('/');
+    if (first_slash == std::string::npos) {
+        // Format: v
+        if (!token.empty()) idx.v = std::stoi(token);
+        return idx;
     }
+
+    // Parse vertex index (before first slash)
+    if (first_slash > 0) {
+        idx.v = std::stoi(token.substr(0, first_slash));
+    }
+
+    std::size_t second_slash = token.find('/', first_slash + 1);
+    if (second_slash == std::string::npos) {
+        // Format: v/vt
+        if (first_slash + 1 < token.size()) {
+            idx.vt = std::stoi(token.substr(first_slash + 1));
+        }
+    } else {
+        // Format: v/vt/vn or v//vn
+        if (second_slash > first_slash + 1) {
+            idx.vt = std::stoi(token.substr(first_slash + 1, second_slash - first_slash - 1));
+        }
+        if (second_slash + 1 < token.size()) {
+            idx.vn = std::stoi(token.substr(second_slash + 1));
+        }
+    }
+
     return idx;
 }
 
@@ -242,19 +263,22 @@ bool BVHAccelerator::IntersectAABB(
     return t_enter <= t_exit && t_exit >= 0.0f && t_enter <= tmax;
 }
 
-BVHAccelerator BVHAccelerator::Build(
+BVHAccelerator::BVHAccelerator(
     const std::vector<Face>& faces,
     const std::vector<glm::vec3>& vertices,
     const std::vector<glm::vec3>& normals,
     const std::vector<glm::vec3>& vertex_normals,
     const std::vector<glm::vec2>& texcoords
-) {
-    BVHAccelerator bvh(vertices, normals, vertex_normals, texcoords);
-    if (faces.empty()) return bvh;
+)
+    : vertices_(vertices),
+      texcoords_(texcoords),
+      normals_(normals),
+      normals_by_vertex_(vertex_normals) {
+    if (faces.empty()) return;
 
     // Initialize triangle index array and precompute per-triangle data
-    bvh.tri_indices_.resize(faces.size());
-    std::iota(bvh.tri_indices_.begin(), bvh.tri_indices_.end(), 0);
+    tri_indices_.resize(faces.size());
+    std::iota(tri_indices_.begin(), tri_indices_.end(), 0);
 
     struct Cent {
         glm::vec3 c;  // Centroid
@@ -272,7 +296,7 @@ BVHAccelerator BVHAccelerator::Build(
     }
 
     // Define SAH cost model parameters
-    bvh.nodes_.clear();
+    nodes_.clear();
     auto surface_area = [](const AABB& box) -> FloatType {
         glm::vec3 extent = box.max - box.min;
         return 2.0f * (extent.x * extent.y + extent.y * extent.z + extent.z * extent.x);
@@ -287,16 +311,16 @@ BVHAccelerator BVHAccelerator::Build(
         };
         AABB cbox{box.min, box.max};
         for (int i = start; i < end; ++i) {
-            box.min = glm::min(box.min, data[bvh.tri_indices_[i]].b.min);
-            box.max = glm::max(box.max, data[bvh.tri_indices_[i]].b.max);
-            cbox.min = glm::min(cbox.min, data[bvh.tri_indices_[i]].c);
-            cbox.max = glm::max(cbox.max, data[bvh.tri_indices_[i]].c);
+            box.min = glm::min(box.min, data[tri_indices_[i]].b.min);
+            box.max = glm::max(box.max, data[tri_indices_[i]].b.max);
+            cbox.min = glm::min(cbox.min, data[tri_indices_[i]].c);
+            cbox.max = glm::max(cbox.max, data[tri_indices_[i]].c);
         }
 
         // Create leaf node initially
         int count = end - start;
-        int node_index = (int)bvh.nodes_.size();
-        bvh.nodes_.push_back(
+        int node_index = (int)nodes_.size();
+        nodes_.push_back(
             BVHNode{.box = box, .left = -1, .right = -1, .start = start, .count = count}
         );
         if (count <= Constant::BVHLeafThreshold) {
@@ -323,16 +347,16 @@ BVHAccelerator BVHAccelerator::Build(
             };
             std::array<Bucket, Constant::SAHBuckets> buckets;
             for (int i = start; i < end; ++i) {
-                FloatType centroid = data[bvh.tri_indices_[i]].c[axis];
+                FloatType centroid = data[tri_indices_[i]].c[axis];
                 int bucket_idx = static_cast<int>(
                     Constant::SAHBuckets * ((centroid - cbox.min[axis]) / extent[axis])
                 );
                 bucket_idx = std::clamp(bucket_idx, 0, Constant::SAHBuckets - 1);
                 buckets[bucket_idx].count++;
                 buckets[bucket_idx].bounds.min =
-                    glm::min(buckets[bucket_idx].bounds.min, data[bvh.tri_indices_[i]].b.min);
+                    glm::min(buckets[bucket_idx].bounds.min, data[tri_indices_[i]].b.min);
                 buckets[bucket_idx].bounds.max =
-                    glm::max(buckets[bucket_idx].bounds.max, data[bvh.tri_indices_[i]].b.max);
+                    glm::max(buckets[bucket_idx].bounds.max, data[tri_indices_[i]].b.max);
             }
 
             // Sweep through bucket splits and compute SAH cost
@@ -382,19 +406,16 @@ BVHAccelerator BVHAccelerator::Build(
         }
 
         // Partition triangles based on best split
-        auto mid_iter = std::partition(
-            bvh.tri_indices_.begin() + start,
-            bvh.tri_indices_.begin() + end,
-            [&](int idx) {
+        auto mid_iter =
+            std::partition(tri_indices_.begin() + start, tri_indices_.begin() + end, [&](int idx) {
                 FloatType centroid = data[idx].c[best_axis];
                 int bucket_idx = static_cast<int>(
                     Constant::SAHBuckets * ((centroid - cbox.min[best_axis]) / extent[best_axis])
                 );
                 bucket_idx = std::clamp(bucket_idx, 0, Constant::SAHBuckets - 1);
                 return bucket_idx <= best_split;
-            }
-        );
-        int mid = static_cast<int>(mid_iter - bvh.tri_indices_.begin());
+            });
+        int mid = static_cast<int>(mid_iter - tri_indices_.begin());
         if (mid == start || mid == end) {
             mid = (start + end) / 2;  // Fallback to median split
         }
@@ -402,26 +423,14 @@ BVHAccelerator BVHAccelerator::Build(
         // Recursively build children and convert to interior node
         int left = build_rec(start, mid);
         int right = build_rec(mid, end);
-        bvh.nodes_[node_index].left = left;
-        bvh.nodes_[node_index].right = right;
-        bvh.nodes_[node_index].count = 0;  // Mark as interior node
+        nodes_[node_index].left = left;
+        nodes_[node_index].right = right;
+        nodes_[node_index].count = 0;  // Mark as interior node
         return node_index;
     };
 
     build_rec(0, (int)faces.size());
-    return bvh;
 }
-
-BVHAccelerator::BVHAccelerator(
-    const std::vector<glm::vec3>& vertices,
-    const std::vector<glm::vec3>& normals,
-    const std::vector<glm::vec3>& vertex_normals,
-    const std::vector<glm::vec2>& texcoords
-)
-    : vertices_(&vertices),
-      texcoords_(&texcoords),
-      normals_(&normals),
-      normals_by_vertex_(&vertex_normals) {}
 
 RayTriangleIntersection BVHAccelerator::intersect(
     const glm::vec3& ro, const glm::vec3& rd, const std::vector<Face>& faces
@@ -455,9 +464,9 @@ RayTriangleIntersection BVHAccelerator::intersect(
                 int tri_index = tri_indices_[n.start + i];
                 const Face& face = faces[tri_index];
                 FloatType t, u, v;
-                const glm::vec3& v0 = (*vertices_)[face.v_indices[0]];
-                const glm::vec3& v1 = (*vertices_)[face.v_indices[1]];
-                const glm::vec3& v2 = (*vertices_)[face.v_indices[2]];
+                const glm::vec3& v0 = vertices_[face.v_indices[0]];
+                const glm::vec3& v1 = vertices_[face.v_indices[1]];
+                const glm::vec3& v2 = vertices_[face.v_indices[2]];
                 if (IntersectRayTriangle(ro, rd, v0, v1, v2, t, u, v) &&
                     t < closest.distanceFromCamera) {
                     closest.distanceFromCamera = t;
@@ -468,13 +477,12 @@ RayTriangleIntersection BVHAccelerator::intersect(
                     FloatType w = 1.0f - u - v;
                     auto fetch_normal = [&](int idx) -> glm::vec3 {
                         std::uint32_t ni = face.vn_indices[idx];
-                        if (normals_ && ni != std::numeric_limits<std::uint32_t>::max() &&
-                            ni < normals_->size())
-                            return (*normals_)[ni];
+                        if (ni != std::numeric_limits<std::uint32_t>::max() && ni < normals_.size())
+                            return normals_[ni];
                         std::uint32_t vi = face.v_indices[idx];
-                        if (normals_by_vertex_ && vi < normals_by_vertex_->size() &&
-                            glm::length((*normals_by_vertex_)[vi]) > 0.001f)
-                            return (*normals_by_vertex_)[vi];
+                        if (vi < normals_by_vertex_.size() &&
+                            glm::length(normals_by_vertex_[vi]) > 0.001f)
+                            return normals_by_vertex_[vi];
                         return face.face_normal;
                     };
                     glm::vec3 n0 = fetch_normal(0);
@@ -488,30 +496,30 @@ RayTriangleIntersection BVHAccelerator::intersect(
 
                     // Interpolate texture coordinates
                     glm::vec2 uv_coord(0.0f);
-                    if (texcoords_) {
+                    {
                         glm::vec2 uv0(0.0f), uv1(0.0f), uv2(0.0f);
-                        if (face.vt_indices[0] < texcoords_->size())
-                            uv0 = (*texcoords_)[face.vt_indices[0]];
-                        if (face.vt_indices[1] < texcoords_->size())
-                            uv1 = (*texcoords_)[face.vt_indices[1]];
-                        if (face.vt_indices[2] < texcoords_->size())
-                            uv2 = (*texcoords_)[face.vt_indices[2]];
+                        if (face.vt_indices[0] < texcoords_.size())
+                            uv0 = texcoords_[face.vt_indices[0]];
+                        if (face.vt_indices[1] < texcoords_.size())
+                            uv1 = texcoords_[face.vt_indices[1]];
+                        if (face.vt_indices[2] < texcoords_.size())
+                            uv2 = texcoords_[face.vt_indices[2]];
                         uv_coord = uv0 * w + uv1 * u + uv2 * v;
                     }
                     // Apply normal mapping if a normal map is present
-                    if (face.material.normal_map && texcoords_) {
+                    if (face.material.normal_map) {
                         // Sample tangent-space normal from the normal map
                         glm::vec3 tangent_normal =
                             face.material.normal_map->sample(uv_coord.x, uv_coord.y);
 
                         // Compute TBN matrix from triangle edges and UV deltas
                         glm::vec2 uv0(0.0f), uv1(0.0f), uv2(0.0f);
-                        if (face.vt_indices[0] < texcoords_->size())
-                            uv0 = (*texcoords_)[face.vt_indices[0]];
-                        if (face.vt_indices[1] < texcoords_->size())
-                            uv1 = (*texcoords_)[face.vt_indices[1]];
-                        if (face.vt_indices[2] < texcoords_->size())
-                            uv2 = (*texcoords_)[face.vt_indices[2]];
+                        if (face.vt_indices[0] < texcoords_.size())
+                            uv0 = texcoords_[face.vt_indices[0]];
+                        if (face.vt_indices[1] < texcoords_.size())
+                            uv1 = texcoords_[face.vt_indices[1]];
+                        if (face.vt_indices[2] < texcoords_.size())
+                            uv2 = texcoords_[face.vt_indices[2]];
 
                         glm::vec3 edge1 = v1 - v0;
                         glm::vec3 edge2 = v2 - v0;
@@ -606,9 +614,9 @@ glm::vec3 BVHAccelerator::transmittance(
                 int tri_index = tri_indices_[n.start + i];
                 const Face& face = faces[tri_index];
                 FloatType t, u, v;
-                const glm::vec3& v0 = (*vertices_)[face.v_indices[0]];
-                const glm::vec3& v1 = (*vertices_)[face.v_indices[1]];
-                const glm::vec3& v2 = (*vertices_)[face.v_indices[2]];
+                const glm::vec3& v0 = vertices_[face.v_indices[0]];
+                const glm::vec3& v1 = vertices_[face.v_indices[1]];
+                const glm::vec3& v2 = vertices_[face.v_indices[2]];
                 bool hit = IntersectRayTriangle(point, light_dir, v0, v1, v2, t, u, v);
                 if (hit && t > Constant::RayEpsilon && t < (light_distance - 1e-4f)) {
                     intersections.push_back(Intersection{.t = t, .face = &face, .u = u, .v = v});
@@ -716,16 +724,21 @@ void World::parse_obj(Model& model, const std::filesystem::path& path) {
             auto prev_shading = current_obj->material.shading;
             current_obj->material = model.materials[colour_name];
             current_obj->material.shading = prev_shading;
-        } else if (type == "shading" || type == "Shading") {
-            // Select shading model (Flat/Gouraud/Phong)
+        } else if (type == "s") {
+            // Shading mode: "s Flat", "s Gouraud", "s Phong"
+            // Also supports OBJ smooth group syntax: "s 1" or "s on" = Phong, "s 0" or "s off" =
+            // Flat
             std::string mode;
             iss >> mode;
             if (current_obj != model.objects.end()) {
-                if (mode == "Flat") {
+                if (mode == "Flat" || mode == "off" || mode == "0") {
                     current_obj->material.shading = Material::Shading::FLAT;
                 } else if (mode == "Gouraud") {
                     current_obj->material.shading = Material::Shading::GOURAUD;
-                } else if (mode == "Phong") {
+                } else if (mode == "Phong" || mode == "on" || mode == "1") {
+                    current_obj->material.shading = Material::Shading::PHONG;
+                } else {
+                    // Any other non-zero smooth group number enables Phong shading
                     current_obj->material.shading = Material::Shading::PHONG;
                 }
             }
@@ -747,53 +760,25 @@ void World::parse_obj(Model& model, const std::filesystem::path& path) {
             model.vertex_normals.emplace_back(glm::normalize(glm::vec3(x, y, z)));
         } else if (type == "f") {
             // Triangle face -- parse indices (v/vt/vn) and create Face with material
+            // OBJ uses 1-indexed, so subtract 1 after parsing
             assert(current_obj != model.objects.end());
-            glm::vec3 vertice[3];
-            std::uint32_t vt_indices[3];
-            int vi_idx[3];
-            int normal_indices[3];
-            bool has_normals = false;
-            for (int i = 0; i < 3; i++) {
-                int vertex_index;
-                char slash;
-                iss >> vertex_index >> slash;
-                vertice[i] = model.vertices[vertex_index - 1];
-                vi_idx[i] = vertex_index - 1;
-                vt_indices[i] = std::numeric_limits<std::uint32_t>::max();
-                normal_indices[i] = -1;
-                if (int c = iss.peek(); c >= '0' && c <= '9') {
-                    int tex_idx;
-                    iss >> tex_idx;
-                    if (tex_idx > 0) {
-                        vt_indices[i] = static_cast<std::uint32_t>(tex_idx - 1);
-                    }
-                }
-                if (iss.peek() == '/') {
-                    iss >> slash;
-                    if (int c = iss.peek(); c >= '0' && c <= '9') {
-                        int normal_idx;
-                        iss >> normal_idx;
-                        normal_indices[i] = normal_idx - 1;
-                        has_normals = true;
-                    }
-                }
+            std::string tokens[3];
+            iss >> tokens[0] >> tokens[1] >> tokens[2];
+
+            std::uint32_t vi[3], vti[3], vni[3];
+            for (int i = 0; i < 3; ++i) {
+                const auto [v, vt, vn] = ParseIndexToken(tokens[i]);
+                vi[i] = static_cast<std::uint32_t>(v - 1);  // OBJ is 1-indexed
+                vti[i] = (vt >= 1) ? static_cast<std::uint32_t>(vt - 1)
+                                   : std::numeric_limits<std::uint32_t>::max();
+                vni[i] = (vn >= 1) ? static_cast<std::uint32_t>(vn - 1)
+                                   : std::numeric_limits<std::uint32_t>::max();
             }
+
             Face new_face{
-                .v_indices =
-                    {static_cast<std::uint32_t>(vi_idx[0]),
-                     static_cast<std::uint32_t>(vi_idx[1]),
-                     static_cast<std::uint32_t>(vi_idx[2])},
-                .vt_indices = {vt_indices[0], vt_indices[1], vt_indices[2]},
-                .vn_indices =
-                    {(has_normals && normal_indices[0] >= 0)
-                         ? static_cast<std::uint32_t>(normal_indices[0])
-                         : std::numeric_limits<std::uint32_t>::max(),
-                     (has_normals && normal_indices[1] >= 0)
-                         ? static_cast<std::uint32_t>(normal_indices[1])
-                         : std::numeric_limits<std::uint32_t>::max(),
-                     (has_normals && normal_indices[2] >= 0)
-                         ? static_cast<std::uint32_t>(normal_indices[2])
-                         : std::numeric_limits<std::uint32_t>::max()},
+                .v_indices = {vi[0], vi[1], vi[2]},
+                .vt_indices = {vti[0], vti[1], vti[2]},
+                .vn_indices = {vni[0], vni[1], vni[2]},
                 .material = current_obj->material,
                 .face_normal = glm::vec3(0.0f)
             };
@@ -1171,7 +1156,11 @@ NormalMap World::load_normal_map(const std::filesystem::path& path) {
                 "Unexpected end of file while reading normal map: " + path.string()
             );
 
-        // Apply inverse gamma correction (sRGB to linear) before converting to tangent-space normal
+        // Apply inverse gamma correction (sRGB to linear) before converting to tangent-space
+        // normal. This is necessary because the original EXR normal maps were converted to PPM
+        // using online tools because we lack proper EXR library support, which inadvertently
+        // applied gamma encoding to the linear normal data. We undo this here to recover correct
+        // normals.
         FloatType r_linear = std::pow(static_cast<FloatType>(red) / 255.0f, Constant::DefaultGamma);
         FloatType g_linear =
             std::pow(static_cast<FloatType>(green) / 255.0f, Constant::DefaultGamma);
@@ -1231,7 +1220,7 @@ void World::merge_models() noexcept {
         env_map_.is_loaded()
     );
 
-    accelerator_ = BVHAccelerator::Build(
+    accelerator_ = std::make_unique<BVHAccelerator>(
         all_faces_,
         all_vertices_,
         all_vertex_normals_,

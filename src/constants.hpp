@@ -36,9 +36,10 @@ inline constexpr int TargetFPS = 60;     // Target FPS for video recording
 inline constexpr float DefaultGamma = 2.2f;
 
 // Ray Tracing
-inline constexpr int MaxRayDepth = 64;          // Absolute max recursion depth
-inline constexpr float RayEpsilon = 0.001f;     // Offset to avoid self-intersection
-inline constexpr float Epsilon = 1e-6f;         // General numerical epsilon
+inline constexpr int MaxRayDepth = 64;             // Absolute max recursion depth
+inline constexpr float RayEpsilon = 0.001f;        // Offset to avoid self-intersection
+inline constexpr float Epsilon = 1e-6f;            // General numerical epsilon
+inline constexpr float AmbientIntensity = 0.025f;  // Ambient light contribution
 
 // Photon Mapping
 inline constexpr std::size_t TargetStoredPhotons = 50000;     // Target caustic photons

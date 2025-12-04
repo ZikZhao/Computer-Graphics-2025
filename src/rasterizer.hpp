@@ -18,7 +18,8 @@
  */
 class Rasterizer {
 public:
-    /// @brief Clip-space half-space test: inside test for a homogeneous vertex versus a frustum plane
+    /// @brief Clip-space half-space test: inside test for a homogeneous vertex versus a frustum
+    /// plane
     static constexpr bool InsidePlane(const glm::vec4& v, ClipPlane plane) noexcept {
         switch (plane) {
         case ClipPlane::LEFT:

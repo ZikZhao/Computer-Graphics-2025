@@ -224,30 +224,17 @@ std::size_t PhotonMap::emit_photon_batch(
     FloatType avg_dist = glm::length(target_center - light_center);
     FloatType raw_cone_angle =
         std::atan(target_radius / std::max<FloatType>(avg_dist, 1e-4f)) * 1.5f;
-    // Clamp cone angle to 90 degrees to prevent photons from emitting backwards
-    constexpr FloatType half_pi = std::numbers::pi_v<FloatType> / 2.0f;
-    FloatType cone_angle = std::min(raw_cone_angle, half_pi);
+    // Clamp cone angle to 90° to prevent photons from emitting backwards
+    FloatType cone_angle = std::min(raw_cone_angle, std::numbers::pi_v<FloatType> / 2.0f);
 
-    // Dynamic Flux Scaling using exact solid angle formula:
-    // The fraction of hemisphere solid angle covered by a cone of half-angle θ is:
-    //   Ω_cone / Ω_hemisphere = (2π(1-cosθ)) / (2π) = 1 - cos(θ)
-    // This corrects the "magnifying glass" effect where forcing all flux into a
-    // small cone artificially brightens distant targets.
-    FloatType cone_fraction = 1.0f - std::cos(cone_angle);
-    cone_fraction = std::min(cone_fraction, 1.0f);  // Clamp to 1.0 max
+    // Scale by solid angle fraction (1 - cos(theta)) to avoid brightness amplification in narrow
+    // cones
+    FloatType cone_fraction = std::min(1.0f - std::cos(cone_angle), 1.0f);
 
-    // Fix double-counting: Separate intensity from color.
-    // The total_light_flux_ (computed in build_photon_map) already incorporates Le's magnitude,
-    // so using Le directly here would cause photon power to scale as Le².
-    // Instead, we use the normalized color "tint" so that energy is controlled solely
-    // by the global flux normalization in normalize_photon_power().
+    // Use normalized color tint only -- total_light_flux_ already contains Le magnitude,
+    // so multiplying by Le again would cause Le² scaling. Power normalization happens later.
     FloatType lum = Luminance(Le);
     glm::vec3 normalized_tint = (lum > 1e-6f) ? (Le / lum) : glm::vec3(1.0f);
-
-    // photon_base_color = normalized color tint * cone fraction
-    // Actual power will be normalized later using:
-    //   factor = total_flux / total_emitted_count
-    // This ensures caustic brightness scales linearly with light intensity.
     glm::vec3 photon_base_color = normalized_tint * cone_fraction;
 
     std::size_t stored_count = 0;
@@ -422,13 +409,12 @@ std::optional<RayTriangleIntersection> PhotonMap::intersect_triangle(
     const glm::vec3& v2 = world_.all_vertices_[face.v_indices[2]];
 
     // Möller-Trumbore intersection algorithm
-    constexpr FloatType EPSILON = 1e-6f;
     glm::vec3 edge1 = v1 - v0;
     glm::vec3 edge2 = v2 - v0;
     glm::vec3 h = glm::cross(rd, edge2);
     FloatType a = glm::dot(edge1, h);
 
-    if (std::abs(a) < EPSILON) {
+    if (std::abs(a) < Constant::Epsilon) {
         return std::nullopt;  // Ray parallel to triangle
     }
 
@@ -449,7 +435,7 @@ std::optional<RayTriangleIntersection> PhotonMap::intersect_triangle(
 
     FloatType t = f * glm::dot(edge2, q);
 
-    if (t < EPSILON) {
+    if (t < Constant::Epsilon) {
         return std::nullopt;  // Intersection behind ray origin
     }
 
@@ -491,7 +477,7 @@ std::optional<RayTriangleIntersection> PhotonMap::intersect_triangle(
 std::optional<RayTriangleIntersection> PhotonMap::find_intersection(
     const glm::vec3& ro, const glm::vec3& rd
 ) const noexcept {
-    auto rec = world_.accelerator_.intersect(ro, rd, world_.all_faces_);
+    auto rec = world_.accelerator_->intersect(ro, rd, world_.all_faces_);
     if (rec.triangleIndex == static_cast<std::size_t>(-1)) {
         return std::nullopt;
     }

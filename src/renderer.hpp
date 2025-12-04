@@ -78,6 +78,9 @@ public:
     bool offline_render_mode_ = false;
     int frame_count_ = 0;
     int rendering_frame_count_ = 0;
+    glm::vec3 last_cam_pos_ = glm::vec3(0.0f);
+    FloatType last_cam_yaw_ = 0.0f;
+    FloatType last_cam_pitch_ = 0.0f;
 
 public:
     /**

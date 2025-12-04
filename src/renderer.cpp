@@ -89,6 +89,7 @@ void Renderer::render() noexcept {
 void Renderer::reset_accumulation() noexcept {
     std::fill(accumulation_buffer_.begin(), accumulation_buffer_.end(), ColourHDR{});
     frame_count_ = 0;
+    rendering_frame_count_ = 0;
 }
 
 void Renderer::clear() noexcept {
@@ -107,15 +108,11 @@ void Renderer::render_rasterized() noexcept {
 }
 
 void Renderer::render_raytraced() noexcept {
-    static glm::vec3 last_cam_pos = glm::vec3(0.0f);
-    static FloatType last_cam_yaw = 0.0f;
-    static FloatType last_cam_pitch = 0.0f;
-
     tile_counter_.store(0, std::memory_order_relaxed);
     const Camera& cam = world_.camera_;
-    bool cam_changed = (glm::length(cam.position_ - last_cam_pos) > 1e-6f) ||
-                       (std::abs(cam.yaw_ - last_cam_yaw) > 1e-6f) ||
-                       (std::abs(cam.pitch_ - last_cam_pitch) > 1e-6f);
+    bool cam_changed = (glm::length(cam.position_ - last_cam_pos_) > 1e-6f) ||
+                       (std::abs(cam.yaw_ - last_cam_yaw_) > 1e-6f) ||
+                       (std::abs(cam.pitch_ - last_cam_pitch_) > 1e-6f);
     if (cam_changed) {
         reset_accumulation();
     }
@@ -125,9 +122,9 @@ void Renderer::render_raytraced() noexcept {
     frame_barrier_.arrive_and_wait();  // Start signal
     frame_barrier_.arrive_and_wait();  // Completion wait
     frame_count_ = rendering_frame_count_;
-    last_cam_pos = cam.position_;
-    last_cam_yaw = cam.yaw_;
-    last_cam_pitch = cam.pitch_;
+    last_cam_pos_ = cam.position_;
+    last_cam_yaw_ = cam.yaw_;
+    last_cam_pitch_ = cam.pitch_;
 }
 
 void Renderer::render_dof() noexcept {

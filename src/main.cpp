@@ -183,9 +183,9 @@ int main(int argc, char* argv[]) {
         [&](const Window::KeyState&, float) { video_recorder.toggle_recording(); }
     );
 
-    // Offline/Realtime render mode toggle (H)
+    // Offline/Realtime render mode toggle (V)
     window.register_key(
-        {SDL_SCANCODE_H},
+        {SDL_SCANCODE_V},
         Window::Trigger::ANY_JUST_PRESSED,
         [&](const Window::KeyState&, float) {
             renderer.offline_render_mode_ = !renderer.offline_render_mode_;

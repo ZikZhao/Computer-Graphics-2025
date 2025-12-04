@@ -285,15 +285,6 @@ public:
     };
 
 public:
-    /// @brief Builds a BVH from the given model data.
-    [[nodiscard]] static BVHAccelerator Build(
-        const std::vector<Face>& faces,
-        const std::vector<glm::vec3>& vertices,
-        const std::vector<glm::vec3>& normals,
-        const std::vector<glm::vec3>& vertex_normals,
-        const std::vector<glm::vec2>& texcoords
-    );
-
     /// @brief Ray–AABB test used by traversal.
     [[nodiscard]] static bool IntersectAABB(
         const glm::vec3& ro, const glm::vec3& rd, const AABB& box, FloatType tmax
@@ -303,21 +294,29 @@ private:
     std::vector<int> tri_indices_;
     std::vector<BVHNode> nodes_;
 
-    const std::vector<glm::vec3>* vertices_ = nullptr;
-    const std::vector<glm::vec2>* texcoords_ = nullptr;
-    const std::vector<glm::vec3>* normals_ = nullptr;
-    const std::vector<glm::vec3>* normals_by_vertex_ = nullptr;
+    const std::vector<glm::vec3>& vertices_;
+    const std::vector<glm::vec2>& texcoords_;
+    const std::vector<glm::vec3>& normals_;
+    const std::vector<glm::vec3>& normals_by_vertex_;
 
-private:
+public:
+    /**
+     * @brief Constructs and builds BVH from the given model data.
+     * @note References must remain valid for the lifetime of this object.
+     */
     BVHAccelerator(
+        const std::vector<Face>& faces,
         const std::vector<glm::vec3>& vertices,
         const std::vector<glm::vec3>& normals,
         const std::vector<glm::vec3>& vertex_normals,
         const std::vector<glm::vec2>& texcoords
     );
 
-public:
-    BVHAccelerator() = default;
+    // Non-copyable, non-movable (references would dangle)
+    BVHAccelerator(const BVHAccelerator&) = delete;
+    BVHAccelerator& operator=(const BVHAccelerator&) = delete;
+    BVHAccelerator(BVHAccelerator&&) = delete;
+    BVHAccelerator& operator=(BVHAccelerator&&) = delete;
 
     [[nodiscard]] bool empty() const noexcept { return nodes_.empty(); }
 
@@ -358,11 +357,17 @@ public:
         all_vertex_normals_by_vertex_;  // Vertex normals defined by "Vertex x y z / xn yn zn" lines
     EnvironmentMap env_map_;
     std::vector<const Face*> emissive_faces_;
-    BVHAccelerator accelerator_;
+    std::unique_ptr<BVHAccelerator> accelerator_;
     Camera camera_;
 
 public:
     World(const std::vector<std::string>& filenames);
+
+    // Non-copyable, non-movable (BVH holds references to member vectors)
+    World(const World&) = delete;
+    World& operator=(const World&) = delete;
+    World(World&&) = delete;
+    World& operator=(World&&) = delete;
 
 private:
     void parse_obj(Model& model, const std::filesystem::path& path);
