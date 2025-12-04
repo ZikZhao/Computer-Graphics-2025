@@ -81,7 +81,9 @@ This renderer implements **ALL** features required for the highest marking band 
 
 ## 🎬 Demo Video
 
-<video src="./assets/ident.mp4" controls width="100%"></video>
+[Link to Video](./assets/ident.mp4)
+
+https://github.com/user-attachments/assets/61a85634-54d2-454b-8209-321549d9baa3
 
 ---
 
