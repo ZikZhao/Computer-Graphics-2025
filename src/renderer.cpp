@@ -2,7 +2,8 @@
 
 #include <algorithm>
 #include <bit>
-#include <iostream>
+
+#include "constants.hpp"
 
 Colour Renderer::TonemapAndGammaCorrect(const ColourHDR& hdr, FloatType gamma) noexcept {
     FloatType r_ldr = AcesToneMapping(hdr.red * 0.6f);
@@ -31,7 +32,6 @@ Colour Renderer::TonemapAndGammaCorrect(const ColourHDR& hdr, FloatType gamma) n
 Renderer::Renderer(const World& world, Window& window)
     : world_(world),
       window_(window),
-      aspect_ratio_(static_cast<double>(window.width_) / window.height_),
       hdr_buffer_(window.width_ * window.height_, ColourHDR{}),
       accumulation_buffer_(window.width_ * window.height_, ColourHDR{}),
       frame_barrier_(std::thread::hardware_concurrency() + 1) {

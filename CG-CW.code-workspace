@@ -95,40 +95,5 @@
             "xtree": "cpp",
             "xutility": "cpp"
         }
-    },
-    "tasks": {
-        "version": "2.0.0",
-        "tasks": [
-            {
-                "label": "Build Release",
-                "type": "shell",
-                "command": "cmake",
-                "args": [
-                    "--build",
-                    "build",
-                    "--target",
-                    "CG-CW",
-                    "--config",
-                    "Release",
-                    "-j",
-                    "$(nproc)"
-                ],
-                "group": "build",
-                "problemMatcher": ["$gcc"],
-                "detail": "Build project in Release mode"
-            },
-            {
-                "label": "Configure Release",
-                "type": "shell",
-                "command": "cmake",
-                "args": [
-                    "-Bbuild",
-                    "-H.",
-                    "-DCMAKE_BUILD_TYPE=Release"
-                ],
-                "problemMatcher": [],
-                "detail": "Generate Release build configuration"
-            }
-        ]
     }
 }

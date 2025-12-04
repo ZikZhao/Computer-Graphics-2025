@@ -1,11 +1,8 @@
 #pragma once
 #include <chrono>
 #include <cstddef>
-#include <numbers>
 
-/**
- * @brief Centralized constants for the renderer.
- */
+/// Centralized constants for the renderer.
 namespace Constant {
 
 // Window / Display

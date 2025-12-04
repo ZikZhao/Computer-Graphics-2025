@@ -6,15 +6,12 @@
 #include <thread>
 #include <vector>
 
-#include "constants.hpp"
 #include "rasterizer.hpp"
 #include "raytracer.hpp"
 #include "window.hpp"
 #include "world.hpp"
 
-/**
- * @brief Orchestrates rasterization and ray tracing; manages frame tiling.
- */
+/// Orchestrates rasterization and ray tracing; manages frame tiling.
 class Renderer {
 public:
     enum class Mode {
@@ -26,11 +23,9 @@ public:
     };
 
 public:
-    /**
-     * @brief ACES filmic tone mapping curve (approximation).
-     * @param hdr_value Input HDR component.
-     * @return Mapped component in [0,1].
-     */
+    /// ACES filmic tone mapping curve (approximation).
+    /// @param hdr_value Input HDR component.
+    /// @return Mapped component in `[0,1]`.
     [[nodiscard]] static constexpr FloatType AcesToneMapping(FloatType hdr_value) noexcept {
         const FloatType a = 2.51f;
         const FloatType b = 0.03f;
@@ -42,12 +37,10 @@ public:
         return std::clamp(numerator / denominator, 0.0f, 1.0f);
     }
 
-    /**
-     * @brief Converts HDR to displayable sRGB using ACES and gamma.
-     * @param hdr Linear HDR colour.
-     * @param gamma Output gamma (1.0 = none, 2.2 typical sRGB).
-     * @return 8-bit sRGB colour.
-     */
+    /// Converts HDR to displayable sRGB using ACES and gamma.
+    /// @param hdr Linear HDR colour.
+    /// @param gamma Output gamma (`1.0` = none, `2.2` typical sRGB).
+    /// @return 8-bit sRGB colour.
     [[nodiscard]] static Colour TonemapAndGammaCorrect(
         const ColourHDR& hdr, FloatType gamma
     ) noexcept;
@@ -55,7 +48,6 @@ public:
 private:
     const World& world_;
     Window& window_;
-    double aspect_ratio_;
 
     std::unique_ptr<RayTracer> raytracer_;
     std::unique_ptr<Rasterizer> rasterizer_;
@@ -83,13 +75,11 @@ public:
     FloatType last_cam_pitch_ = 0.0f;
 
 public:
-    /**
-     * @brief Constructs the renderer with shared window/world.
-     * @param world Scene data and camera.
-     * @param window Reference to the output window.
-     *
-     * Renderer orchestrates rasterizer/raytracer and multi-threaded tiling.
-     */
+    /// Constructs the renderer with shared window/world.
+    ///
+    /// Renderer orchestrates rasterizer/raytracer and multi-threaded tiling.
+    /// @param world Scene data and camera.
+    /// @param window Reference to the output window.
     Renderer(const World& world, Window& window);
 
     ~Renderer();
@@ -106,9 +96,7 @@ public:
     void reset_accumulation() noexcept;
 
 private:
-    /**
-     * @brief Clears z-buffer and colour buffer for new frame.
-     */
+    /// Clears z-buffer and colour buffer for new frame.
     void clear() noexcept;
 
     void render_wireframe() noexcept;
@@ -117,23 +105,17 @@ private:
     void render_dof() noexcept;
     void render_photon_cloud() noexcept;
 
-    /**
-     * @brief Worker thread function for processing tiles.
-     * @param st Stop token to allow cooperative cancellation.
-     */
+    /// Worker thread function for processing tiles.
+    /// @param st Stop token to allow cooperative cancellation.
     void worker_thread(std::stop_token st) noexcept;
 
-    /**
-     * @brief Processes a 2D tile block for the current frame.
-     * @param tile_x Tile X index.
-     * @param tile_y Tile Y index.
-     */
+    /// Processes a 2D tile block for the current frame.
+    /// @param tile_x Tile X index.
+    /// @param tile_y Tile Y index.
     void process_tile(int tile_x, int tile_y) noexcept;
 
-    /**
-     * @brief Generates Hilbert curve tile ordering for cache-friendly traversal.
-     * @param tiles_x Number of tiles in X direction.
-     * @param tiles_y Number of tiles in Y direction.
-     */
+    /// Generates Hilbert curve tile ordering for cache-friendly traversal.
+    /// @param tiles_x Number of tiles in X direction.
+    /// @param tiles_y Number of tiles in Y direction.
     void generate_hilbert_order(int tiles_x, int tiles_y) noexcept;
 };

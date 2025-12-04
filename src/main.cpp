@@ -1,15 +1,9 @@
 #include <chrono>
-#include <fstream>
 #include <iostream>
-#include <map>
-#include <memory>
-#include <sstream>
-#include <stdexcept>
 #include <thread>
 #include <vector>
 
 #include "constants.hpp"
-#include "raytracer.hpp"
 #include "renderer.hpp"
 #include "utils.hpp"
 #include "video_recorder.hpp"

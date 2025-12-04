@@ -7,14 +7,12 @@
 #include <iostream>
 #include <limits>
 #include <numeric>
-#include <random>
 #include <sstream>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
 #include "constants.hpp"
-#include "window.hpp"
 
 /**
  * @brief Parse an OBJ/TXT face index token (e.g., "1/2/3", "1//3", "1").

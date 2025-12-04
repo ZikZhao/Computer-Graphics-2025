@@ -1,34 +1,21 @@
 #pragma once
 #include <algorithm>
 #include <array>
-#include <atomic>
-#include <barrier>
-#include <chrono>
 #include <filesystem>
-#include <fstream>
-#include <functional>
 #include <map>
 #include <memory>
-#include <numbers>
-#include <numeric>
-#include <optional>
-#include <sstream>
-#include <stdexcept>
-#include <thread>
 #include <vector>
 
 #include "utils.hpp"
 
-/**
- * @brief Frustum clip planes in homogeneous clip space.
- */
+/// Frustum clip planes in homogeneous clip space.
 enum class ClipPlane {
-    LEFT,    // x >= -w
-    RIGHT,   // x <= w
-    BOTTOM,  // y >= -w
-    TOP,     // y <= w
-    NEAR,    // z >= 0
-    FAR      // z <= w
+    LEFT,    ///< x >= -w
+    RIGHT,   ///< x <= w
+    BOTTOM,  ///< y >= -w
+    TOP,     ///< y <= w
+    NEAR,    ///< z >= 0
+    FAR      ///< z <= w
 };
 
 struct Colour {
@@ -46,12 +33,10 @@ struct ColourHDR {
     FloatType green;
     FloatType blue;
 
-    /**
-     * @brief Converts 8-bit sRGB to linear HDR using gamma.
-     * @param srgb Source colour.
-     * @param gamma Gamma exponent (usually 2.2).
-     * @return Linear HDR colour.
-     */
+    /// Converts 8-bit sRGB to linear HDR using gamma.
+    /// @param srgb Source colour.
+    /// @param gamma Gamma exponent (usually `2.2`).
+    /// @return Linear HDR colour.
     static ColourHDR FromSRGB(const Colour& srgb, FloatType gamma) noexcept;
 
     constexpr ColourHDR operator*(FloatType scalar) const noexcept {
@@ -69,16 +54,12 @@ struct ColourHDR {
     }
 };
 
-/**
- * @brief Lat-long HDR environment map with auto-exposure.
- */
+/// Lat-long HDR environment map with auto-exposure.
 class EnvironmentMap {
 public:
-    /**
-     * @brief Computes a robust exposure scalar from HDR luminance statistics.
-     * @param hdr_data Linear HDR pixels.
-     * @return Exposure multiplier.
-     */
+    /// Computes a robust exposure scalar from HDR luminance statistics.
+    /// @param hdr_data Linear HDR pixels.
+    /// @return Exposure multiplier.
     [[nodiscard]] static FloatType ComputeAutoExposure(const std::vector<ColourHDR>& hdr_data
     ) noexcept;
 
@@ -91,13 +72,11 @@ private:
 public:
     EnvironmentMap() = default;
 
-    /**
-     * @brief Constructs a loaded environment map.
-     * @param width Width in pixels.
-     * @param height Height in pixels.
-     * @param data Linear HDR texels (lat-long).
-     * @param intensity Exposure multiplier.
-     */
+    /// Constructs a loaded environment map.
+    /// @param width Width in pixels.
+    /// @param height Height in pixels.
+    /// @param data Linear HDR texels (lat-long).
+    /// @param intensity Exposure multiplier.
     EnvironmentMap(
         std::size_t width,
         std::size_t height,
@@ -106,15 +85,13 @@ public:
     ) noexcept;
 
 public:
-    /// @brief Indicates whether a valid map is present.
+    /// Indicates whether a valid map is present.
     [[nodiscard]] constexpr bool is_loaded() const noexcept { return width_ > 0 && height_ > 0; }
 
 public:
-    /**
-     * @brief Samples environment radiance along a direction.
-     * @param direction World-space direction.
-     * @return Linear HDR radiance.
-     */
+    /// Samples environment radiance along a direction.
+    /// @param direction World-space direction.
+    /// @return Linear HDR radiance.
     [[nodiscard]] ColourHDR sample(const glm::vec3& direction) const noexcept;
 };
 
@@ -215,10 +192,10 @@ public:
     [[nodiscard]] glm::vec3 up() const noexcept;
 
 public:
-    /// @brief Projects a world-space vertex to homogeneous clip space.
+    /// Projects a world-space vertex to homogeneous clip space.
     [[nodiscard]] glm::vec4 world_to_clip(const glm::vec3& vertex) const noexcept;
 
-    /// @brief Converts clip coordinates to NDC by dividing by w.
+    /// Converts clip coordinates to NDC by dividing by w.
     [[nodiscard]] glm::vec3 clip_to_ndc(const glm::vec4& clip) const noexcept;
 
     void start_orbiting() noexcept;
@@ -231,12 +208,12 @@ public:
         FloatType forward_delta, FloatType right_delta, FloatType up_delta, FloatType dt
     ) noexcept;
 
-    /// @brief Generates a ray through a pixel center.
+    /// Generates a ray through a pixel center.
     [[nodiscard]] std::pair<glm::vec3, glm::vec3> generate_ray(
         int pixel_x, int pixel_y, int screen_width, int screen_height
     ) const noexcept;
 
-    /// @brief Generates a ray from normalized UV.
+    /// Generates a ray from normalized UV.
     [[nodiscard]] std::pair<glm::vec3, glm::vec3> generate_ray_uv(
         FloatType u, FloatType v, int screen_width, int screen_height
     ) const noexcept;
@@ -266,9 +243,7 @@ struct Model {
     std::vector<glm::vec3> vertex_normals_by_vertex;
 };
 
-/**
- * @brief SAH-based BVH over triangle indices for fast intersection and shadows.
- */
+/// SAH-based BVH over triangle indices for fast intersection and shadows.
 class BVHAccelerator {
 public:
     struct AABB {
@@ -285,7 +260,7 @@ public:
     };
 
 public:
-    /// @brief Ray–AABB test used by traversal.
+    /// Ray–AABB test used by traversal.
     [[nodiscard]] static bool IntersectAABB(
         const glm::vec3& ro, const glm::vec3& rd, const AABB& box, FloatType tmax
     ) noexcept;
@@ -300,10 +275,9 @@ private:
     const std::vector<glm::vec3>& normals_by_vertex_;
 
 public:
-    /**
-     * @brief Constructs and builds BVH from the given model data.
-     * @note References must remain valid for the lifetime of this object.
-     */
+    /// Constructs and builds BVH from the given model data.
+    ///
+    /// @note References must remain valid for the lifetime of this object.
     BVHAccelerator(
         const std::vector<Face>& faces,
         const std::vector<glm::vec3>& vertices,
@@ -320,41 +294,35 @@ public:
 
     [[nodiscard]] bool empty() const noexcept { return nodes_.empty(); }
 
-    /**
-     * @brief Intersects ray with triangles; returns closest hit or miss.
-     * @param ro Ray origin.
-     * @param rd Ray direction.
-     * @param faces Triangle array.
-     * @return Closest intersection or miss.
-     */
+    /// Intersects ray with triangles; returns closest hit or miss.
+    /// @param ro Ray origin.
+    /// @param rd Ray direction.
+    /// @param faces Triangle array.
+    /// @return Closest intersection or miss.
     [[nodiscard]] RayTriangleIntersection intersect(
         const glm::vec3& ro, const glm::vec3& rd, const std::vector<Face>& faces
     ) const noexcept;
 
-    /**
-     * @brief Computes shadow transmittance along a segment to the light.
-     * @param point Starting point.
-     * @param light_pos Light position.
-     * @param faces Triangle array.
-     * @return RGB transmittance (1.0 = unoccluded, 0.0 = fully occluded).
-     */
+    /// Computes shadow transmittance along a segment to the light.
+    /// @param point Starting point.
+    /// @param light_pos Light position.
+    /// @param faces Triangle array.
+    /// @return RGB transmittance (`1.0` = unoccluded, `0.0` = fully occluded).
     [[nodiscard]] glm::vec3 transmittance(
         const glm::vec3& point, const glm::vec3& light_pos, const std::vector<Face>& faces
     ) const noexcept;
 };
 
-/**
- * @brief Scene container; merges models, builds BVH, and exposes accessors.
- */
+/// Scene container; merges models, builds BVH, and exposes accessors.
 class World {
 public:
     std::vector<Model> models_;
-    std::vector<Face> all_faces_;  // Flattened faces from all models
+    std::vector<Face> all_faces_;  ///< Flattened faces from all models
     std::vector<glm::vec3> all_vertices_;
     std::vector<glm::vec2> all_texcoords_;
     std::vector<glm::vec3> all_vertex_normals_;
     std::vector<glm::vec3>
-        all_vertex_normals_by_vertex_;  // Vertex normals defined by "Vertex x y z / xn yn zn" lines
+        all_vertex_normals_by_vertex_;  ///< Vertex normals defined by "Vertex x y z / xn yn zn"
     EnvironmentMap env_map_;
     std::vector<const Face*> emissive_faces_;
     std::unique_ptr<BVHAccelerator> accelerator_;
@@ -373,13 +341,11 @@ private:
     void parse_obj(Model& model, const std::filesystem::path& path);
     void parse_mtl(Model& model, const std::filesystem::path& path);
 
-    /**
-     * @brief Parses a text scene description file.
-     * @param model Model to populate.
-     * @param filename Path to the text file.
-     *
-     * @note The text file can reference other files using relative paths.
-     */
+    /// Parses a text scene description file.
+    ///
+    /// @note The text file can reference other files using relative paths.
+    /// @param model Model to populate.
+    /// @param filename Path to the text file.
     void parse_txt(Model& model, const std::filesystem::path& path);
 
     void load_hdr_env_map(const std::filesystem::path& path);

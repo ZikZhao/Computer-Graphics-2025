@@ -5,21 +5,18 @@
 #include "window.hpp"
 #include "world.hpp"
 
-/**
- * @brief Rasterizer for wireframe and textured triangle rendering.
- *
- * This class handles the CPU-based rendering pipeline, including:
- * - Sutherland-Hodgman clipping against the view frustum.
- * - Perspective projection and division.
- * - Conversion to screen coordinates.
- * - Wireframe rendering using DDA.
- * - Textured triangle rendering with scanline fill and perspective-correct interpolation.
- * - Z-buffering for depth testing.
- */
+/// Rasterizer for wireframe and textured triangle rendering.
+///
+/// This class handles the CPU-based rendering pipeline, including:
+/// - Sutherland-Hodgman clipping against the view frustum
+/// - Perspective projection and division
+/// - Conversion to screen coordinates
+/// - Wireframe rendering using DDA
+/// - Textured triangle rendering with scanline fill and perspective-correct interpolation
+/// - Z-buffering for depth testing
 class Rasterizer {
 public:
-    /// @brief Clip-space half-space test: inside test for a homogeneous vertex versus a frustum
-    /// plane
+    /// Clip-space half-space test: inside test for a homogeneous vertex versus a frustum plane.
     static constexpr bool InsidePlane(const glm::vec4& v, ClipPlane plane) noexcept {
         switch (plane) {
         case ClipPlane::LEFT:
@@ -38,7 +35,7 @@ public:
         return false;
     }
 
-    /// @brief Edge-plane intersection parameter t in clip space (homogeneous distances)
+    /// Edge-plane intersection parameter `t` in clip space (homogeneous distances).
     static constexpr FloatType ComputeIntersectionT(
         const glm::vec4& v0, const glm::vec4& v1, ClipPlane plane
     ) noexcept {
@@ -77,17 +74,17 @@ public:
         return d0 / (d0 - d1);
     }
 
-    /// @brief Attribute interpolation at plane intersection (colour, UV linear in clip space)
+    /// Attribute interpolation at plane intersection (colour, UV linear in clip space).
     static ClipVertex IntersectPlane(
         const ClipVertex& v0, const ClipVertex& v1, ClipPlane plane
     ) noexcept;
 
-    /// @brief Sutherland–Hodgman polygon clipping against a single frustum plane (clip space)
+    /// Sutherland–Hodgman polygon clipping against a single frustum plane (clip space).
     static InplaceVector<ClipVertex, 9> ClipAgainstPlane(
         const InplaceVector<ClipVertex, 9>& input, ClipPlane plane
     ) noexcept;
 
-    /// @brief Fragment shading: perspective-correct UV interpolation and base color modulation
+    /// Fragment shading: perspective-correct UV interpolation and base color modulation.
     static Colour SampleTexture(
         const Face& face,
         const glm::vec3& bary,
@@ -99,7 +96,6 @@ public:
 private:
     Window& window_;
     std::vector<FloatType> z_buffer_;
-    double aspect_ratio_;
 
 public:
     explicit Rasterizer(Window& window);
@@ -135,15 +131,12 @@ private:
         const std::vector<glm::vec2>& texcoords
     ) noexcept;
 
-    /**
-     * @brief Clips a triangle to the view frustum using Sutherland-Hodgman algorithm.
-     *
-     * @param camera The camera for transforming to clip space.
-     * @param face The face defining the triangle.
-     * @param vertices The list of vertex positions.
-     * @param texcoords The list of texture coordinates.
-     * @return The resulting clipped polygon vertices
-     */
+    /// Clips a triangle to the view frustum using Sutherland-Hodgman algorithm.
+    /// @param camera The camera for transforming to clip space.
+    /// @param face The face defining the triangle.
+    /// @param vertices The list of vertex positions.
+    /// @param texcoords The list of texture coordinates.
+    /// @return The resulting clipped polygon vertices.
     InplaceVector<ClipVertex, 9> clip_triangle(
         const Camera& camera,
         const Face& face,
@@ -151,7 +144,7 @@ private:
         const std::vector<glm::vec2>& texcoords
     ) noexcept;
 
-    /// NDC [-1,1] to pixel coordinates; store 1/w for downstream perspective correction
+    /// NDC `[-1,1]` to pixel coordinates; store `1/w` for downstream perspective correction.
     ScreenNdcCoord ndc_to_screen(const glm::vec3& ndc, const glm::vec2& uv, FloatType w)
         const noexcept;
 };

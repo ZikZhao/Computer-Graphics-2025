@@ -87,9 +87,7 @@ Colour Rasterizer::SampleTexture(
 }
 
 Rasterizer::Rasterizer(Window& window)
-    : window_(window),
-      z_buffer_(window.width_ * window.height_, 0.0f),
-      aspect_ratio_(static_cast<double>(window.width_) / window.height_) {}
+    : window_(window), z_buffer_(window.width_ * window.height_, 0.0f) {}
 
 void Rasterizer::clear() noexcept { z_buffer_.assign(window_.width_ * window_.height_, 0.0f); }
 

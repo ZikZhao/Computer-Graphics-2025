@@ -2,27 +2,21 @@
 
 #include <array>
 #include <chrono>
-#include <fstream>
 #include <functional>
-#include <iostream>
 #include <optional>
-#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
-#include "SDL.h"
-#include "world.hpp"
+#include "SDL.h"  // IWYU pragma: keep
 
-/**
- * @brief SDL-backed window, input, and pixel backbuffer manager.
- */
+/// SDL-backed window, input, and pixel backbuffer manager.
 class Window {
 public:
-    // Event trigger types
+    /// Event trigger types.
     enum class Trigger {
-        ANY_PRESSED,       // Non-modifier keys: blocked when modifiers pressed
-        ANY_JUST_PRESSED,  // Non-modifier keys: blocked when modifiers pressed
-        ALL_JUST_PRESSED   // Modifier combo: triggers on just-pressed when ALL keys held
+        ANY_PRESSED,       ///< Non-modifier keys: blocked when modifiers pressed
+        ANY_JUST_PRESSED,  ///< Non-modifier keys: blocked when modifiers pressed
+        ALL_JUST_PRESSED   ///< Modifier combo: triggers on just-pressed when ALL keys held
     };
 
     using KeyState = std::array<bool, SDL_NUM_SCANCODES>;
@@ -89,57 +83,49 @@ public:
     }
 
 public:
-    /**
-     * @brief Registers a key binding with a trigger policy.
-     * @param keys Set of scancodes to monitor.
-     * @param trigger Trigger mode (pressed/down/released/etc.).
-     * @param handler Callback receiving key state and dt.
-     */
+    /// Registers a key binding with a trigger policy.
+    /// @param keys Set of scancodes to monitor.
+    /// @param trigger Trigger mode (pressed/down/released/etc.).
+    /// @param handler Callback receiving key state and dt.
     void register_key(
         const std::unordered_set<SDL_Scancode>& keys, Trigger trigger, KeyHandler handler
     ) noexcept;
 
-    /**
-     * @brief Registers a mouse binding.
-     * @param button SDL mouse button.
-     * @param trigger Trigger mode.
-     * @param handler Callback receiving xrel, yrel, dt.
-     */
+    /// Registers a mouse binding.
+    /// @param button SDL mouse button.
+    /// @param trigger Trigger mode.
+    /// @param handler Callback receiving xrel, yrel, dt.
     void register_mouse(std::uint8_t button, Trigger trigger, MouseHandler handler) noexcept;
 
-    /**
-     * @brief Registers a scroll handler.
-     * @param handler Callback receiving y_offset.
-     */
+    /// Registers a scroll handler.
+    /// @param handler Callback receiving y_offset.
     void register_scroll(ScrollHandler handler) noexcept;
 
-    /// @brief Polls SDL events and dispatches registered handlers.
+    /// Polls SDL events and dispatches registered handlers.
     bool process_events() noexcept;
-    /// @brief Uploads backbuffer to SDL texture, presents and clears buffer.
+
+    /// Uploads backbuffer to SDL texture, presents and clears buffer.
     void update() noexcept;
-    /// @brief Clears the ARGB backbuffer to black.
+
+    /// Clears the ARGB backbuffer to black.
     void clear() noexcept;
 
     void save_ppm(const std::string& filename) const;
     void save_bmp(const std::string& filename) const;
 
 private:
-    /// @brief Processes registered key bindings based on current state.
+    /// Processes registered key bindings based on current state.
     void process_key_bindings() noexcept;
 
-    /// @brief Processes registered mouse bindings based on current state.
+    /// Processes registered mouse bindings based on current state.
     void process_mouse_bindings() noexcept;
 
-    /**
-     * @brief Checks if any modifier key is currently pressed.
-     * @return True if Shift, Ctrl, or Alt is pressed.
-     */
+    /// Checks if any modifier key is currently pressed.
+    /// @return `true` if Shift, Ctrl, or Alt is pressed.
     bool is_modifier_key_pressed() const noexcept;
 
-    /**
-     * @brief Checks if a key binding's trigger condition is met.
-     * @param binding Key binding to check.
-     * @return True if the binding should trigger.
-     */
+    /// Checks if a key binding's trigger condition is met.
+    /// @param binding Key binding to check.
+    /// @return `true` if the binding should trigger.
     bool check_key_trigger(const KeyBinding& binding) const noexcept;
 };

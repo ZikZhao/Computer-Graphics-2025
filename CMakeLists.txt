@@ -78,3 +78,20 @@ target_compile_options(CG-CW PUBLIC "$<$<CONFIG:Release>:${RELEASE_OPTIONS}>")
 target_compile_options(CG-CW PUBLIC "$<$<CONFIG:Debug>:${DEBUG_OPTIONS}>")
  
 target_link_libraries(CG-CW PRIVATE ${SDL2_LIBRARIES})
+
+# Create a symlink to compile_commands.json in the build root for tools like clang-tidy and clangd
+if (CMAKE_EXPORT_COMPILE_COMMANDS)
+    set(BUILD_ROOT "${CMAKE_SOURCE_DIR}/build")
+    file(MAKE_DIRECTORY "${BUILD_ROOT}")
+    get_filename_component(REAL_BINARY_DIR "${CMAKE_BINARY_DIR}" ABSOLUTE)
+    get_filename_component(REAL_BUILD_ROOT "${BUILD_ROOT}" ABSOLUTE)
+    
+    if (NOT "${REAL_BINARY_DIR}" STREQUAL "${REAL_BUILD_ROOT}")
+        file(CREATE_LINK 
+            "${CMAKE_BINARY_DIR}/compile_commands.json" 
+            "${BUILD_ROOT}/compile_commands.json" 
+            SYMBOLIC
+        )
+        message(STATUS "Symlinked compile_commands.json to ${BUILD_ROOT}")
+    endif()
+endif()
