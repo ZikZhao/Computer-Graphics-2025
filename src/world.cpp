@@ -805,6 +805,81 @@ void World::parse_obj(Model& model, const std::filesystem::path& path) {
     flatten_model_faces(model);
 }
 
+void World::parse_mtl(Model& model, const std::filesystem::path& path) {
+    auto current_material = model.materials.end();
+    std::ifstream file(path);
+    if (!file.is_open()) throw std::runtime_error("Could not open material file: " + path.string());
+
+    std::string line;
+    while (std::getline(file, line)) {
+        std::istringstream iss(line);
+        std::string type;
+        iss >> type;
+        if (type == "newmtl") {
+            std::string name;
+            iss >> name;
+            assert(model.materials.find(name) == model.materials.end());
+            current_material = model.materials.emplace(name, Material{}).first;
+        } else if (type == "Kd") {
+            assert(current_material != model.materials.end());
+            FloatType r, g, b;
+            iss >> r >> g >> b;
+            current_material->second.base_color = glm::vec3(r, g, b);
+        } else if (type == "Ns") {
+            assert(current_material != model.materials.end());
+            FloatType ns;
+            iss >> ns;
+            current_material->second.shininess = ns;
+        } else if (type == "Mt") {
+            assert(current_material != model.materials.end());
+            FloatType metallic_value;
+            iss >> metallic_value;
+            current_material->second.metallic = std::clamp(metallic_value, 0.0f, 1.0f);
+        } else if (type == "ior") {
+            assert(current_material != model.materials.end());
+            FloatType ior_value;
+            iss >> ior_value;
+            current_material->second.ior = std::max(1.0f, ior_value);
+        } else if (type == "td") {
+            assert(current_material != model.materials.end());
+            FloatType td_value;
+            iss >> td_value;
+            current_material->second.td = std::max(0.0f, td_value);
+        } else if (type == "tw") {
+            assert(current_material != model.materials.end());
+            FloatType tw_value;
+            iss >> tw_value;
+            current_material->second.tw = std::clamp(tw_value, 0.0f, 1.0f);
+        } else if (type == "Ke") {
+            assert(current_material != model.materials.end());
+            FloatType r, g, b;
+            iss >> r >> g >> b;
+            current_material->second.emission =
+                glm::vec3(std::max(0.0f, r), std::max(0.0f, g), std::max(0.0f, b));
+        } else if (type == "sigma_a") {
+            assert(current_material != model.materials.end());
+            FloatType r, g, b;
+            iss >> r >> g >> b;
+            current_material->second.sigma_a =
+                glm::vec3(std::max(0.0f, r), std::max(0.0f, g), std::max(0.0f, b));
+        } else if (type == "map_Kd") {
+            assert(current_material != model.materials.end());
+            std::string texture_filename;
+            iss >> texture_filename;
+            texture_filename = (path.parent_path() / texture_filename).string();
+            current_material->second.texture =
+                std::make_shared<Texture>(load_texture(texture_filename));
+        } else if (type == "map_Bump") {
+            assert(current_material != model.materials.end());
+            std::string normal_filename;
+            iss >> normal_filename;
+            normal_filename = (path.parent_path() / normal_filename).string();
+            current_material->second.normal_map =
+                std::make_shared<NormalMap>(load_normal_map(normal_filename));
+        }
+    }
+}
+
 void World::parse_txt(Model& model, const std::filesystem::path& path) {
     auto current_obj = model.objects.end();
     std::ifstream file(path);
@@ -1041,81 +1116,6 @@ void World::parse_txt(Model& model, const std::filesystem::path& path) {
     flatten_model_faces(model);
 }
 
-void World::parse_mtl(Model& model, const std::filesystem::path& path) {
-    auto current_material = model.materials.end();
-    std::ifstream file(path);
-    if (!file.is_open()) throw std::runtime_error("Could not open material file: " + path.string());
-
-    std::string line;
-    while (std::getline(file, line)) {
-        std::istringstream iss(line);
-        std::string type;
-        iss >> type;
-        if (type == "newmtl") {
-            std::string name;
-            iss >> name;
-            assert(model.materials.find(name) == model.materials.end());
-            current_material = model.materials.emplace(name, Material{}).first;
-        } else if (type == "Kd") {
-            assert(current_material != model.materials.end());
-            FloatType r, g, b;
-            iss >> r >> g >> b;
-            current_material->second.base_color = glm::vec3(r, g, b);
-        } else if (type == "Ns") {
-            assert(current_material != model.materials.end());
-            FloatType ns;
-            iss >> ns;
-            current_material->second.shininess = ns;
-        } else if (type == "Mt") {
-            assert(current_material != model.materials.end());
-            FloatType metallic_value;
-            iss >> metallic_value;
-            current_material->second.metallic = std::clamp(metallic_value, 0.0f, 1.0f);
-        } else if (type == "ior") {
-            assert(current_material != model.materials.end());
-            FloatType ior_value;
-            iss >> ior_value;
-            current_material->second.ior = std::max(1.0f, ior_value);
-        } else if (type == "td") {
-            assert(current_material != model.materials.end());
-            FloatType td_value;
-            iss >> td_value;
-            current_material->second.td = std::max(0.0f, td_value);
-        } else if (type == "tw") {
-            assert(current_material != model.materials.end());
-            FloatType tw_value;
-            iss >> tw_value;
-            current_material->second.tw = std::clamp(tw_value, 0.0f, 1.0f);
-        } else if (type == "Ke") {
-            assert(current_material != model.materials.end());
-            FloatType r, g, b;
-            iss >> r >> g >> b;
-            current_material->second.emission =
-                glm::vec3(std::max(0.0f, r), std::max(0.0f, g), std::max(0.0f, b));
-        } else if (type == "sigma_a") {
-            assert(current_material != model.materials.end());
-            FloatType r, g, b;
-            iss >> r >> g >> b;
-            current_material->second.sigma_a =
-                glm::vec3(std::max(0.0f, r), std::max(0.0f, g), std::max(0.0f, b));
-        } else if (type == "map_Kd") {
-            assert(current_material != model.materials.end());
-            std::string texture_filename;
-            iss >> texture_filename;
-            texture_filename = (path.parent_path() / texture_filename).string();
-            current_material->second.texture =
-                std::make_shared<Texture>(load_texture(texture_filename));
-        } else if (type == "map_Bump") {
-            assert(current_material != model.materials.end());
-            std::string normal_filename;
-            iss >> normal_filename;
-            normal_filename = (path.parent_path() / normal_filename).string();
-            current_material->second.normal_map =
-                std::make_shared<NormalMap>(load_normal_map(normal_filename));
-        }
-    }
-}
-
 void World::load_hdr_env_map(const std::filesystem::path& path) {
     int width, height, channels;
     float* data = stbi_loadf(path.string().c_str(), &width, &height, &channels, 3);
@@ -1189,6 +1189,19 @@ NormalMap World::load_normal_map(const std::filesystem::path& path) {
     return NormalMap(ppm.width, ppm.height, std::move(normal_data));
 }
 
+void World::compute_all_face_normals(Model& model) {
+    // Compute geometric normals per face from vertex positions;
+    // used for flat shading and backface tests
+    for (auto& obj : model.objects) {
+        for (auto& f : obj.faces) {
+            const glm::vec3& v0 = model.vertices[f.v_indices[0]];
+            const glm::vec3& v1 = model.vertices[f.v_indices[1]];
+            const glm::vec3& v2 = model.vertices[f.v_indices[2]];
+            f.face_normal = FaceNormal(v0, v1, v2);
+        }
+    }
+}
+
 void World::flatten_model_faces(Model& model) {
     model.all_faces.clear();
     model.all_faces.reserve(std::accumulate(
@@ -1200,19 +1213,6 @@ void World::flatten_model_faces(Model& model) {
 
     for (const auto& object : model.objects) {
         model.all_faces.insert(model.all_faces.end(), object.faces.begin(), object.faces.end());
-    }
-}
-
-void World::compute_all_face_normals(Model& model) {
-    // Compute geometric normals per face from vertex positions;
-    // used for flat shading and backface tests
-    for (auto& obj : model.objects) {
-        for (auto& f : obj.faces) {
-            const glm::vec3& v0 = model.vertices[f.v_indices[0]];
-            const glm::vec3& v1 = model.vertices[f.v_indices[1]];
-            const glm::vec3& v2 = model.vertices[f.v_indices[2]];
-            f.face_normal = FaceNormal(v0, v1, v2);
-        }
     }
 }
 

@@ -144,7 +144,6 @@ void Renderer::process_tile(int tile_x, int tile_y) noexcept {
     const Camera& camera = world_.camera_;
     const bool is_dof = mode_ == Mode::DEPTH_OF_FIELD;
 
-    // 32x32 block scheduling for better cache locality
     const int w = static_cast<int>(window_.width_);
     const int h = static_cast<int>(window_.height_);
 
@@ -265,12 +264,6 @@ void Renderer::worker_thread(std::stop_token st) noexcept {
 void Renderer::render_photon_cloud() noexcept {
     const int width = static_cast<int>(window_.width_);
     const int height = static_cast<int>(window_.height_);
-
-    for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; ++x) {
-            window_[{x, y}] = Colour{0, 0, 0};
-        }
-    }
 
     const PhotonMap& pm = raytracer_->photon_map();
     if (!pm.is_ready()) return;

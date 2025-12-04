@@ -124,8 +124,22 @@ public:
     void save_bmp(const std::string& filename) const;
 
 private:
+    /// @brief Processes registered key bindings based on current state.
     void process_key_bindings() noexcept;
+
+    /// @brief Processes registered mouse bindings based on current state.
     void process_mouse_bindings() noexcept;
+
+    /**
+     * @brief Checks if any modifier key is currently pressed.
+     * @return True if Shift, Ctrl, or Alt is pressed.
+     */
     bool is_modifier_key_pressed() const noexcept;
+
+    /**
+     * @brief Checks if a key binding's trigger condition is met.
+     * @param binding Key binding to check.
+     * @return True if the binding should trigger.
+     */
     bool check_key_trigger(const KeyBinding& binding) const noexcept;
 };

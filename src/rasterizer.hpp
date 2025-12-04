@@ -18,7 +18,7 @@
  */
 class Rasterizer {
 public:
-    /// Clip-space half-space test: inside test for a homogeneous vertex versus a frustum plane
+    /// @brief Clip-space half-space test: inside test for a homogeneous vertex versus a frustum plane
     static constexpr bool InsidePlane(const glm::vec4& v, ClipPlane plane) noexcept {
         switch (plane) {
         case ClipPlane::LEFT:
@@ -37,7 +37,7 @@ public:
         return false;
     }
 
-    /// Edge-plane intersection parameter t in clip space (homogeneous distances)
+    /// @brief Edge-plane intersection parameter t in clip space (homogeneous distances)
     static constexpr FloatType ComputeIntersectionT(
         const glm::vec4& v0, const glm::vec4& v1, ClipPlane plane
     ) noexcept {
@@ -76,17 +76,17 @@ public:
         return d0 / (d0 - d1);
     }
 
-    /// Attribute interpolation at plane intersection (colour, UV linear in clip space)
+    /// @brief Attribute interpolation at plane intersection (colour, UV linear in clip space)
     static ClipVertex IntersectPlane(
         const ClipVertex& v0, const ClipVertex& v1, ClipPlane plane
     ) noexcept;
 
-    /// Sutherland–Hodgman polygon clipping against a single frustum plane (clip space)
+    /// @brief Sutherland–Hodgman polygon clipping against a single frustum plane (clip space)
     static InplaceVector<ClipVertex, 9> ClipAgainstPlane(
         const InplaceVector<ClipVertex, 9>& input, ClipPlane plane
     ) noexcept;
 
-    /// Fragment shading: perspective-correct UV interpolation and base color modulation
+    /// @brief Fragment shading: perspective-correct UV interpolation and base color modulation
     static Colour SampleTexture(
         const Face& face,
         const glm::vec3& bary,
@@ -107,7 +107,6 @@ public:
     [[nodiscard]] FloatType get_depth(int x, int y) const noexcept;
 
     void clear() noexcept;
-    void resize() noexcept;
 
     void wireframe(
         const Camera& camera, const std::vector<Face>& faces, const std::vector<glm::vec3>& vertices

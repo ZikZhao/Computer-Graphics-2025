@@ -79,7 +79,6 @@ Colour Rasterizer::SampleTexture(
         base_color = face.material.base_color;
     }
 
-    // Convert to 8-bit colour for the backbuffer
     return Colour{
         .red = static_cast<std::uint8_t>(std::clamp(base_color.r * 255.0f, 0.0f, 255.0f)),
         .green = static_cast<std::uint8_t>(std::clamp(base_color.g * 255.0f, 0.0f, 255.0f)),
@@ -93,11 +92,6 @@ Rasterizer::Rasterizer(Window& window)
       aspect_ratio_(static_cast<double>(window.width_) / window.height_) {}
 
 void Rasterizer::clear() noexcept { z_buffer_.assign(window_.width_ * window_.height_, 0.0f); }
-
-void Rasterizer::resize() noexcept {
-    z_buffer_.resize(window_.width_ * window_.height_);
-    clear();
-}
 
 FloatType Rasterizer::get_depth(int x, int y) const noexcept {
     if (x < 0 || static_cast<std::size_t>(x) >= window_.width_ || y < 0 ||
@@ -151,6 +145,7 @@ void Rasterizer::face_wireframe(
         ScreenNdcCoord from = screen_verts[i];
         ScreenNdcCoord to = screen_verts[(i + 1) % screen_verts.size()];
         if (std::abs(to.x - from.x) >= std::abs(to.y - from.y)) {
+            // Iterate over x
             std::size_t from_x =
                 std::max<std::size_t>(static_cast<std::size_t>(std::min(from.x, to.x)), 0);
             std::size_t to_x =
@@ -173,6 +168,7 @@ void Rasterizer::face_wireframe(
                 }
             }
         } else {
+            // Iterate over y
             std::size_t from_y =
                 std::max<std::size_t>(static_cast<std::size_t>(std::min(from.y, to.y)), 0);
             std::size_t to_y = std::min(
